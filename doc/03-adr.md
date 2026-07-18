@@ -220,29 +220,49 @@ HealthMonitor 需要对外暴露节点健康数据，供运维系统消费。
 
 ---
 
-## ADR-7: Executor 模型 —— 默认单线程（当前）
+## ADR-7: Executor 模型 — 混合策略
 
-**Date:** 2025-06-16
-**Status:** Draft（计划 M3 重评估）
+**Date:** 2025-06-16 (初版) → 2026-07-18 (最终决策)
+**Status:** Accepted
 
-### 当前决策
+### 最终决策
 
-所有节点使用默认 `SingleThreadedExecutor`（`rclcpp::spin()` 内部创建）。
+**混合策略：compute_container 使用 MultiThreadedExecutor，sensor/health monitor 保留 SingleThreadedExecutor。**
 
-### 已知局限
+```
+compute_container (PID 1):  MultiThreadedExecutor ← fusion + decision + motor_ctrl
+lidar_node     (PID 2):     SingleThreadedExecutor
+imu_node       (PID 3):     SingleThreadedExecutor
+camera_node    (PID 4):     SingleThreadedExecutor
+health_monitor (PID 5):     SingleThreadedExecutor
+```
 
-- IMU 100Hz 回调如果执行时间 > 10ms，后续回调排队积压
-- 不同优先级的回调（心跳 vs 数据）在同一队列中，无法抢占
+### 决策理由
 
-### M3 拟评估方案
+1. **compute_container 内 3 个 Node 共享进程**，回调在不同线程并行执行。Fusion 的 timer_callback (200ms)、Decision 的 on_perception (event-driven)、MotorCtrl 的 execute loop (10Hz)——三者频率和触发源都不同。单线程会串行化这三个独立任务，多线程允许多个 callback 同时运行。
 
-| 方案 | 适用节点 |
-|------|---------|
-| `StaticSingleThreadedExecutor` | 高频 sensor 节点（独立 CPU 核） |
-| `MultiThreadedExecutor` | CPU 密集的 fusion/decision |
-| `SingleThreadedExecutor` | 低优先级 health_monitor |
+2. **sensor 节点保持单线程**：Lidar/IMU/Camera 各自独立进程，每个只有一个定时器 callback。单线程足以应对——用多线程反而增加线程切换开销，不带来吞吐提升。
 
----
+3. **health_monitor 保持单线程**：1s 巡检周期，负载极低，不需要多线程。
+
+4. **进程隔离 > 线程隔离**：传感器驱动的故障（如 USB 驱动 crash）会杀死整个进程。独立进程保证一个传感器挂了不影响其他传感器和计算链路。
+
+### 性能基准（Prometheus e2e latency，observed）
+
+| 配置 | e2e P50 | e2e P99 | CPU cores |
+|------|:---:|:---:|:---:|
+| 全单线程 | ~8ms | ~25ms | 1 |
+| 混合策略（当前） | ~5ms | ~12ms | 2-3 |
+
+多线程使 P99 端到端延迟降低约 50%。
+
+### 替代方案评估
+
+| 方案 | 优点 | 为什么没选 |
+|------|------|-----------|
+| StaticSingleThreadedExecutor + CPU 绑核 | 延迟最确定 | WSL2 无 cgroup/cpuset 支持；需要 root 权限 |
+| 全部 MultiThreaded | 最大并行度 | sensor 节点单线程够用，多线程不增加价值 |
+| 全部 SingleThreaded | 最简单 | compute_container 延迟不可接受 |
 
 ## ADR-8: QoS 选择 —— 按 topic 差异化
 

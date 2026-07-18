@@ -88,7 +88,7 @@ ros2 launch ros2_robot_middleware simulation.launch.py
 | ADR-4 | Raw TCP HTTP for Prometheus | Eliminates bridge middleware — one less failure point per hop |
 | ADR-5 | std_msgs/String for heartbeat | Three dimensions (source/time/status) carried orthogonally |
 | ADR-6 | Callback-cache fusion | Current baseline; EKF + timestamp alignment planned |
-| ADR-7 | Single-threaded executor | Sufficient for current load; multi-thread evaluation planned |
+| ADR-7 | Multi-threaded (compute) + single-threaded (sensors) | Hybrid strategy — parallel callbacks for compute, simplicity for sensors |
 | ADR-8 | Per-topic QoS differentiation | IMU reliable (incremental), Camera best-effort (absolute) |
 
 See [doc/03-adr.md](doc/03-adr.md) for full context, alternatives considered, and trade-offs.
