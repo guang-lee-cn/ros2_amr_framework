@@ -82,9 +82,6 @@ TEST(SimulatedCameraTest, GenerationCounter_Advances) {
 
 // ── PerceptionService with SimulatedSensors ──────────────────────────
 
-using TestPerception = amr::application::PerceptionService<
-    SimulatedLidar, SimulatedImu, SimulatedCamera>;
-
 class PerceptionServiceTest : public ::testing::Test {
 protected:
   void SetUp() override {
@@ -98,24 +95,21 @@ protected:
 };
 
 TEST_F(PerceptionServiceTest, Tick_AllSensorsOk_DegradationFull) {
-  TestPerception ps(lidar_, imu_, camera_);
-  ps.tick(0.2);  // 200ms — all sensors read ok → ages = 0
-  EXPECT_EQ(ps.evaluate_degradation(), TestPerception::Level::FULL);
+  amr::application::PerceptionService ps(lidar_, imu_, camera_);
+  ps.tick(0.2);
+  EXPECT_EQ(ps.evaluate_degradation(), amr::application::PerceptionService::Level::FULL);
 }
 
 TEST_F(PerceptionServiceTest, Tick_StaysFullAcrossMultipleCycles) {
-  TestPerception ps(lidar_, imu_, camera_);
-  for (int i = 0; i < 5; ++i) {
-    ps.tick(0.1);
-  }
-  EXPECT_EQ(ps.evaluate_degradation(), TestPerception::Level::FULL);
+  amr::application::PerceptionService ps(lidar_, imu_, camera_);
+  for (int i = 0; i < 5; ++i) ps.tick(0.1);
+  EXPECT_EQ(ps.evaluate_degradation(), amr::application::PerceptionService::Level::FULL);
 }
 
 TEST_F(PerceptionServiceTest, Fuse_ProducesClusters) {
-  TestPerception ps(lidar_, imu_, camera_);
+  amr::application::PerceptionService ps(lidar_, imu_, camera_);
   ps.tick(0.2);
-
-  auto clusters = ps.fuse(TestPerception::Level::FULL);
+  auto clusters = ps.fuse(amr::application::PerceptionService::Level::FULL);
   EXPECT_GE(clusters.size(), 0u);
 }
 

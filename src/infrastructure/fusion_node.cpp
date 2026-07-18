@@ -138,7 +138,7 @@ void FusionNode::timer_callback() {
 
 void FusionNode::update_heartbeat_status() {
   auto msg = std_msgs::msg::String{};
-  msg.data = Perception::heartbeat_for(current_level_);
+  msg.data = amr::application::PerceptionService::heartbeat_for(current_level_);
   heartbeat_pub_->publish(msg);
 }
 

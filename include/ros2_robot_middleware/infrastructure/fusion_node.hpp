@@ -48,12 +48,8 @@ private:
   amr::infrastructure::sensors::SimulatedImu     imu_;
   amr::infrastructure::sensors::SimulatedCamera  camera_;
 
-  // Domain layer — reads sensors via HAL, pure C++
-  using Perception = amr::application::PerceptionService<
-      amr::infrastructure::sensors::SimulatedLidar,
-      amr::infrastructure::sensors::SimulatedImu,
-      amr::infrastructure::sensors::SimulatedCamera>;
-  Perception perception_{lidar_, imu_, camera_};
+  // Domain layer — sensors injected, no templates
+  amr::application::PerceptionService perception_{lidar_, imu_, camera_};
 
   amr::domain::perception::DegradationLevel current_level_{};
 
