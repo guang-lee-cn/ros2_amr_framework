@@ -61,10 +61,10 @@
 
 ### M7.1：基础设施
 
-- [ ] `RingBuffer<T>` — 无锁 SPSC，支持多个 producer 一个 consumer
-- [ ] `Tracer` — LTTng tracepoint 封装，`TRACE_SCOPE("fusion::process")` 宏
-- [ ] `MetricsRegistry` — 基于 `std::atomic` 的 counter/gauge/histogram
-- [ ] `LogWorker` — 后台线程，从 ring buffer 取数据，序列化 JSON，写 stdout
+- [x] `RingBuffer<T>` — 无锁 SPSC，支持多个 producer 一个 consumer
+- [x] `Tracer` — LTTng tracepoint 封装，`TRACE_SCOPE("fusion::process")` 宏
+- [x] `MetricsRegistry` — 基于 `std::atomic` 的 counter/gauge/histogram
+- [x] `LogWorker` — 后台线程，从 ring buffer 取数据，序列化 JSON，写 stdout
 
 ### M7.2：Traces — LTTng 全链路
 
