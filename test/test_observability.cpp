@@ -2,7 +2,11 @@
 #include "ros2_robot_middleware/observability/log_event.hpp"
 #include "ros2_robot_middleware/observability/metrics_registry.hpp"
 #include "ros2_robot_middleware/observability/ring_buffer.hpp"
+#include "ros2_robot_middleware/observability/trace_points.hpp"
 #include "ros2_robot_middleware/observability/tracer.hpp"
+
+#include <set>
+#include <string_view>
 
 using namespace amr::observability;
 
@@ -161,4 +165,40 @@ TEST(TraceContextTest, LogEvent_PicksUpTraceContext) {
   auto ev2 = amr::observability::LogEvent::make(
       amr::observability::LogLevel::INFO, "test_mod", "no_trace", 0, 0);
   EXPECT_EQ(ev2.trace_id, 0u);
+}
+
+// ── TracePoints — uniqueness validation ─────────────────────────────
+
+TEST(TracePointsTest, AllNamesAreUnique) {
+  std::set<std::string_view> names;
+  auto check = [&](const char *name) {
+    EXPECT_TRUE(names.insert(name).second) << "Duplicate trace point: " << name;
+  };
+
+  check(amr::trace::LIDAR_CALLBACK);
+  check(amr::trace::IMU_CALLBACK);
+  check(amr::trace::CAMERA_CALLBACK);
+  check(amr::trace::FUSION_TIMER);
+  check(amr::trace::FUSION_DEGRADATION);
+  check(amr::trace::FUSION_CLUSTER_DETECT);
+  check(amr::trace::DECISION_ON_PERCEPTION);
+  check(amr::trace::DECISION_SEND_GOAL);
+  check(amr::trace::DECISION_PREEMPT);
+  check(amr::trace::MOTOR_EXECUTE);
+  check(amr::trace::MOTOR_CANCEL);
+  check(amr::trace::MOTOR_STEP);
+  check(amr::trace::HEALTH_CHECK);
+  check(amr::trace::HEALTH_RECOVERY);
+  check(amr::trace::FLEET_AGGREGATE);
+}
+
+TEST(TracePointsTest, NamingFollowsConvention) {
+  // All names use '::' separator, lowercase, no trailing colon
+  auto valid = [](const char *name) -> bool {
+    std::string_view s(name);
+    return s.find("::") != std::string_view::npos  // has separator
+           && s.back() != ':';                      // no trailing colon
+  };
+  EXPECT_TRUE(valid(amr::trace::FUSION_TIMER));
+  EXPECT_TRUE(valid(amr::trace::MOTOR_EXECUTE));
 }

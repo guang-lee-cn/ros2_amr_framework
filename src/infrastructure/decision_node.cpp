@@ -1,6 +1,7 @@
 #include "ros2_robot_middleware/infrastructure/aliases.hpp"
 #include "ros2_robot_middleware/infrastructure/decision_node.hpp"
 #include "ros2_robot_middleware/observability/metrics_registry.hpp"
+#include "ros2_robot_middleware/observability/trace_points.hpp"
 #include "ros2_robot_middleware/observability/tracer.hpp"
 
 #include <chrono>
@@ -78,7 +79,7 @@ DecisionNode::on_shutdown(const rclcpp_lifecycle::State &)
 
 void DecisionNode::on_perception(const PerceptionObjects::SharedPtr& objs)
 {
-  TRACE_SCOPE("decision::on_perception");
+  TRACE_SCOPE(amr::trace::DECISION_ON_PERCEPTION);
   auto t_start = std::chrono::steady_clock::now();
 
   if (objs->objects.empty()) return;

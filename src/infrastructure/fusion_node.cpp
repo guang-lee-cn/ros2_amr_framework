@@ -1,6 +1,7 @@
 #include "ros2_robot_middleware/infrastructure/fusion_node.hpp"
 #include "ros2_robot_middleware/observability/logging.hpp"
 #include "ros2_robot_middleware/observability/metrics_registry.hpp"
+#include "ros2_robot_middleware/observability/trace_points.hpp"
 #include "ros2_robot_middleware/observability/tracer.hpp"
 
 #include <rclcpp_components/register_node_macro.hpp>
@@ -117,7 +118,7 @@ void FusionNode::camera_callback(sensor_msgs::msg::Image::SharedPtr msg) {
 // ── Timer callback — delegates to domain layer ───────────────────────────────
 
 void FusionNode::timer_callback() {
-  TRACE_SCOPE("fusion::timer_callback");
+  TRACE_SCOPE(amr::trace::FUSION_TIMER);
 
   auto t_start = std::chrono::steady_clock::now();
 
@@ -161,7 +162,7 @@ void FusionNode::timer_callback() {
 
   if (current_level_ != old_level) {
     m.degradation_events.fetch_add(1, std::memory_order_relaxed);
-    TRACE_EVENT("degradation_changed");
+    TRACE_EVENT(amr::trace::FUSION_DEGRADATION);
   }
 
   auto t_end = std::chrono::steady_clock::now();
