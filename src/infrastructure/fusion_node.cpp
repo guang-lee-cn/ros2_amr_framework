@@ -161,8 +161,7 @@ void FusionNode::timer_callback() {
 
   if (current_level_ != old_level) {
     m.degradation_events.fetch_add(1, std::memory_order_relaxed);
-    TRACE_EVENT("degradation_changed", "old", static_cast<int64_t>(old_level),
-                "new", static_cast<int64_t>(current_level_));
+    TRACE_EVENT("degradation_changed");
   }
 
   auto t_end = std::chrono::steady_clock::now();

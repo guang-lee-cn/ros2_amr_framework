@@ -12,6 +12,7 @@
 #include "log_event.hpp"
 #include "log_worker.hpp"
 #include "ring_buffer.hpp"
+#include "tracer.hpp"
 
 #include <memory>
 
@@ -55,10 +56,14 @@ private:
 
 } // namespace amr::observability
 
-/// Convenience macro — zero cost when logging is not initialized
+/// Convenience macro — trace_id/span_id auto-populated from TRACE_SCOPE context.
+/// Usage: LOG_OBS(INFO, "fusion", "cycle done", lat_us, obj_count);
 #define LOG_OBS(lvl, mod, msg, lat_us, extra)                                 \
     do {                                                                       \
         auto _ev = amr::observability::LogEvent::make(                         \
             amr::observability::LogLevel::lvl, mod, msg, lat_us, extra);       \
+        auto &_ctx = amr::observability::current_trace();                      \
+        _ev.trace_id = _ctx.trace_id;                                          \
+        _ev.span_id  = _ctx.span_id;                                           \
         amr::observability::Logging::push(_ev);                                \
     } while (0)

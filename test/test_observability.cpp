@@ -1,6 +1,10 @@
 /// @file test_observability.cpp — ring_buffer + metrics_registry unit tests (no ROS2)
+#include "ros2_robot_middleware/observability/log_event.hpp"
 #include "ros2_robot_middleware/observability/metrics_registry.hpp"
 #include "ros2_robot_middleware/observability/ring_buffer.hpp"
+#include "ros2_robot_middleware/observability/tracer.hpp"
+
+using namespace amr::observability;
 
 #include <gtest/gtest.h>
 
@@ -105,4 +109,56 @@ TEST(MetricsRegistryTest, Gauge_StoresValue) {
   m.degradation_level.store(3, std::memory_order_relaxed);
   EXPECT_EQ(m.degradation_level.load(std::memory_order_relaxed), 3);
   m.degradation_level.store(0, std::memory_order_relaxed);
+}
+
+// ── TraceContext ─────────────────────────────────────────────────────
+
+TEST(TraceContextTest, ScopedSpan_GeneratesTraceId) {
+  auto &ctx = amr::observability::current_trace();
+  EXPECT_EQ(ctx.trace_id, 0u);
+  EXPECT_EQ(ctx.span_id, 0u);
+
+  {
+    amr::observability::ScopedSpan span("test_root");
+    EXPECT_NE(current_trace().trace_id, 0u);   // root span got a trace_id
+    EXPECT_EQ(current_trace().span_id, 1u);      // first span
+  }
+  // Scope exit restores parent context
+  EXPECT_EQ(ctx.trace_id, 0u);
+}
+
+TEST(TraceContextTest, NestedSpans_IncrementSpanId) {
+  {
+    amr::observability::ScopedSpan root("root");
+    auto root_trace = current_trace().trace_id;
+    EXPECT_EQ(current_trace().span_id, 1u);
+
+    {
+      amr::observability::ScopedSpan child("child");
+      EXPECT_EQ(current_trace().trace_id, root_trace);  // same trace
+      EXPECT_GT(current_trace().span_id, 1u);            // child span
+    }
+    // Back to root
+    EXPECT_EQ(current_trace().span_id, 1u);
+  }
+}
+
+TEST(TraceContextTest, LogEvent_PicksUpTraceContext) {
+  {
+    amr::observability::ScopedSpan span("test");
+    auto ev = amr::observability::LogEvent::make(
+        amr::observability::LogLevel::INFO, "test_mod", "test_msg", 0, 0);
+    // LOG_OBS would auto-populate trace_id from current_trace().
+    // Here we simulate what LOG_OBS does:
+    auto &ctx = amr::observability::current_trace();
+    ev.trace_id = ctx.trace_id;
+    ev.span_id  = ctx.span_id;
+
+    EXPECT_NE(ev.trace_id, 0u);
+    EXPECT_EQ(ev.span_id, 1u);
+  }
+  // After span exits, new events get trace_id=0 (no active trace)
+  auto ev2 = amr::observability::LogEvent::make(
+      amr::observability::LogLevel::INFO, "test_mod", "no_trace", 0, 0);
+  EXPECT_EQ(ev2.trace_id, 0u);
 }

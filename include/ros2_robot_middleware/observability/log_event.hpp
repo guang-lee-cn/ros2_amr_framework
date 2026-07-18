@@ -5,6 +5,7 @@
 /// Fixed-size POD — no heap allocation on hot path.
 /// Background thread serializes to JSON for stdout/file export.
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdint>
