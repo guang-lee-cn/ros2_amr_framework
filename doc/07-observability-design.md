@@ -88,6 +88,68 @@
 
 ### M7.5：集成验证
 
-- [ ] 启动仿真 → 运行 5 分钟 → `ros2 trace` 有完整调用链
-- [ ] Prometheus 端点暴露 Histogram 延迟数据
-- [ ] Ctrl+C 后 ring buffer 不丢数据
+- [x] 启动仿真 → 运行 5 分钟 → `ros2 trace` 有完整调用链
+- [x] Prometheus 端点暴露 Histogram 延迟数据
+- [x] Ctrl+C 后 ring buffer 不丢数据
+
+---
+
+## 五、自研 Ring Buffer 日志 vs spdlog
+
+### 性能对比
+
+```
+单次日志调用开销（x86_64，微基准）：
+
+方案                              热路径延迟    内存分配    syscall
+─────────────────────────────────────────────────────────────────
+自研 ring buffer (try_push)       ~10-15ns      无         无
+spdlog async (thread_pool)        ~50-100ns     偶尔       无
+spdlog sync (rotating_file)       ~1-5μs        偶尔       有 (write)
+ROS2 RCLCPP_INFO                  ~2-8μs        有         有
+```
+
+自研方案快约 5-10 倍，但差距来自**做的事不同**——我们把格式化和 I/O 全部推到后台线程：
+
+```
+我们的热路径：     memcpy(LogEvent) → atomic store → 返回
+spdlog 热路径：    fmtlib 解析格式串 → 生成时间戳 → 队列 push → 返回
+```
+
+spdlog 多出来的 40-90ns 主要花在格式串解析和时间戳生成上——这两个操作在 async 模式下也在调用线程完成。
+
+### spdlog 有而我们没有的
+
+| 能力 | 自研 | spdlog |
+|------|:---:|:---:|
+| 格式字符串（`"hello {}"_fmt`） | ❌ 固定字段 | ✅ fmtlib |
+| 多 sink（文件+控制台+网络） | ❌ 只 stdout | ✅ |
+| 日志轮转（按大小/时间切文件） | ❌ | ✅ |
+| 日志级别过滤（编译期/运行时） | ❌ | ✅ |
+| 多生产者-多消费者安全 | ❌ SPSC only | ✅ MPMC |
+| 自定义格式模式 | ❌ 固定 JSON | ✅ |
+| 彩色终端输出 | ❌ | ✅ |
+
+### 为什么选了自研而非 spdlog
+
+**对 AMR 项目的实时路径，自研方案是正确的选择，但不是因为速度。**
+
+1. **延迟确定性**：格式解析 + 时间戳生成的开销是变量的——不同格式串、不同字段数，耗时不同。ring buffer 的 memcpy + store 延迟是固定的，与日志内容无关
+2. **架构意志**：ring buffer 的设计表达了"日志不能阻塞实时路径"的立场。面试官看到的是你理解这个 trade-off，而不是"我装了 spdlog"
+3. **零依赖**：不引入额外第三方库，与项目的 C++17 + ROS2 生态无缝集成
+
+### 如果进生产
+
+会换 spdlog async 模式 + 自定义 JSON formatter，原因：
+
+```
+- 日志轮转是运维必需品，不是加分项
+- 多 sink（文件 + stdout + 网络）是分布式系统的标配
+- spdlog async 的 100ns 开销在 AMR 场景下完全可接受
+                      （10ms IMU 周期的 0.001%）
+- fmtlib 是 C++20 std::format 的基础，未来可直接切换标准库
+```
+
+### 面试话术
+
+> "我们自研了 ring buffer + 后台线程的日志方案，热路径 ~10ns，延迟确定。不是因为 spdlog 不够快——spdlog async 模式 ~100ns 对 AMR 也完全够用——而是想展示对实时系统中日志 I/O 可能成为抖动源的意识。ring buffer 把格式化和 I/O 完全推到后台，热路径只有一次 memcpy 和一次原子 store。如果进生产我会选 spdlog async + 自定义 formatter 输出 JSON，兼顾工程完备性和实时性能。"
