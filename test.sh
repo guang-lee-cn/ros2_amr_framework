@@ -14,7 +14,14 @@
 set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"   # ros2_amr_framework
-WS_DIR="$(dirname "$SCRIPT_DIR")"             # ros2_ws root
+
+# Workspace root: CI uses GITHUB_WORKSPACE, local uses heuristic
+if [ -n "${GITHUB_WORKSPACE:-}" ]; then
+  WS_DIR="$GITHUB_WORKSPACE"
+else
+  WS_DIR="$(dirname "$SCRIPT_DIR")"           # ros2_ws root (project is in src/)
+fi
+
 BUILD_DIR="$WS_DIR/build/ros2_robot_middleware"
 COV_DIR="$SCRIPT_DIR/test/coverage"
 COV_INFO="/tmp/amr_cov.info"

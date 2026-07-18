@@ -1,78 +1,60 @@
-name: CI — Build, Test, Lint
+name: CI
 
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'doc/**'
+      - 'mdDoc/**'
+      - '.gitignore'
+      - 'LICENSE'
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - '**.md'
+      - 'doc/**'
+      - 'mdDoc/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build-and-test:
+  build-test-coverage:
     runs-on: ubuntu-24.04
-    strategy:
-      matrix:
-        ros_distro: [jazzy]
-
-    container:
-      image: ros:${{ matrix.ros_distro }}-ros-base
+    container: ros:jazzy-ros-core
 
     steps:
-      - name: Install deps
+      - name: Install system deps
         run: |
-          apt-get update && apt-get install -y --no-install-recommends \
-            ros-${{ matrix.ros_distro }}-rclcpp \
-            ros-${{ matrix.ros_distro }}-rclcpp-action \
-            ros-${{ matrix.ros_distro }}-rclcpp-lifecycle \
-            ros-${{ matrix.ros_distro }}-lifecycle-msgs \
-            ros-${{ matrix.ros_distro }}-sensor-msgs \
-            ros-${{ matrix.ros_distro }}-geometry-msgs \
-            ros-${{ matrix.ros_distro }}-ament-cmake-gtest \
-            ros-${{ matrix.ros_distro }}-ament-lint-auto \
-            ros-${{ matrix.ros_distro }}-ament-cmake-clang-tidy \
-            clang-tidy \
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends \
+            ros-jazzy-rclcpp \
+            ros-jazzy-rclcpp-action \
+            ros-jazzy-rclcpp-lifecycle \
+            ros-jazzy-rclcpp-components \
+            ros-jazzy-lifecycle-msgs \
+            ros-jazzy-sensor-msgs \
+            ros-jazzy-geometry-msgs \
+            ros-jazzy-std-msgs \
+            ros-jazzy-action-msgs \
+            ros-jazzy-ament-cmake-gtest \
+            ros-jazzy-ament-lint-auto \
+            ros-jazzy-ament-cmake-clang-tidy \
+            ros-jazzy-rosidl-default-generators \
+            python3-colcon-common-extensions \
+            lcov clang-tidy \
             && rm -rf /var/lib/apt/lists/*
 
       - uses: actions/checkout@v4
         with:
           path: src/ros2_robot_middleware
 
-      - name: Build
-        run: |
-          . /opt/ros/${{ matrix.ros_distro }}/setup.sh
-          colcon build --packages-select ros2_robot_middleware
-
-      - name: Test
-        run: |
-          . /opt/ros/${{ matrix.ros_distro }}/setup.sh
-          . install/setup.sh
-          colcon test --packages-select ros2_robot_middleware \
-            --return-code-on-test-failure
-
-      - name: Lint
-        run: |
-          . /opt/ros/${{ matrix.ros_distro }}/setup.sh
-          colcon test --packages-select ros2_robot_middleware \
-            --ctest-args -L linter || true  # non-blocking
-
-  static-analysis:
-    runs-on: ubuntu-24.04
-    container:
-      image: ros:jazzy-ros-base
-    steps:
-      - name: Install clang-tidy
-        run: apt-get update && apt-get install -y clang-tidy && rm -rf /var/lib/apt/lists/*
-
-      - uses: actions/checkout@v4
-        with:
-          path: src/ros2_robot_middleware
-
-      - name: clang-tidy
+      - name: Build + Test + Coverage
+        shell: bash
         run: |
           . /opt/ros/jazzy/setup.sh
-          colcon build --packages-select ros2_robot_middleware \
-            --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-          find build -name compile_commands.json -exec cp {} src/ros2_robot_middleware/ \;
           cd src/ros2_robot_middleware
-          clang-tidy src/*.cpp -- -Iinclude -Ibuild/ros2_robot_middleware/rosidl_generator_cpp \
-            $(pkg-config --cflags rclcpp rclcpp_lifecycle sensor_msgs std_msgs 2>/dev/null || true) \
-            2>&1 | tee clang-tidy.log
+          ./test.sh
