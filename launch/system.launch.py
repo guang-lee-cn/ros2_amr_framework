@@ -49,8 +49,8 @@ def generate_launch_description():
         ),
 
         # ── Compute Layer — fusion + decision + motor_ctrl in single process ──
-        # Zero-copy via shared_ptr between nodes (no DDS serialization overhead).
-        # MultiThreadedExecutor for parallel callback processing.
+        # Sensor types declared via ROS2 params (default: simulated).
+        # Override in config/sensors.yaml — no recompilation needed.
         Node(
             package='ros2_robot_middleware',
             executable='compute_container',

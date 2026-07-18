@@ -32,13 +32,14 @@ class SickTiM781Adapter
     : public amr::domain::sensor::SensorBase<SickTiM781Adapter,
                                              amr::domain::sensor::LidarScan> {
 public:
-    /// @param node   ROS2 node for creating the subscription
     /// @param topic  LiDAR topic (default: /scan for sick_scan2)
-    explicit SickTiM781Adapter(rclcpp::Node &node,
-                               const std::string &topic = "/scan")
-    {
+    explicit SickTiM781Adapter(const std::string &topic = "/scan")
+        : topic_(topic) {}
+
+    /// Called by FusionNode after ROS2 node is available. Creates the subscription.
+    void connect(rclcpp::Node &node) {
         sub_ = node.create_subscription<sensor_msgs::msg::LaserScan>(
-            topic, rclcpp::QoS(10).best_effort(),
+            topic_, rclcpp::QoS(10).best_effort(),
             [this](sensor_msgs::msg::LaserScan::SharedPtr msg) {
                 on_scan(msg);
             });
@@ -86,6 +87,7 @@ private:
 
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr sub_;
     sensor_msgs::msg::LaserScan::SharedPtr latest_msg_;
+    std::string topic_;
     std::mutex mutex_;
 };
 

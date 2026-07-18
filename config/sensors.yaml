@@ -1,0 +1,22 @@
+# ── Sensor configuration — edit to switch sensors, no recompilation ──
+#
+# type:  simulated      — timer-based synthetic data (WSL2/laptop)
+#        sick_tim781     — SICK TiM7xx safety LiDAR via sick_scan2
+#        velodyne_vlp16  — Velodyne VLP-16 3D LiDAR (planned)
+#        bmi088          — Bosch BMI088 IMU (planned)
+#        realsense_d435  — Intel RealSense D435 depth camera (planned)
+#
+# topic: only used when type != simulated.  Leave empty for simulated.
+
+sensors:
+  lidar:
+    type: simulated
+    topic: /scan
+
+  imu:
+    type: simulated
+    topic: /imu/data
+
+  camera:
+    type: simulated
+    topic: /camera/color/image_raw

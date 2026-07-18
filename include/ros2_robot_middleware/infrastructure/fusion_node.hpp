@@ -2,10 +2,13 @@
 #define ROS2_ROBOT_MIDDLEWARE_FUSION_NODE_HPP_
 
 #include <cstdint>
+#include <memory>
+#include <optional>
 
 #include "ros2_robot_middleware/application/perception_service.hpp"
 #include "ros2_robot_middleware/domain/perception/degradation_policy.hpp"
-#include "ros2_robot_middleware/infrastructure/sensors/simulated_sensors.hpp"
+#include "ros2_robot_middleware/domain/perception/sensor_interface.hpp"
+#include "ros2_robot_middleware/infrastructure/sensors/sensor_factory.hpp"
 #include "ros2_robot_middleware/msg/perception_objects.hpp"
 #include <std_msgs/msg/string.hpp>
 
@@ -14,9 +17,11 @@
 
 // Thin ROS2 adapter — delegates domain logic to PerceptionService.
 //
-// Sensors are accessed via HAL (SimulatedLidar/Imu/Camera).
-// PerceptionService reads sensors directly in tick() — no ROS2
-// callback wiring needed for sensor data.
+// Sensors are created in on_configure() via SensorFactory, which reads
+// sensor type from ROS2 parameters (populated from config/sensors.yaml).
+//
+// Switch simulated→real without recompilation:
+//   config/sensors.yaml:  lidar.type = simulated → sick_tim781
 
 class FusionNode : public rclcpp_lifecycle::LifecycleNode {
 public:
@@ -40,16 +45,23 @@ public:
                       const amr::domain::perception::DegradationPolicy::Config &deg_config);
 
 private:
+  void declare_sensor_parameters();
+  void create_sensors();
   void timer_callback();
   void update_heartbeat_status();
 
-  // HAL sensors (simulated — replace with real adapters for hardware)
-  amr::infrastructure::sensors::SimulatedLidar   lidar_;
-  amr::infrastructure::sensors::SimulatedImu     imu_;
-  amr::infrastructure::sensors::SimulatedCamera  camera_;
+  // Sensor parameters (from config/sensors.yaml via ROS2 params)
+  amr::infrastructure::sensors::SensorConfig lidar_cfg_;
+  amr::infrastructure::sensors::SensorConfig imu_cfg_;
+  amr::infrastructure::sensors::SensorConfig camera_cfg_;
 
-  // Domain layer — sensors injected, no templates
-  amr::application::PerceptionService perception_{lidar_, imu_, camera_};
+  // HAL sensors — created by SensorFactory in on_configure()
+  std::unique_ptr<amr::domain::sensor::ISensor<amr::domain::sensor::LidarScan>>   lidar_;
+  std::unique_ptr<amr::domain::sensor::ISensor<amr::domain::sensor::ImuData>>     imu_;
+  std::unique_ptr<amr::domain::sensor::ISensor<amr::domain::sensor::CameraFrame>> camera_;
+
+  // Domain layer — created after sensors are initialized
+  std::optional<amr::application::PerceptionService> perception_;
 
   amr::domain::perception::DegradationLevel current_level_{};
 

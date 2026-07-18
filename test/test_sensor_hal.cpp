@@ -123,7 +123,8 @@ protected:
 
 TEST_F(SickTiM781Test, SubscribeAndRead_ReturnsValidScan) {
   auto node = std::make_shared<rclcpp::Node>("test_lidar_bridge");
-  amr::infrastructure::sensors::SickTiM781Adapter adapter(*node, "/test_scan");
+  amr::infrastructure::sensors::SickTiM781Adapter adapter("/test_scan");
+  adapter.connect(*node);
 
   // Publish a scan on /test_scan
   auto pub = node->create_publisher<sensor_msgs::msg::LaserScan>(
