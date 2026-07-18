@@ -68,23 +68,23 @@
 
 ### M7.2：Traces — LTTng 全链路
 
-- [ ] 每个 Node callback 加 span tracepoint
-- [ ] Fusion → Decision → MotorCtrl 父子 span 关联（利用 LTTng 进程内上下文）
-- [ ] 跨进程 trace 通过 LTTng session ID 自动关联
+- [x] 每个 Node callback 加 span tracepoint
+- [x] Fusion → Decision → MotorCtrl 父子 span 关联（利用 LTTng 进程内上下文）
+- [x] 跨进程 trace 通过 LTTng session ID 自动关联
 
 ### M7.3：Metrics — Prometheus 指标
 
-- [ ] `amr_sensor_rate_hz` (Gauge) — 传感器实际频率
-- [ ] `amr_fusion_latency_us` (Histogram) — 融合耗时分布
-- [ ] `amr_e2e_latency_us` (Histogram) — 端到端延迟
-- [ ] `amr_degradation_level` (Gauge) — 当前降级等级
-- [ ] `amr_degradation_events_total` (Counter) — 降级事件累计
+- [x] `amr_sensor_rate_hz` (Gauge) — 传感器实际频率
+- [x] `amr_fusion_latency_us` (Histogram) — 融合耗时分布
+- [x] `amr_e2e_latency_us` (Histogram) — 端到端延迟
+- [x] `amr_degradation_level` (Gauge) — 当前降级等级
+- [x] `amr_degradation_events_total` (Counter) — 降级事件累计
 
 ### M7.4：Logs — 结构化日志
 
-- [ ] 热路径：`LOG_EVENT("fusion_cycle", {latency, object_count})` → ring buffer push
-- [ ] 后台线程：ring buffer pop → JSON serialize → stdout
-- [ ] JSON 格式包含 trace_id 用于关联
+- [x] 热路径：`LOG_EVENT("fusion_cycle", {latency, object_count})` → ring buffer push
+- [x] 后台线程：ring buffer pop → JSON serialize → stdout
+- [x] JSON 格式包含 trace_id 用于关联
 
 ### M7.5：集成验证
 

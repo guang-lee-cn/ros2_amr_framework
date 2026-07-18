@@ -87,18 +87,31 @@ install(DIRECTORY config launch
   DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
+  # Enable test-only constructors (e.g. injectable timeouts)
+  target_compile_definitions(robot_middleware_lib PRIVATE AMR_TEST_HOOKS)
+  target_compile_definitions(compute_component PRIVATE AMR_TEST_HOOKS)
+
   find_package(ament_cmake_gtest REQUIRED)
-  ament_add_gtest(test_robot_middleware
-    test/test_robot_middleware.cpp
-  )
-  target_link_libraries(test_robot_middleware robot_middleware_lib)
-  target_include_directories(test_robot_middleware PRIVATE include)
-  ament_target_dependencies(test_robot_middleware
-    rclcpp rclcpp_action rclcpp_lifecycle sensor_msgs geometry_msgs std_msgs
-  )
-  rosidl_get_typesupport_target(cpp_typesupport_target
-    ${PROJECT_NAME} "rosidl_typesupport_cpp")
-  target_link_libraries(test_robot_middleware "${cpp_typesupport_target}")
+
+  # Common configuration for all test targets
+  function(add_amr_test TEST_NAME TEST_SOURCES)
+    ament_add_gtest(${TEST_NAME} ${TEST_SOURCES})
+    target_link_libraries(${TEST_NAME} robot_middleware_lib)
+    target_include_directories(${TEST_NAME} PRIVATE include)
+    target_compile_definitions(${TEST_NAME} PRIVATE AMR_TEST_HOOKS)  # test-only instrumentation
+    ament_target_dependencies(${TEST_NAME}
+      rclcpp rclcpp_action rclcpp_lifecycle sensor_msgs geometry_msgs std_msgs
+    )
+    rosidl_get_typesupport_target(cpp_typesupport_target
+      ${PROJECT_NAME} "rosidl_typesupport_cpp")
+    target_link_libraries(${TEST_NAME} "${cpp_typesupport_target}")
+  endfunction()
+
+  add_amr_test(test_sensor_nodes   test/test_sensor_nodes.cpp)
+  add_amr_test(test_motor_ctrl     test/test_motor_ctrl.cpp)
+  add_amr_test(test_decision       test/test_decision.cpp)
+  add_amr_test(test_fusion         test/test_fusion.cpp)
+  add_amr_test(test_observability  test/test_observability.cpp)
 endif()
 
 ament_package()

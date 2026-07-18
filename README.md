@@ -76,7 +76,7 @@ ros2 launch ros2_robot_middleware simulation.launch.py
 | **M4** | Fleet Manager + multi-AMR cluster architecture |
 | **M5** | SROS2 security (keystore + per-node ACL) |
 | **M6** | GitHub Actions CI + clang-tidy |
-| **M7** | **Observability: Traces / Metrics / Logs** ← current |
+| **M7** | **Observability: Traces / Metrics / Logs** ✅ |
 
 ## Architecture Decisions (ADR)
 
