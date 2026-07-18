@@ -1,6 +1,0 @@
-# Runtime parameter reconfiguration
-string  param_name            # parameter key
-float64 value                 # new value
----
-bool    success               # true if applied
-string  message               # human-readable result

@@ -2,6 +2,9 @@
 rosidl_generator_cpp/
 
 # Build artifacts
+build/
+install/
+log/
 compile_commands.json
 doc/coverage/
 
