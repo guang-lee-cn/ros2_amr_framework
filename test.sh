@@ -47,7 +47,12 @@ colcon build \
     -DCMAKE_CXX_FLAGS="--coverage -g -O0" \
     -DCMAKE_EXE_LINKER_FLAGS="--coverage" \
   --no-warn-unused-cli \
-  2>&1 | grep -E "Finished|Failed|Summary" || true
+  2>&1 | tail -5
+BUILD_RC=${PIPESTATUS[0]}
+if [ "$BUILD_RC" -ne 0 ]; then
+  echo "BUILD FAILED (exit code $BUILD_RC) — aborting"
+  exit 1
+fi
 
 # ── [2/5] Run tests ─────────────────────────────────────────────────
 echo "[2/5] Running tests ..."

@@ -24,13 +24,14 @@ concurrency:
 jobs:
   build-test-coverage:
     runs-on: ubuntu-24.04
-    container: ros:jazzy-ros-core
+    container: ros:jazzy-ros-base
 
     steps:
       - name: Install system deps
         run: |
           apt-get update -qq
           apt-get install -y -qq --no-install-recommends \
+            build-essential \
             ros-jazzy-rclcpp \
             ros-jazzy-rclcpp-action \
             ros-jazzy-rclcpp-lifecycle \
@@ -41,11 +42,9 @@ jobs:
             ros-jazzy-std-msgs \
             ros-jazzy-action-msgs \
             ros-jazzy-ament-cmake-gtest \
-            ros-jazzy-ament-lint-auto \
-            ros-jazzy-ament-cmake-clang-tidy \
             ros-jazzy-rosidl-default-generators \
             python3-colcon-common-extensions \
-            lcov clang-tidy \
+            lcov \
             && rm -rf /var/lib/apt/lists/*
 
       - uses: actions/checkout@v4
