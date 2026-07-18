@@ -114,6 +114,7 @@ if(BUILD_TESTING)
   add_amr_test(test_observability  test/test_observability.cpp)
   add_amr_test(test_kalman_filter test/test_kalman_filter.cpp)
   add_amr_test(test_monitoring    test/test_monitoring.cpp)
+  add_amr_test(test_sensor_hal    test/test_sensor_hal.cpp)
 endif()
 
 ament_package()
