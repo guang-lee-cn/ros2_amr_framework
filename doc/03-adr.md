@@ -440,3 +440,73 @@ observability/ → 零项目内依赖（纯工具库）
 
 - 新成员需要理解 DDD 四层的职责边界（通过 README + 此 ADR 解决）
 - `infrastructure/` 这个目录名比 `nodes/` 抽象，但 DDD 术语的精确性 > 直觉性
+
+---
+
+## ADR-11: 传感器注入模式 — ISensor 接口 vs 模板参数 vs 注册表
+
+**Date:** 2026-07-18
+**Status:** Accepted
+
+### 上下文
+
+HAL 设计完成后面临选择：FusionNode 如何把传感器传给 PerceptionService？
+
+### 方案评估
+
+| 方案 | 接口变化 | 换传感器成本 | 类型安全 | 复杂度 |
+|------|---------|:---:|:---:|:---:|
+| **A: 模板参数** | `PerceptionService<LidarT, ImuT, CameraT>` | 改 3 个模板参数 + 成员声明（4 行） | 编译期 | 中 |
+| **B: ISensor 接口注入（选中）** | `PerceptionService(ISensor<LS>&, ISensor<ID>&, ISensor<CF>&)` | 改 1 行成员类型 | 编译期（constructor 参数检查） | 低 |
+| **C: SensorRegistry 注册表** | `PerceptionService(SensorRegistry&)` | 改 1 行注册调用 | 运行时 `get<T>()` 可能返回空 | 高 |
+
+### 决策：方案 B — ISensor 接口注入
+
+**3 个引用参数对 AMR 传感器组合（Lidar/IMU/Camera ± GPS）足够了。**
+
+方案 C（注册表）的核心能力是运行时热插拔——移动机器人更换传感器需要重新启动硬件驱动，不会在运行时动态增减传感器。注册表带来的"灵活"在这个场景下用不上，反而引入了运行时类型查找失败的风险。
+
+方案 A（模板参数）在只有 3 个传感器时就已经产生了 `PerceptionService<SimulatedLidar, SimulatedImu, SimulatedCamera>` 这样的长类型名。每加一个传感器，模板参数 + 1，FusionNode 的声明膨胀一轮。
+
+方案 B 的虚调用开销（一次 `read()` 约 5ns）在 100Hz 的传感器频率下可忽略。
+
+### 注入接口
+
+```cpp
+// domain/sensor_interface.hpp
+template <typename DataType>
+class ISensor {
+public:
+    virtual ~ISensor() = default;
+    virtual bool read(DataType &out) = 0;
+    virtual bool init()   { return true; }
+    virtual void shutdown() {}
+    virtual int  health() const { return health_; }
+};
+
+// PerceptionService — 依赖注入，非模板
+class PerceptionService {
+public:
+    using LidarSensor  = ISensor<LidarScan>&;
+    using ImuSensor    = ISensor<ImuData>&;
+    using CameraSensor = ISensor<CameraFrame>&;
+
+    PerceptionService(LidarSensor lidar, ImuSensor imu, CameraSensor cam);
+};
+
+// FusionNode — 注入
+amr::infrastructure::sensors::SimulatedLidar   lidar_;
+amr::infrastructure::sensors::SimulatedImu     imu_;
+amr::infrastructure::sensors::SimulatedCamera  camera_;
+PerceptionService perception_{lidar_, imu_, camera_};
+```
+
+### 为什么不是 SensorRegistry
+
+注册表模式在传感器数量 > 10 时有优势，但代价是：
+
+1. **类型安全退化为运行时检查**：`registry.get<LidarSensor>(SensorType::LIDAR)` 找不到时返回 nullptr，不如编译期参数缺失就报错
+2. **初始化顺序问题**：必须先 `register_sensor()` 再 `create_service()`，容易遗漏
+3. **代码量膨胀**：~80 行类型擦除层（`std::any` 或手写 `void*` 包装）
+
+如果未来传感器超过 5 个再评估升级。
