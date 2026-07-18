@@ -59,74 +59,84 @@ colcon test \
 
 # ── [3/5] Collect coverage ──────────────────────────────────────────
 echo "[3/5] Collecting coverage data ..."
+HAS_COVERAGE=true
+
 lcov --capture --directory "$BUILD_DIR" \
   --output-file "$COV_INFO" \
   --ignore-errors empty,unused,mismatch,gcov \
   --rc geninfo_gcov_all_blocks=0 \
-  2>&1 | tail -1
+  2>&1 | tail -1 || HAS_COVERAGE=false
 
 # ── [4/5] Filter to project code ────────────────────────────────────
-lcov --remove "$COV_INFO" \
-  --ignore-errors empty,unused \
-  '/usr/*' '/opt/*' '*/rosidl*' '*/gtest*' '*/build/*' \
-  '*/test/*' '*/main.cpp' \
-  '*/fleet_manager*' '*/compute_container*' \
-  '*/observability/log_worker*' '*/observability/log_event*' \
-  --output-file "$COV_FILTERED" \
-  2>&1 | tail -1
+if $HAS_COVERAGE && [ -s "$COV_INFO" ]; then
+  lcov --remove "$COV_INFO" \
+    --ignore-errors empty,unused \
+    '/usr/*' '/opt/*' '*/rosidl*' '*/gtest*' '*/build/*' \
+    '*/test/*' '*/main.cpp' \
+    '*/fleet_manager*' '*/compute_container*' \
+    '*/observability/log_worker*' '*/observability/log_event*' \
+    --output-file "$COV_FILTERED" \
+    2>&1 | tail -1 || HAS_COVERAGE=false
+fi
 
 # ── [5/5] Save + compare ────────────────────────────────────────────
-LINE_COV=$(lcov --summary "$COV_FILTERED" 2>&1 | grep "lines" | awk '{print $2}')
-
-# Save previous as .prev
-if [ -f "$COV_FILE" ]; then
-  cp "$COV_FILE" "$COV_PREV"
-fi
-
-# Save latest
-echo "$LINE_COV" > "$COV_FILE"
-
-# Per-file detail
-lcov --list "$COV_FILTERED" 2>&1 \
-  | grep "\.hpp\|\.cpp" | grep -v "test_" \
-  | awk '{printf "%-70s %s\n", $1, $2}' \
-  > "$COV_FULL"
-
-# ── Report ──────────────────────────────────────────────────────────
-echo ""
-echo "══════════════════════════════════════════════════"
-echo "  Line Coverage: $LINE_COV"
-echo "══════════════════════════════════════════════════"
-
-if [ -f "$COV_PREV" ]; then
-  PREV=$(cat "$COV_PREV")
-  # Calculate delta (remove % sign, compare as float via awk)
-  DELTA=$(awk "BEGIN { printf \"%+.1f\", ${LINE_COV%\%} - ${PREV%\%} }")
-  echo "  Previous:     $PREV"
-  echo "  Delta:        ${DELTA}pp"
-  if awk "BEGIN { exit (${LINE_COV%\%} >= ${PREV%\%}) ? 0 : 1 }"; then
-    echo "  Trend:        ▲ UP"
-  else
-    echo "  Trend:        ▼ DOWN"
-  fi
+if $HAS_COVERAGE && [ -s "$COV_FILTERED" ]; then
+  LINE_COV=$(lcov --summary "$COV_FILTERED" 2>&1 | grep "lines" | awk '{print $2}' || echo "N/A")
 else
-  echo "  (first run — no baseline to compare)"
+  LINE_COV="N/A"
+  echo "[coverage] lcov data unavailable — skipping coverage report"
 fi
-echo ""
 
-echo "Per-file top/bottom 5:"
-echo "--- Highest coverage ---"
-head -5 "$COV_FULL"
-echo "..."
-echo "--- Lowest coverage ---"
-tail -5 "$COV_FULL"
+if $HAS_COVERAGE && [ "$LINE_COV" != "N/A" ]; then
+  # Save previous as .prev
+  if [ -f "$COV_FILE" ]; then
+    cp "$COV_FILE" "$COV_PREV"
+  fi
 
-# ── HTML (optional) ──────────────────────────────────────────────────
-if [[ "${1:-}" == "html" ]]; then
-  OUT_DIR="$COV_DIR/html"
-  mkdir -p "$OUT_DIR"
-  genhtml "$COV_FILTERED" --output-directory "$OUT_DIR" 2>&1 | tail -1
-  echo "HTML: $OUT_DIR/index.html"
+  # Save latest
+  echo "$LINE_COV" > "$COV_FILE"
+
+  # Per-file detail
+  lcov --list "$COV_FILTERED" 2>&1 \
+    | grep "\.hpp\|\.cpp" | grep -v "test_" \
+    | awk '{printf "%-70s %s\n", $1, $2}' \
+    > "$COV_FULL" 2>/dev/null || true
+
+  # ── Report ──────────────────────────────────────────────────────────
+  echo ""
+  echo "══════════════════════════════════════════════════"
+  echo "  Line Coverage: $LINE_COV"
+  echo "══════════════════════════════════════════════════"
+
+  if [ -f "$COV_PREV" ]; then
+    PREV=$(cat "$COV_PREV")
+    DELTA=$(awk "BEGIN { printf \"%+.1f\", ${LINE_COV%\%} - ${PREV%\%} }")
+    echo "  Previous:     $PREV"
+    echo "  Delta:        ${DELTA}pp"
+    if awk "BEGIN { exit (${LINE_COV%\%} >= ${PREV%\%}) ? 0 : 1 }"; then
+      echo "  Trend:        ▲ UP"
+    else
+      echo "  Trend:        ▼ DOWN"
+    fi
+  else
+    echo "  (first run — no baseline to compare)"
+  fi
+  echo ""
+
+  if [ -f "$COV_FULL" ]; then
+    echo "Per-file top/bottom 5:"
+    head -5 "$COV_FULL"
+    echo "..."
+    tail -5 "$COV_FULL"
+  fi
+
+  # ── HTML (optional) ────────────────────────────────────────────────
+  if [[ "${1:-}" == "html" ]]; then
+    OUT_DIR="$COV_DIR/html"
+    mkdir -p "$OUT_DIR"
+    genhtml "$COV_FILTERED" --output-directory "$OUT_DIR" 2>&1 | tail -1 || true
+    echo "HTML: $OUT_DIR/index.html"
+  fi
 fi
 
 echo ""
