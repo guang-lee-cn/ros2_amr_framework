@@ -1,0 +1,219 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <title>LCOV - amr_cov_filtered.info - domain/perception/sensor_interface.hpp</title>
+  <link rel="stylesheet" type="text/css" href="../../gcov.css">
+</head>
+
+<body>
+
+          <table width="100%" border=0 cellspacing=0 cellpadding=0>
+            <tr><td class="title">LCOV - code coverage report</td></tr>
+            <tr><td class="ruler"><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+
+            <tr>
+              <td width="100%">
+                <table cellpadding=1 border=0 width="100%">
+          <tr>
+            <td width="10%" class="headerItem">Current view:</td>
+            <td width="10%" class="headerValue"><a href="../../index.html">top level</a> - <a href="index.html">domain/perception</a> - sensor_interface.hpp<span style="font-size: 80%;"> (source / <a href="sensor_interface.hpp.func-c.html">functions</a>)</span></td>
+            <td width="5%"></td>
+            <td width="5%"></td>
+            <td width="5%" class="headerCovTableHead">Coverage</td>
+            <td width="5%" class="headerCovTableHead" title="Covered + Uncovered code">Total</td>
+            <td width="5%" class="headerCovTableHead" title="Exercised code only">Hit</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test:</td>
+            <td class="headerValue">amr_cov_filtered.info</td>
+            <td></td>
+            <td class="headerItem">Lines:</td>
+            <td class="headerCovTableEntryLo">71.4&nbsp;%</td>
+            <td class="headerCovTableEntry">7</td>
+            <td class="headerCovTableEntry">5</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test Date:</td>
+            <td class="headerValue">2026-07-18 18:37:04</td>
+            <td></td>
+            <td class="headerItem">Functions:</td>
+            <td class="headerCovTableEntryLo">62.5&nbsp;%</td>
+            <td class="headerCovTableEntry">16</td>
+            <td class="headerCovTableEntry">10</td>
+          </tr>
+                  <tr><td><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr><td class="ruler"><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+          </table>
+
+          <table cellpadding=0 cellspacing=0 border=0>
+            <tr>
+              <td><br></td>
+            </tr>
+            <tr>
+              <td>
+<pre class="sourceHeading">            Line data    Source code</pre>
+<pre class="source">
+<span id="L1"><span class="lineNum">       1</span>              : #pragma once</span>
+<span id="L2"><span class="lineNum">       2</span>              : /// @file   sensor_interface.hpp</span>
+<span id="L3"><span class="lineNum">       3</span>              : /// @brief  Two-level compile-time sensor abstraction.</span>
+<span id="L4"><span class="lineNum">       4</span>              : ///</span>
+<span id="L5"><span class="lineNum">       5</span>              : /// Layer 1 — SensorBase&lt;Derived, DataType&gt; (CRTP):</span>
+<span id="L6"><span class="lineNum">       6</span>              : ///   Common contract: read(), init(), shutdown(), health().</span>
+<span id="L7"><span class="lineNum">       7</span>              : ///   Zero virtual overhead via static dispatch.</span>
+<span id="L8"><span class="lineNum">       8</span>              : ///</span>
+<span id="L9"><span class="lineNum">       9</span>              : /// Layer 2 — Concrete sensor types:</span>
+<span id="L10"><span class="lineNum">      10</span>              : ///   SimulatedLidar / SimulatedImu / SimulatedCamera (timer-based)</span>
+<span id="L11"><span class="lineNum">      11</span>              : ///   SickTiM781Adapter / Bmi088ImuAdapter / RealSenseAdapter (real drivers)</span>
+<span id="L12"><span class="lineNum">      12</span>              : ///</span>
+<span id="L13"><span class="lineNum">      13</span>              : /// Usage (PerceptionService, template policy):</span>
+<span id="L14"><span class="lineNum">      14</span>              : ///   template&lt;typename LidarT, typename ImuT, typename CameraT&gt;</span>
+<span id="L15"><span class="lineNum">      15</span>              : ///   class PerceptionService { ... };</span>
+<span id="L16"><span class="lineNum">      16</span>              : ///</span>
+<span id="L17"><span class="lineNum">      17</span>              : /// Why not virtual functions:</span>
+<span id="L18"><span class="lineNum">      18</span>              : ///   - Sensor type is known at compile time — no runtime polymorphism needed</span>
+<span id="L19"><span class="lineNum">      19</span>              : ///   - CRTP enables compiler inlining of adapter code</span>
+<span id="L20"><span class="lineNum">      20</span>              : ///   - No vtable pointer, no indirect call overhead</span>
+<span id="L21"><span class="lineNum">      21</span>              : ///</span>
+<span id="L22"><span class="lineNum">      22</span>              : /// THREAD SAFETY: Hybrid — by construction for small data, by lock for large data.</span>
+<span id="L23"><span class="lineNum">      23</span>              : ///</span>
+<span id="L24"><span class="lineNum">      24</span>              : ///   LidarScan / ImuData: value type → each read() = independent copy.</span>
+<span id="L25"><span class="lineNum">      25</span>              : ///     No shared buffer exists. Race condition impossible.</span>
+<span id="L26"><span class="lineNum">      26</span>              : ///</span>
+<span id="L27"><span class="lineNum">      27</span>              : ///   CameraFrame: caller-owns-buffer → read_impl writes into caller's heap</span>
+<span id="L28"><span class="lineNum">      28</span>              : ///     buffer under internal mutex. Caller allocates once, reuses across reads.</span>
+<span id="L29"><span class="lineNum">      29</span>              : ///     is not shared with driver thread's internal write buffer.</span>
+<span id="L30"><span class="lineNum">      30</span>              : </span>
+<span id="L31"><span class="lineNum">      31</span>              : #include &lt;cstddef&gt;</span>
+<span id="L32"><span class="lineNum">      32</span>              : #include &lt;cstdint&gt;</span>
+<span id="L33"><span class="lineNum">      33</span>              : </span>
+<span id="L34"><span class="lineNum">      34</span>              : namespace amr::domain::sensor {</span>
+<span id="L35"><span class="lineNum">      35</span>              : </span>
+<span id="L36"><span class="lineNum">      36</span>              : // ── Data types (ROS2-free) ──────────────────────────────────────────</span>
+<span id="L37"><span class="lineNum">      37</span>              : //</span>
+<span id="L38"><span class="lineNum">      38</span>              : // LidarScan / ImuData: value semantics. Stack copy per read().</span>
+<span id="L39"><span class="lineNum">      39</span>              : //   → Thread-safe by construction. No shared buffer.</span>
+<span id="L40"><span class="lineNum">      40</span>              : //   LidarScan = 8KB @ 10Hz = 80KB/s. ImuData = 12B @ 100Hz = 1.2KB/s.</span>
+<span id="L41"><span class="lineNum">      41</span>              : //</span>
+<span id="L42"><span class="lineNum">      42</span>              : // CameraFrame: caller-owns-buffer semantics. Too large for stack copy.</span>
+<span id="L43"><span class="lineNum">      43</span>              : //   Caller pre-allocates buffer (heap), passes pointer in `data`/`capacity`.</span>
+<span id="L44"><span class="lineNum">      44</span>              : //   read_impl fills it under internal lock. Caller keeps ownership.</span>
+<span id="L45"><span class="lineNum">      45</span>              : //   CameraFrame = 900KB @ 5Hz = 4.5MB/s.</span>
+<span id="L46"><span class="lineNum">      46</span>              : </span>
+<span id="L47"><span class="lineNum">      47</span>              : struct LidarScan {</span>
+<span id="L48"><span class="lineNum">      48</span>              :     static constexpr int kMaxRanges = 2048;</span>
+<span id="L49"><span class="lineNum">      49</span>              :     float ranges[kMaxRanges] = {};   // owns data — no shared pointer</span>
+<span id="L50"><span class="lineNum">      50</span>              :     size_t range_count = 0;</span>
+<span id="L51"><span class="lineNum">      51</span>              :     float  angle_min = 0.0F;</span>
+<span id="L52"><span class="lineNum">      52</span>              :     float  angle_increment = 0.0F;</span>
+<span id="L53"><span class="lineNum">      53</span>              : };</span>
+<span id="L54"><span class="lineNum">      54</span>              : </span>
+<span id="L55"><span class="lineNum">      55</span>              : struct ImuData {</span>
+<span id="L56"><span class="lineNum">      56</span>              :     float linear_accel_x = 0.0F;</span>
+<span id="L57"><span class="lineNum">      57</span>              :     float linear_accel_y = 0.0F;</span>
+<span id="L58"><span class="lineNum">      58</span>              :     float angular_vel_z = 0.0F;</span>
+<span id="L59"><span class="lineNum">      59</span>              : };</span>
+<span id="L60"><span class="lineNum">      60</span>              : </span>
+<span id="L61"><span class="lineNum">      61</span>              : // CameraFrame: too large (900KB+) for stack copy. Sensor owns the buffer,</span>
+<span id="L62"><span class="lineNum">      62</span>              : // read() returns a view (pointer valid until next read() on this sensor).</span>
+<span id="L63"><span class="lineNum">      63</span>              : //</span>
+<span id="L64"><span class="lineNum">      64</span>              : // Generation counter catches stale-pointer bugs in debug builds:</span>
+<span id="L65"><span class="lineNum">      65</span>              : //   frame.data → dangling after next read() → assert(gen == sensor_gen) fires.</span>
+<span id="L66"><span class="lineNum">      66</span>              : struct CameraFrame {</span>
+<span id="L67"><span class="lineNum">      67</span>              :     static constexpr int kMaxWidth  = 640;</span>
+<span id="L68"><span class="lineNum">      68</span>              :     static constexpr int kMaxHeight = 480;</span>
+<span id="L69"><span class="lineNum">      69</span>              :     static constexpr size_t kMaxSize = kMaxWidth * kMaxHeight * 3;  // 900KB</span>
+<span id="L70"><span class="lineNum">      70</span>              : </span>
+<span id="L71"><span class="lineNum">      71</span>              :     uint8_t *data = nullptr;     // view into sensor-owned buffer</span>
+<span id="L72"><span class="lineNum">      72</span>              :     size_t   capacity = 0;       // unused (sensor manages allocation)</span>
+<span id="L73"><span class="lineNum">      73</span>              :     size_t   size = 0;           // actual bytes available</span>
+<span id="L74"><span class="lineNum">      74</span>              :     uint16_t width = 0;</span>
+<span id="L75"><span class="lineNum">      75</span>              :     uint16_t height = 0;</span>
+<span id="L76"><span class="lineNum">      76</span>              : </span>
+<span id="L77"><span class="lineNum">      77</span>              : #ifndef NDEBUG</span>
+<span id="L78"><span class="lineNum">      78</span>              :     uint64_t generation = 0;     // incremented each read(); assert on mismatch</span>
+<span id="L79"><span class="lineNum">      79</span>              : #endif</span>
+<span id="L80"><span class="lineNum">      80</span>              : };</span>
+<span id="L81"><span class="lineNum">      81</span>              : </span>
+<span id="L82"><span class="lineNum">      82</span>              : // ── Layer 1: CRTP base (common contract) ────────────────────────────</span>
+<span id="L83"><span class="lineNum">      83</span>              : </span>
+<span id="L84"><span class="lineNum">      84</span>              : template &lt;typename Derived, typename DataType&gt;</span>
+<span id="L85"><span class="lineNum">      85</span>              : class SensorBase {</span>
+<span id="L86"><span class="lineNum">      86</span>              : public:</span>
+<span id="L87"><span class="lineNum">      87</span>              :     // ── Mandatory: data path ────────────────────────────────────────</span>
+<span id="L88"><span class="lineNum">      88</span>              : </span>
+<span id="L89"><span class="lineNum">      89</span>              :     /// Read latest sensor data. Returns false if no new data.</span>
+<span id="L90"><span class="lineNum">      90</span>              :     /// Dispatches to Derived::read_impl via CRTP — zero virtual overhead.</span>
+<span id="L91"><span class="lineNum">      91</span> <span class="tlaGNC tlaBgGNC">         308 :     bool read(DataType &amp;out) {</span></span>
+<span id="L92"><span class="lineNum">      92</span> <span class="tlaGNC">         308 :         return static_cast&lt;Derived *&gt;(this)-&gt;read_impl(out);</span></span>
+<span id="L93"><span class="lineNum">      93</span>              :     }</span>
+<span id="L94"><span class="lineNum">      94</span>              : </span>
+<span id="L95"><span class="lineNum">      95</span>              :     // ── Mandatory: health ────────────────────────────────────────────</span>
+<span id="L96"><span class="lineNum">      96</span>              : </span>
+<span id="L97"><span class="lineNum">      97</span>              :     /// Sensor health: 0=ok, 1=degraded, 2=error, 3=fatal</span>
+<span id="L98"><span class="lineNum">      98</span> <span class="tlaGNC">           7 :     int health() const { return health_; }</span></span>
+<span id="L99"><span class="lineNum">      99</span>              : </span>
+<span id="L100"><span class="lineNum">     100</span>              :     // ── Optional lifecycle hooks (real hardware only) ────────────────</span>
+<span id="L101"><span class="lineNum">     101</span>              :     //</span>
+<span id="L102"><span class="lineNum">     102</span>              :     /// Called once before first read(). Default: no-op.</span>
+<span id="L103"><span class="lineNum">     103</span>              :     /// Override in real sensor adapters for I2C open, register config, etc.</span>
+<span id="L104"><span class="lineNum">     104</span> <span class="tlaGNC">         175 :     bool init() { return static_cast&lt;Derived *&gt;(this)-&gt;init_impl(); }</span></span>
+<span id="L105"><span class="lineNum">     105</span>              : </span>
+<span id="L106"><span class="lineNum">     106</span>              :     /// Called once after last read(), before destructor. Default: no-op.</span>
+<span id="L107"><span class="lineNum">     107</span>              :     /// Override for graceful shutdown: stop sampling, close fd, power down.</span>
+<span id="L108"><span class="lineNum">     108</span> <span class="tlaUNC tlaBgUNC">           0 :     void shutdown() { static_cast&lt;Derived *&gt;(this)-&gt;shutdown_impl(); }</span></span>
+<span id="L109"><span class="lineNum">     109</span>              : </span>
+<span id="L110"><span class="lineNum">     110</span>              :     /// Default no-op implementations — simulated sensors don't need these</span>
+<span id="L111"><span class="lineNum">     111</span> <span class="tlaGNC tlaBgGNC">         175 :     bool init_impl() { return true; }</span></span>
+<span id="L112"><span class="lineNum">     112</span> <span class="tlaUNC tlaBgUNC">           0 :     void shutdown_impl() {}</span></span>
+<span id="L113"><span class="lineNum">     113</span>              : </span>
+<span id="L114"><span class="lineNum">     114</span>              : protected:</span>
+<span id="L115"><span class="lineNum">     115</span>              :     int health_ = 0;  // derived class updates this directly</span>
+<span id="L116"><span class="lineNum">     116</span>              : };</span>
+<span id="L117"><span class="lineNum">     117</span>              : </span>
+<span id="L118"><span class="lineNum">     118</span>              : // ── Layer 2: Concrete sensor type aliases ───────────────────────────</span>
+<span id="L119"><span class="lineNum">     119</span>              : </span>
+<span id="L120"><span class="lineNum">     120</span>              : // Each concrete sensor inherits SensorBase&lt;Self, DataType&gt; and implements:</span>
+<span id="L121"><span class="lineNum">     121</span>              : //   bool read_impl(DataType &amp;out);  — sensor-specific read logic</span>
+<span id="L122"><span class="lineNum">     122</span>              : //</span>
+<span id="L123"><span class="lineNum">     123</span>              : // Example (in infrastructure/sensors/):</span>
+<span id="L124"><span class="lineNum">     124</span>              : //</span>
+<span id="L125"><span class="lineNum">     125</span>              : //   class SimulatedLidar : public SensorBase&lt;SimulatedLidar, LidarScan&gt; {</span>
+<span id="L126"><span class="lineNum">     126</span>              : //       bool read_impl(LidarScan &amp;out) { ... }</span>
+<span id="L127"><span class="lineNum">     127</span>              : //   };</span>
+<span id="L128"><span class="lineNum">     128</span>              : //</span>
+<span id="L129"><span class="lineNum">     129</span>              : //   class SickTiM781Adapter : public SensorBase&lt;SickTiM781Adapter, LidarScan&gt; {</span>
+<span id="L130"><span class="lineNum">     130</span>              : //       bool read_impl(LidarScan &amp;out) { ... }</span>
+<span id="L131"><span class="lineNum">     131</span>              : //   };</span>
+<span id="L132"><span class="lineNum">     132</span>              : </span>
+<span id="L133"><span class="lineNum">     133</span>              : // Compile-time contract enforcement (C++17, SFINAE-based)</span>
+<span id="L134"><span class="lineNum">     134</span>              : //</span>
+<span id="L135"><span class="lineNum">     135</span>              : // At template instantiation site (e.g. PerceptionService constructor), use:</span>
+<span id="L136"><span class="lineNum">     136</span>              : //   static_assert(</span>
+<span id="L137"><span class="lineNum">     137</span>              : //       std::is_invocable_r_v&lt;bool, decltype(&amp;SensorT::read), SensorT&amp;, DataType&amp;&gt;,</span>
+<span id="L138"><span class="lineNum">     138</span>              : //       &quot;SensorT must implement bool read(DataType&amp;)&quot;);</span>
+<span id="L139"><span class="lineNum">     139</span>              : //</span>
+<span id="L140"><span class="lineNum">     140</span>              : // This gives a clear error message at compile time if the sensor contract</span>
+<span id="L141"><span class="lineNum">     141</span>              : // is violated — no virtual dispatch, no runtime check.</span>
+<span id="L142"><span class="lineNum">     142</span>              : </span>
+<span id="L143"><span class="lineNum">     143</span>              : } // namespace amr::domain::sensor</span>
+        </pre>
+              </td>
+            </tr>
+          </table>
+          <br>
+
+          <table width="100%" border=0 cellspacing=0 cellpadding=0>
+            <tr><td class="ruler"><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+            <tr><td class="versionInfo">Generated by: <a href="https://github.com//linux-test-project/lcov" target="_parent">LCOV version 2.0-1</a></td></tr>
+          </table>
+          <br>
+
+</body>
+</html>
