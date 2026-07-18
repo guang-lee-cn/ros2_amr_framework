@@ -1,8 +1,10 @@
 /// @file test_sensor_hal.cpp — Sensor interface + SimulatedSensors unit tests (no ROS2)
+#include "ros2_robot_middleware/infrastructure/sensors/sick_tim781_adapter.hpp"
 #include "ros2_robot_middleware/infrastructure/sensors/simulated_sensors.hpp"
 #include "ros2_robot_middleware/application/perception_service.hpp"
 
 #include <gtest/gtest.h>
+#include <rclcpp/rclcpp.hpp>
 
 using amr::infrastructure::sensors::SimulatedLidar;
 using amr::infrastructure::sensors::SimulatedImu;
@@ -114,6 +116,49 @@ TEST_F(PerceptionServiceTest, Fuse_ProducesClusters) {
   ps.tick(0.2);
 
   auto clusters = ps.fuse(TestPerception::Level::FULL);
-  // Simulated lidar has sine-wave data with nearby returns — should detect clusters
-  EXPECT_GE(clusters.size(), 0u);  // may be 0 if no near-range returns in this cycle
+  EXPECT_GE(clusters.size(), 0u);
 }
+
+// ── SickTiM781 adapter (real sensor bridge) ─────────────────────────
+
+class SickTiM781Test : public ::testing::Test {
+protected:
+  static void SetUpTestSuite() { rclcpp::init(0, nullptr); }
+  static void TearDownTestSuite() { rclcpp::shutdown(); }
+};
+
+TEST_F(SickTiM781Test, SubscribeAndRead_ReturnsValidScan) {
+  auto node = std::make_shared<rclcpp::Node>("test_lidar_bridge");
+  amr::infrastructure::sensors::SickTiM781Adapter adapter(*node, "/test_scan");
+
+  // Publish a scan on /test_scan
+  auto pub = node->create_publisher<sensor_msgs::msg::LaserScan>(
+      "/test_scan", rclcpp::QoS(10).best_effort());
+
+  auto scan = sensor_msgs::msg::LaserScan{};
+  scan.angle_min = -2.35F;
+  scan.angle_max = 2.35F;
+  scan.angle_increment = 0.01745F;
+  scan.range_min = 0.1F;
+  scan.range_max = 6.5F;
+  scan.ranges = {1.0F, 2.0F, 3.0F, 1.5F, 0.5F};
+
+  pub->publish(scan);
+
+  // Spin to deliver the message
+  rclcpp::executors::SingleThreadedExecutor exec;
+  exec.add_node(node->get_node_base_interface());
+  exec.spin_once(std::chrono::milliseconds(100));
+
+  amr::domain::sensor::LidarScan out;
+  ASSERT_TRUE(adapter.read(out));
+
+  EXPECT_EQ(out.range_count, 5u);
+  EXPECT_FLOAT_EQ(out.angle_min, -2.35F);
+  EXPECT_FLOAT_EQ(out.ranges[0], 1.0F);
+  EXPECT_FLOAT_EQ(out.ranges[4], 0.5F);
+  EXPECT_EQ(adapter.health(), 0);
+
+  exec.remove_node(node->get_node_base_interface());
+}
+
