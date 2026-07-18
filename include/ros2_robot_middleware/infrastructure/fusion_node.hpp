@@ -5,10 +5,8 @@
 
 #include "ros2_robot_middleware/application/perception_service.hpp"
 #include "ros2_robot_middleware/domain/perception/degradation_policy.hpp"
+#include "ros2_robot_middleware/infrastructure/sensors/simulated_sensors.hpp"
 #include "ros2_robot_middleware/msg/perception_objects.hpp"
-#include <sensor_msgs/msg/image.hpp>
-#include <sensor_msgs/msg/imu.hpp>
-#include <sensor_msgs/msg/laser_scan.hpp>
 #include <std_msgs/msg/string.hpp>
 
 #include <rclcpp/rclcpp.hpp>
@@ -16,19 +14,13 @@
 
 // Thin ROS2 adapter — delegates domain logic to PerceptionService.
 //
-// DDD refactoring: FusionNode is now an Infrastructure-layer adapter.
-// All perception logic (KF, clustering, degradation) lives in
-// amr::application::PerceptionService and amr::domain::perception::*.
-// FusionNode only handles DDS pub/sub + lifecycle callbacks + timer wiring.
+// Sensors are accessed via HAL (SimulatedLidar/Imu/Camera).
+// PerceptionService reads sensors directly in tick() — no ROS2
+// callback wiring needed for sensor data.
+
 class FusionNode : public rclcpp_lifecycle::LifecycleNode {
 public:
   FusionNode();
-
-  /// Construct with custom degradation timeouts.
-  /// Production: different sensor models need different timeout windows.
-  /// Test: inject short timeouts for fast degradation tests.
-  explicit FusionNode(const rclcpp::NodeOptions &options,
-                      const amr::domain::perception::DegradationPolicy::Config &deg_config);
 
   using CallbackReturn = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
 
@@ -38,40 +30,39 @@ public:
   CallbackReturn on_cleanup(const rclcpp_lifecycle::State &);
   CallbackReturn on_shutdown(const rclcpp_lifecycle::State &);
 
-  // Expose degradation for tests — delegates to domain layer
   using DegradationLevel = amr::domain::perception::DegradationLevel;
   DegradationLevel degradation_level() const;
 
   explicit FusionNode(const rclcpp::NodeOptions &options);
 
+  /// Construct with custom degradation timeouts (test hook)
+  explicit FusionNode(const rclcpp::NodeOptions &options,
+                      const amr::domain::perception::DegradationPolicy::Config &deg_config);
+
 private:
   void timer_callback();
   void update_heartbeat_status();
 
-  void lidar_callback(sensor_msgs::msg::LaserScan::SharedPtr msg);
-  void imu_callback(sensor_msgs::msg::Imu::SharedPtr msg);
-  void camera_callback(sensor_msgs::msg::Image::SharedPtr msg);
+  // HAL sensors (simulated — replace with real adapters for hardware)
+  amr::infrastructure::sensors::SimulatedLidar   lidar_;
+  amr::infrastructure::sensors::SimulatedImu     imu_;
+  amr::infrastructure::sensors::SimulatedCamera  camera_;
 
-  // Domain layer — pure C++, zero ROS2 dependency
-  amr::application::PerceptionService perception_;
+  // Domain layer — reads sensors via HAL, pure C++
+  using Perception = amr::application::PerceptionService<
+      amr::infrastructure::sensors::SimulatedLidar,
+      amr::infrastructure::sensors::SimulatedImu,
+      amr::infrastructure::sensors::SimulatedCamera>;
+  Perception perception_{lidar_, imu_, camera_};
+
   amr::domain::perception::DegradationLevel current_level_{};
 
   // ROS2 infrastructure — DDS pub/sub
   rclcpp_lifecycle::LifecyclePublisher<ros2_robot_middleware::msg::PerceptionObjects>::SharedPtr fusion_pub_;
-
-  rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr sub_lidar_;
-  rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr sub_imu_;
-  rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr sub_camera_;
-
-  sensor_msgs::msg::LaserScan::SharedPtr lidar_cache_;
-  sensor_msgs::msg::Imu::SharedPtr imu_cache_;
-  sensor_msgs::msg::Image::SharedPtr camera_cache_;
-
-  rclcpp::TimerBase::SharedPtr timer_;
-  rclcpp::Time last_tick_;
-
   rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::String>::SharedPtr heartbeat_pub_;
+  rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::TimerBase::SharedPtr heartbeat_timer_;
+  rclcpp::Time last_tick_;
 };
 
 #endif
