@@ -65,68 +65,69 @@ public:
 };
 
 // ══════════════════════════════════════════════════════════════════════
-// SimulatedCamera — caller-owns-buffer, mutex-protected fill
+// SimulatedCamera — sensor owns buffer, returns view to caller
 //
-// CameraFrame is ~900KB — too large for stack copy and too large to
-// allocate on every read(). Caller pre-allocates a heap buffer once,
-// passes pointer + capacity in CameraFrame::data/capacity.
+// CameraFrame is ~900KB — too large for stack copy. Sensor manages its
+// own internal heap buffer (single allocation). read_impl() fills it
+// under mutex and returns a view (pointer + metadata) to the caller.
 //
-// read_impl() fills it under mutex lock. Caller reuses the same buffer
-// across reads — zero heap allocation in the hot path.
+// Contract: returned pointer is valid until next read() on this sensor.
+//           Caller processes and discards — does not save the pointer.
 //
-// Contrast with Lidar/IMU:
-//   - Same CRTP interface:              sensor.read(frame) → bool
-//   - Different internal strategy:      mutex instead of value copy
-//   - Caller must pre-allocate:         frame.data = new uint8_t[capacity]
+// Caller perspective: identical to Lidar/IMU:
+//   CameraFrame frame;
+//   camera_.read(frame);        // sensor fills in frame
+//   process(frame.data, ...);   // caller uses data immediately
 // ══════════════════════════════════════════════════════════════════════
 
 class SimulatedCamera : public amr::domain::sensor::SensorBase<SimulatedCamera,
                           amr::domain::sensor::CameraFrame> {
 public:
     bool read_impl(amr::domain::sensor::CameraFrame &out) {
-        if (!out.data || out.capacity < amr::domain::sensor::CameraFrame::kMaxSize) {
-            health_ = 2;  // error: caller didn't provide adequate buffer
-            return false;
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        // Fill internal buffer under lock
+        for (size_t i = 0; i < amr::domain::sensor::CameraFrame::kMaxSize; ++i) {
+            buf_[i] = static_cast<uint8_t>(rand() % 256);
         }
 
-        std::lock_guard<std::mutex> lock(mutex_);
-        // Simulate: fill with random noise
-        for (size_t i = 0; i < amr::domain::sensor::CameraFrame::kMaxSize; ++i) {
-            out.data[i] = static_cast<uint8_t>(rand() % 256);
-        }
-        out.size   = amr::domain::sensor::CameraFrame::kMaxSize;
-        out.width  = 640;
-        out.height = 480;
+        // Return view into sensor-owned buffer (stable until next read())
+        out.data     = buf_;
+        out.size     = amr::domain::sensor::CameraFrame::kMaxSize;
+        out.width    = 640;
+        out.height   = 480;
+        out.capacity = 0;  // unused — caller doesn't need to know
         return true;
     }
 
 private:
     std::mutex mutex_;
+    uint8_t buf_[amr::domain::sensor::CameraFrame::kMaxSize]{};  // sensor owns this
 };
 
 // ══════════════════════════════════════════════════════════════════════
-// Usage in PerceptionService (same call pattern for all three):
+// Usage in PerceptionService — identical call pattern across all three:
 //
 //   template<typename LidarT, typename ImuT, typename CameraT>
 //   class PerceptionService {
 //       LidarT   &lidar_;
 //       ImuT     &imu_;
 //       CameraT  &camera_;
-//       uint8_t   camera_buf_[CameraFrame::kMaxSize];  // pre-allocated once
 //   public:
 //       void tick() {
-//           LidarScan   lidar_scan;
-//           ImuData     imu_data;
-//           CameraFrame cam_frame;
-//           cam_frame.data     = camera_buf_;            // caller provides buffer
-//           cam_frame.capacity = CameraFrame::kMaxSize;
+//           LidarScan   lidar_scan;    // 8KB on stack
+//           ImuData     imu_data;      // 12B on stack
+//           CameraFrame cam_frame;     // just metadata (ptr+size+dims)
 //
-//           lidar_.read(lidar_scan);    // value copy, ~8KB
-//           imu_.read(imu_data);        // value copy, 12B
-//           camera_.read(cam_frame);    // mutex-protected fill, 900KB
+//           lidar_.read(lidar_scan);   // value copy
+//           imu_.read(imu_data);       // value copy
+//           camera_.read(cam_frame);   // view into sensor-owned buffer
 //           // ... fuse ...
 //       }
 //   };
+//
+// Contrast: Lidar copies data (safe), Camera returns view (efficient).
+//           Both use identical read() call — zero API surface difference.
 // ══════════════════════════════════════════════════════════════════════
 
 } // namespace amr::infrastructure::sensors
