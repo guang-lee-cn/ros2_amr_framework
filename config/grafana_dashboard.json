@@ -1,0 +1,128 @@
+{
+  "dashboard": {
+    "title": "AMR Observability",
+    "uid": "amr-observability",
+    "timezone": "browser",
+    "refresh": "5s",
+    "panels": [
+      {
+        "title": "Sensor Rates (Hz)",
+        "type": "timeseries",
+        "gridPos": {"x": 0, "y": 0, "w": 8, "h": 4},
+        "targets": [
+          {"expr": "amr_sensor_rate_hz{sensor=\"imu\"}", "legendFormat": "IMU"},
+          {"expr": "amr_sensor_rate_hz{sensor=\"lidar\"}", "legendFormat": "LiDAR"},
+          {"expr": "amr_sensor_rate_hz{sensor=\"camera\"}", "legendFormat": "Camera"}
+        ],
+        "fieldConfig": {
+          "defaults": {"unit": "hertz", "min": 0}
+        }
+      },
+      {
+        "title": "Degradation Level",
+        "type": "stat",
+        "gridPos": {"x": 8, "y": 0, "w": 4, "h": 4},
+        "targets": [
+          {"expr": "amr_degradation_level"}
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {"steps": [
+              {"value": 0, "color": "green"},
+              {"value": 1, "color": "yellow"},
+              {"value": 3, "color": "red"}
+            ]},
+            "mappings": [
+              {"type": "value", "value": "0", "text": "FULL"},
+              {"type": "value", "value": "1", "text": "NO_IMU"},
+              {"type": "value", "value": "2", "text": "NO_LIDAR"},
+              {"type": "value", "value": "3", "text": "CRITICAL"},
+              {"type": "value", "value": "4", "text": "FATAL"}
+            ]
+          }
+        }
+      },
+      {
+        "title": "Object Count",
+        "type": "stat",
+        "gridPos": {"x": 12, "y": 0, "w": 4, "h": 4},
+        "targets": [
+          {"expr": "amr_object_count"}
+        ]
+      },
+      {
+        "title": "Fusion Latency P50/P99 (s)",
+        "type": "timeseries",
+        "gridPos": {"x": 0, "y": 4, "w": 12, "h": 5},
+        "targets": [
+          {"expr": "histogram_quantile(0.50, rate(amr_fusion_latency_seconds_bucket[30s]))", "legendFormat": "P50"},
+          {"expr": "histogram_quantile(0.99, rate(amr_fusion_latency_seconds_bucket[30s]))", "legendFormat": "P99"},
+          {"expr": "rate(amr_fusion_latency_seconds_sum[30s]) / rate(amr_fusion_latency_seconds_count[30s])", "legendFormat": "avg"}
+        ],
+        "fieldConfig": {
+          "defaults": {"unit": "s", "min": 0}
+        }
+      },
+      {
+        "title": "Decision Latency P50/P99 (s)",
+        "type": "timeseries",
+        "gridPos": {"x": 12, "y": 4, "w": 12, "h": 5},
+        "targets": [
+          {"expr": "histogram_quantile(0.50, rate(amr_decision_latency_seconds_bucket[30s]))", "legendFormat": "P50"},
+          {"expr": "histogram_quantile(0.99, rate(amr_decision_latency_seconds_bucket[30s]))", "legendFormat": "P99"}
+        ],
+        "fieldConfig": {
+          "defaults": {"unit": "s", "min": 0}
+        }
+      },
+      {
+        "title": "Motor Latency P50/P99 (s)",
+        "type": "timeseries",
+        "gridPos": {"x": 0, "y": 9, "w": 12, "h": 5},
+        "targets": [
+          {"expr": "histogram_quantile(0.50, rate(amr_motor_latency_seconds_bucket[30s]))", "legendFormat": "P50"},
+          {"expr": "histogram_quantile(0.99, rate(amr_motor_latency_seconds_bucket[30s]))", "legendFormat": "P99"}
+        ],
+        "fieldConfig": {
+          "defaults": {"unit": "s", "min": 0}
+        }
+      },
+      {
+        "title": "End-to-End Latency P50/P99 (s)",
+        "type": "timeseries",
+        "gridPos": {"x": 12, "y": 9, "w": 12, "h": 5},
+        "targets": [
+          {"expr": "histogram_quantile(0.50, rate(amr_e2e_latency_seconds_bucket[30s]))", "legendFormat": "P50"},
+          {"expr": "histogram_quantile(0.99, rate(amr_e2e_latency_seconds_bucket[30s]))", "legendFormat": "P99"}
+        ],
+        "fieldConfig": {
+          "defaults": {"unit": "s", "min": 0}
+        }
+      },
+      {
+        "title": "Degradation & Recovery Events",
+        "type": "timeseries",
+        "gridPos": {"x": 0, "y": 14, "w": 8, "h": 4},
+        "targets": [
+          {"expr": "rate(amr_degradation_events_total[1m])", "legendFormat": "degradation/s"},
+          {"expr": "rate(amr_recovery_events_total[1m])", "legendFormat": "recovery/s"}
+        ]
+      },
+      {
+        "title": "Fusion Cycles",
+        "type": "timeseries",
+        "gridPos": {"x": 8, "y": 14, "w": 8, "h": 4},
+        "targets": [
+          {"expr": "rate(amr_fusion_cycles_total[10s])", "legendFormat": "cycles/s"}
+        ],
+        "fieldConfig": {
+          "defaults": {"unit": "cps"}
+        }
+      }
+    ],
+    "schemaVersion": 39,
+    "tags": ["amr", "ros2", "observability"]
+  },
+  "overwrite": true,
+  "message": "AMR observability dashboard — sensor rates, latencies, degradation events"
+}

@@ -16,6 +16,7 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
+from launch.actions import ExecuteProcess
 from launch_ros.actions import Node, LifecycleNode
 
 
@@ -30,6 +31,11 @@ def generate_launch_description():
     }
 
     return LaunchDescription([
+        ExecuteProcess(
+            cmd=['rm', '-f', '/dev/shm/amr_metrics_registry'],
+            name='clean_shm',
+            shell=False,
+        ),
         # Sensor drivers (independent, per-driver enclave)
         LifecycleNode(
             package="ros2_robot_middleware",

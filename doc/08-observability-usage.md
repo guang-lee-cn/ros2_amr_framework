@@ -38,6 +38,11 @@ amr::observability::Logging::shutdown();
 # Metrics — Prometheus 端点
 curl http://localhost:9090/metrics
 
+# Grafana Dashboard（预置模板）
+# 1. 启动 Grafana，添加 Prometheus 数据源 (http://localhost:9090)
+# 2. Import → config/grafana_dashboard.json
+# 面板：传感器频率 | 四级延迟 P50/P99 | 降级事件 | 融合吞吐
+
 # Logs — JSON 行输出到 stdout
 ./compute_container 2>&1 | grep '"mod":"fusion"'
 

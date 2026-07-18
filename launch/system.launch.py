@@ -12,11 +12,19 @@ sensor drivers and health monitor remain isolated for fault containment.
 """
 
 from launch import LaunchDescription
+from launch.actions import ExecuteProcess
 from launch_ros.actions import Node, LifecycleNode
 
 
 def generate_launch_description():
     return LaunchDescription([
+        # Clean stale shared memory from previous abnormal exit
+        ExecuteProcess(
+            cmd=['rm', '-f', '/dev/shm/amr_metrics_registry'],
+            name='clean_shm',
+            shell=False,
+        ),
+
         # ── Sensor Layer — independent processes for driver fault isolation ──
         LifecycleNode(
             package='ros2_robot_middleware',
