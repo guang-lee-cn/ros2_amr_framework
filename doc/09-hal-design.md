@@ -179,7 +179,69 @@ SickTiM781Adapter lidar{*this, "/newlidar/scan"};  // 另一个 LiDAR
 
 ---
 
-## 六、迭代计划
+### 5.4 模型性能对比
+
+| 环节 | 模型 A（独立进程 + DDS） | 模型 B（SDK 嵌入） |
+|------|:---:|:---:|
+| 进程间通信 | DDS SHM ~1-5μs / UDP ~50-200μs | 无（同进程） |
+| 序列化 | CDR encode+decode ~10-50μs | 原始内存拷贝 ~1-5μs |
+| 额外延迟合计 | **~20-200μs** | **~5-10μs** |
+
+在 LiDAR 10Hz（100ms 周期）下，200μs = 0.2%。在 IMU 100Hz（10ms 周期）下，200μs = 2%。**两种场景都远低于实时预算——延迟不是选型因素。**
+
+真正决定选型的维度：
+
+| 维度 | 模型 A | 模型 B |
+|------|:---:|:---:|
+| 故障隔离 | ✅ 驱动 crash → 只杀自己的进程 | ❌ 驱动 crash → 整个管线挂 |
+| 驱动更新 | ✅ `apt upgrade` 不重新编译 | ❌ 重新编译适配器 + 重新链接 |
+| 许可证兼容 | ✅ 驱动和我们的代码无链接关系 | ⚠️ GPL 驱动的 copyleft 传染 |
+| 社区生态 | ✅ sensor_msgs，任何 ROS2 工具可订阅 | ❌ 自定义格式，脱离生态 |
+| RAM | ⚠️ 多一个进程（~50MB） | ✅ 零额外进程 |
+| CPU 核利用 | ✅ 驱动可绑独立核 | ⚠️ 共享管线进程核 |
+
+**判断标准**：传感器已有 ROS2 社区驱动 → 模型 A（零成本）。厂商只给 bare C SDK + 无社区驱动 → 模型 B（但要先查许可证）。
+
+---
+
+## 六、同行生产方案参考
+
+### 6.1 Clearpath Robotics（Husky / Warthog）
+
+[Clearpath 传感器集成文档](https://docs.clearpathrobotics.com/docs/ros/config/yaml/sensors/overview/) 揭示的模式：
+
+- **YAML 声明式传感器配置**：每个传感器驱动通过 `ros_parameters` YAML 节点参数化，不在代码中 hardcode。
+- **标准消息类型**：全部使用 `sensor_msgs/Image`、`sensor_msgs/LaserScan`、`sensor_msgs/PointCloud2` 等标准类型——不用自定义消息。
+- **驱动作为独立节点**：如 LiDAR 拆为 `velodyne_driver_node` + `velodyne_transform_node`，各独立进程。
+- **这是模型 A 的生产验证版本**——与我们当前架构思路一致。
+
+### 6.2 NAV2（ROS2 导航栈）
+
+- 全部传感器驱动使用 `rclcpp_lifecycle::LifecycleNode`——和我们一样
+- 传感器通过 Lifecycle 状态机管理（configure → activate → deactivate → cleanup）
+- 这是 ROS2 生产级系统的默认选择
+
+### 6.3 工业 AMR（MiR / Fetch / Amazon Robotics）
+
+- **安全传感器（SICK safety LiDAR）**：通常通过安全 PLC 硬件级集成，不走 ROS2。安全回路独立于计算回路——这是功能安全（ISO 13849）的要求。
+- **非安全传感器（导航用 LiDAR / 深度相机）**：使用 ROS2 驱动，独立进程，发布标准 sensor_msgs。
+- **Amazon Robotics**（推测）：驱动层使用自定义 RTOS 保证实时性，上层感知/规划用 ROS2/DDS。
+- **公有信息有限**——AMR 公司的传感器集成方案通常属商业机密。
+
+### 6.4 规律总结
+
+| 层次 | 行业做法 | 我们的对齐情况 |
+|------|---------|:---:|
+| 传感器驱动 | 独立 ROS2 进程 + LifecycleNode | ✅ 一致（模型 A） |
+| 消息类型 | 标准 sensor_msgs，不自定义 | ✅ 一致 |
+| 配置方式 | YAML 参数化，不 hardcode topic/参数 | ⚠️ 我们当前 hardcode，待改进 |
+| 安全传感器 | 安全 PLC 硬线集成，不走 ROS2 | N/A（非本项目范围） |
+| 驱动故障隔离 | 独立进程，崩溃不扩散 | ✅ 一致 |
+| 模拟 → 真实切换 | 改 launch/YAML 参数 | ✅ 我们的 HAL 支持，改一行 topic |
+
+---
+
+## 七、迭代计划
 
 ### 近期（提升面试技术深度）
 
