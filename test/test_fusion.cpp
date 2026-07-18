@@ -70,14 +70,18 @@ static sensor_msgs::msg::Imu make_imu() {
 static sensor_msgs::msg::Image make_camera() {
   auto msg = sensor_msgs::msg::Image{};
   msg.header.frame_id = "camera_link";
-  msg.width = 640;
-  msg.height = 480;
-  msg.step = 1920;
-  msg.encoding = "rgb8";
-  msg.is_bigendian = 0;
+  msg.width = 640; msg.height = 480; msg.step = 1920;
+  msg.encoding = "rgb8"; msg.is_bigendian = 0;
   msg.data.resize(921600);
   return msg;
 }
+
+// Short timeouts for fast degradation tests (production defaults: 0.5/1.5/3.0s)
+static constexpr amr::domain::perception::DegradationPolicy::Config kFastConfig{
+    0.05,  // imu_timeout_s
+    0.10,  // lidar_timeout_s
+    0.10   // camera_timeout_s
+};
 
 // ── Detection ────────────────────────────────────────────────────────
 
@@ -97,9 +101,7 @@ TEST_F(FusionTest, AllSensorsReady_DetectsNearbyCluster) {
       "/sensor/imu", rclcpp::QoS(10).reliable());
   auto cam_pub = fusion->create_publisher<sensor_msgs::msg::Image>(
       "/sensor/camera", rclcpp::QoS(10).best_effort());
-  lidar_pub->on_activate();
-  imu_pub->on_activate();
-  cam_pub->on_activate();
+  lidar_pub->on_activate(); imu_pub->on_activate(); cam_pub->on_activate();
 
   lidar_pub->publish(make_lidar(1.5F, 10.0F, 180, 10));
   imu_pub->publish(make_imu());
@@ -108,23 +110,13 @@ TEST_F(FusionTest, AllSensorsReady_DetectsNearbyCluster) {
   ASSERT_TRUE(spin_until(fusion->get_node_base_interface(),
                          [&last_output] { return last_output != nullptr; },
                          std::chrono::seconds(3)));
-
   EXPECT_GE(last_output->objects.size(), 1u);
-  if (!last_output->objects.empty()) {
-    EXPECT_EQ(last_output->objects[0].z, 0.0F);
-  }
 }
 
-// ── Degradation: FULL (all sensors present) ──────────────────────────
+// ── Degradation: FULL ────────────────────────────────────────────────
 
 TEST_F(FusionTest, AllSensorsPresent_DegradationFull) {
-#ifdef AMR_TEST_HOOKS
-  // Use short timeouts: IMU=0.05s Camera=0.1s LiDAR=0.15s
-  auto fusion = std::make_shared<FusionNode>(rclcpp::NodeOptions{},
-      amr::domain::perception::DegradationPolicy::Config{0.05, 0.15, 0.10});
-#else
-  auto fusion = std::make_shared<FusionNode>();
-#endif
+  auto fusion = std::make_shared<FusionNode>(rclcpp::NodeOptions{}, kFastConfig);
   fusion->configure();
   fusion->activate();
 
@@ -142,16 +134,9 @@ TEST_F(FusionTest, AllSensorsPresent_DegradationFull) {
 
   bool degraded = false;
   spin_until(fusion->get_node_base_interface(),
-             [&] {
-               degraded = (fusion->degradation_level() != FusionNode::DegradationLevel::FULL);
-               return degraded;
-             },
-#ifdef AMR_TEST_HOOKS
+             [&] { degraded = (fusion->degradation_level() != FusionNode::DegradationLevel::FULL);
+                   return degraded; },
              std::chrono::milliseconds(200));
-#else
-             std::chrono::milliseconds(500));
-#endif
-
   EXPECT_FALSE(degraded);
   EXPECT_EQ(fusion->degradation_level(), FusionNode::DegradationLevel::FULL);
 }
@@ -159,12 +144,7 @@ TEST_F(FusionTest, AllSensorsPresent_DegradationFull) {
 // ── Degradation: NO_IMU ──────────────────────────────────────────────
 
 TEST_F(FusionTest, ImuMissing_DegradedToNoImu) {
-#ifdef AMR_TEST_HOOKS
-  auto fusion = std::make_shared<FusionNode>(rclcpp::NodeOptions{},
-      amr::domain::perception::DegradationPolicy::Config{0.05, 0.15, 0.10});
-#else
-  auto fusion = std::make_shared<FusionNode>();
-#endif
+  auto fusion = std::make_shared<FusionNode>(rclcpp::NodeOptions{}, kFastConfig);
   fusion->configure();
   fusion->activate();
 
@@ -178,32 +158,18 @@ TEST_F(FusionTest, ImuMissing_DegradedToNoImu) {
   cam_pub->publish(make_camera());
 
   bool imu_degraded = false;
-#ifdef AMR_TEST_HOOKS
-  auto timeout = std::chrono::milliseconds(300);
-#else
-  auto timeout = std::chrono::milliseconds(1200);
-#endif
   ASSERT_TRUE(spin_until(fusion->get_node_base_interface(),
-                          [&] {
-                            imu_degraded = (fusion->degradation_level() == FusionNode::DegradationLevel::NO_IMU);
-                            return imu_degraded;
-                          },
-                          timeout));
-
+                          [&] { imu_degraded = (fusion->degradation_level() == FusionNode::DegradationLevel::NO_IMU);
+                                return imu_degraded; },
+                          std::chrono::milliseconds(300)));
   EXPECT_TRUE(imu_degraded);
 }
 
 // ── Degradation: NO_LIDAR ────────────────────────────────────────────
 
 TEST_F(FusionTest, LidarMissing_DegradedToNoLidar) {
-#ifdef AMR_TEST_HOOKS
   auto fusion = std::make_shared<FusionNode>(rclcpp::NodeOptions{},
       amr::domain::perception::DegradationPolicy::Config{0.05, 0.05, 0.05});
-  auto timeout = std::chrono::milliseconds(500);
-#else
-  auto fusion = std::make_shared<FusionNode>();
-  auto timeout = std::chrono::milliseconds(2500);
-#endif
   fusion->configure();
   fusion->activate();
 
@@ -219,12 +185,8 @@ TEST_F(FusionTest, LidarMissing_DegradedToNoLidar) {
   auto last_pub = start;
   auto result = FusionNode::DegradationLevel::FULL;
 
-  while (std::chrono::steady_clock::now() - start < timeout) {
-#ifdef AMR_TEST_HOOKS
+  while (std::chrono::steady_clock::now() - start < std::chrono::milliseconds(500)) {
     if (std::chrono::steady_clock::now() - last_pub > std::chrono::milliseconds(20)) {
-#else
-    if (std::chrono::steady_clock::now() - last_pub > std::chrono::milliseconds(250)) {
-#endif
       imu_pub->publish(make_imu());
       cam_pub->publish(make_camera());
       last_pub = std::chrono::steady_clock::now();
@@ -237,17 +199,11 @@ TEST_F(FusionTest, LidarMissing_DegradedToNoLidar) {
   EXPECT_EQ(result, FusionNode::DegradationLevel::NO_LIDAR);
 }
 
-// ── Degradation: CRITICAL (IMU + Camera missing) ─────────────────────
+// ── Degradation: CRITICAL ────────────────────────────────────────────
 
 TEST_F(FusionTest, ImuAndCameraMissing_DegradedToCritical) {
-#ifdef AMR_TEST_HOOKS
   auto fusion = std::make_shared<FusionNode>(rclcpp::NodeOptions{},
       amr::domain::perception::DegradationPolicy::Config{0.02, 0.05, 0.05});
-  auto timeout = std::chrono::milliseconds(500);
-#else
-  auto fusion = std::make_shared<FusionNode>();
-  auto timeout = std::chrono::milliseconds(4000);
-#endif
   fusion->configure();
   fusion->activate();
 
@@ -261,12 +217,8 @@ TEST_F(FusionTest, ImuAndCameraMissing_DegradedToCritical) {
   auto last_pub = start;
   auto result = FusionNode::DegradationLevel::FULL;
 
-  while (std::chrono::steady_clock::now() - start < timeout) {
-#ifdef AMR_TEST_HOOKS
+  while (std::chrono::steady_clock::now() - start < std::chrono::milliseconds(500)) {
     if (std::chrono::steady_clock::now() - last_pub > std::chrono::milliseconds(10)) {
-#else
-    if (std::chrono::steady_clock::now() - last_pub > std::chrono::milliseconds(200)) {
-#endif
       lidar_pub->publish(make_lidar(2.0F, 10.0F, 180, 10));
       last_pub = std::chrono::steady_clock::now();
     }

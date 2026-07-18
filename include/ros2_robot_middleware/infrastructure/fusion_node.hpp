@@ -24,12 +24,11 @@ class FusionNode : public rclcpp_lifecycle::LifecycleNode {
 public:
   FusionNode();
 
-#ifdef AMR_TEST_HOOKS
-  /// Test-only: construct with custom degradation timeouts for faster tests.
-  /// NOT compiled into release builds.
+  /// Construct with custom degradation timeouts.
+  /// Production: different sensor models need different timeout windows.
+  /// Test: inject short timeouts for fast degradation tests.
   explicit FusionNode(const rclcpp::NodeOptions &options,
                       const amr::domain::perception::DegradationPolicy::Config &deg_config);
-#endif
 
   using CallbackReturn = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
 

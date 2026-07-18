@@ -87,9 +87,9 @@ install(DIRECTORY config launch
   DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
-  # Enable test-only constructors (e.g. injectable timeouts)
-  target_compile_definitions(robot_middleware_lib PRIVATE AMR_TEST_HOOKS)
-  target_compile_definitions(compute_component PRIVATE AMR_TEST_HOOKS)
+  # Enable AMR_TEST_ONLY() macro in library code for test-only method implementations
+  target_compile_definitions(robot_middleware_lib PUBLIC AMR_TEST_HOOKS)
+  target_compile_definitions(compute_component PUBLIC AMR_TEST_HOOKS)
 
   find_package(ament_cmake_gtest REQUIRED)
 
@@ -98,7 +98,7 @@ if(BUILD_TESTING)
     ament_add_gtest(${TEST_NAME} ${TEST_SOURCES})
     target_link_libraries(${TEST_NAME} robot_middleware_lib)
     target_include_directories(${TEST_NAME} PRIVATE include)
-    target_compile_definitions(${TEST_NAME} PRIVATE AMR_TEST_HOOKS)  # test-only instrumentation
+    target_compile_definitions(${TEST_NAME} PRIVATE AMR_TEST_HOOKS)  # enables AMR_TEST_ONLY() macro
     ament_target_dependencies(${TEST_NAME}
       rclcpp rclcpp_action rclcpp_lifecycle sensor_msgs geometry_msgs std_msgs
     )

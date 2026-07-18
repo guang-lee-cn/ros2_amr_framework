@@ -16,14 +16,12 @@ FusionNode::FusionNode(const rclcpp::NodeOptions &options)
   : rclcpp_lifecycle::LifecycleNode("fusion", options) {
 }
 
-#ifdef AMR_TEST_HOOKS
 FusionNode::FusionNode(const rclcpp::NodeOptions &options,
                        const amr::domain::perception::DegradationPolicy::Config &deg_config)
   : rclcpp_lifecycle::LifecycleNode("fusion", options),
     perception_(amr::domain::perception::ClusterDetector::Params{}, deg_config)
 {
 }
-#endif
 
 // ── Lifecycle callbacks ──────────────────────────────────────────────────────
 
