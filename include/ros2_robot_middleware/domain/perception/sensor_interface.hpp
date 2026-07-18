@@ -58,20 +58,25 @@ struct ImuData {
     float angular_vel_z = 0.0F;
 };
 
-// CameraFrame: too large (900KB+) for stack copy. Instead, read_impl
-// writes into a caller-provided buffer. Ownership stays with the caller.
-// Thread safety: caller allocates buffer once, read_impl fills it under
-// internal mutex lock. No shared pointers between threads.
+// CameraFrame: too large (900KB+) for stack copy. Sensor owns the buffer,
+// read() returns a view (pointer valid until next read() on this sensor).
+//
+// Generation counter catches stale-pointer bugs in debug builds:
+//   frame.data → dangling after next read() → assert(gen == sensor_gen) fires.
 struct CameraFrame {
     static constexpr int kMaxWidth  = 640;
     static constexpr int kMaxHeight = 480;
     static constexpr size_t kMaxSize = kMaxWidth * kMaxHeight * 3;  // 900KB
 
-    uint8_t *data = nullptr;     // points to caller-owned buffer
-    size_t   capacity = 0;       // size of caller's buffer
-    size_t   size = 0;           // actual bytes written by read_impl
+    uint8_t *data = nullptr;     // view into sensor-owned buffer
+    size_t   capacity = 0;       // unused (sensor manages allocation)
+    size_t   size = 0;           // actual bytes available
     uint16_t width = 0;
     uint16_t height = 0;
+
+#ifndef NDEBUG
+    uint64_t generation = 0;     // incremented each read(); assert on mismatch
+#endif
 };
 
 // ── Layer 1: CRTP base (common contract) ────────────────────────────

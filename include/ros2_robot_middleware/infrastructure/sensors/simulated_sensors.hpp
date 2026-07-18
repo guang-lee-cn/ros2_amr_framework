@@ -97,12 +97,18 @@ public:
         out.width    = 640;
         out.height   = 480;
         out.capacity = 0;  // unused — caller doesn't need to know
+#ifndef NDEBUG
+        out.generation = ++gen_;
+#endif
         return true;
     }
 
 private:
     std::mutex mutex_;
     uint8_t buf_[amr::domain::sensor::CameraFrame::kMaxSize]{};  // sensor owns this
+#ifndef NDEBUG
+    uint64_t gen_ = 0;  // incremented each read(), syncs with CameraFrame::generation
+#endif
 };
 
 // ══════════════════════════════════════════════════════════════════════
