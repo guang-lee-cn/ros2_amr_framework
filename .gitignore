@@ -17,4 +17,4 @@ mdDoc/
 coverage.info
 *.gcda
 *.gcno
-test/coverage/
+test/coverage/html/
