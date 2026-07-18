@@ -1,23 +1,29 @@
 #pragma once
 /// @file   sensor_interface.hpp
-/// @brief  Hardware abstraction layer — sensor interfaces for domain layer.
+/// @brief  Two-level compile-time sensor abstraction.
 ///
-/// Each sensor type defines a pure-virtual interface. Domain code depends
-/// only on these interfaces, never on ROS2 message types or driver SDKs.
+/// Layer 1 — SensorBase<Derived, DataType> (CRTP):
+///   Common contract: read(), health(). Zero virtual overhead via static dispatch.
 ///
-/// Infrastructure layer (infrastructure/sensors/) provides adapters that
-/// translate real sensor data (sensor_msgs, driver-specific types) into
-/// these domain types.
+/// Layer 2 — Concrete sensor types:
+///   SimulatedLidar / SimulatedImu / SimulatedCamera (timer-based)
+///   SickTiM781Adapter / Bmi088ImuAdapter / RealSenseAdapter (real drivers)
 ///
-/// Testing: mock implementations inject synthetic data without launching
-/// ROS2 nodes — enabling fast, deterministic domain-layer unit tests.
+/// Usage (PerceptionService, template policy):
+///   template<typename LidarT, typename ImuT, typename CameraT>
+///   class PerceptionService { ... };
+///
+/// Why not virtual functions:
+///   - Sensor type is known at compile time — no runtime polymorphism needed
+///   - CRTP enables compiler inlining of adapter code
+///   - No vtable pointer, no indirect call overhead
 
 #include <cstddef>
 #include <cstdint>
 
 namespace amr::domain::sensor {
 
-// ── Raw sensor data types (ROS2-free) ───────────────────────────────
+// ── Data types (ROS2-free, zero-copy) ───────────────────────────────
 
 struct LidarScan {
     static constexpr int kMaxRanges = 2048;
@@ -42,41 +48,47 @@ struct CameraFrame {
     uint16_t       height = 0;
 };
 
-// ── Abstract sensor interfaces ───────────────────────────────────────
+// ── Layer 1: CRTP base (common contract) ────────────────────────────
 
-class ILidarSensor {
+template <typename Derived, typename DataType>
+class SensorBase {
 public:
-    virtual ~ILidarSensor() = default;
+    /// Read latest sensor data. Returns false if no new data.
+    /// Dispatches to Derived::read_impl via CRTP — zero virtual overhead.
+    bool read(DataType &out) {
+        return static_cast<Derived *>(this)->read_impl(out);
+    }
 
-    /// Read latest scan. Returns true if new data available.
-    /// Thread-safe — may be called from real-time callback.
-    virtual bool read(LidarScan &out) = 0;
-
-    /// Sensor health status (0=ok, >0=degraded)
-    virtual int health() const { return health_; }
+    /// Sensor health: 0=ok, >0=degraded
+    int health() const { return health_; }
 
 protected:
-    int health_ = 0;
+    int health_ = 0;  // derived class updates this directly
 };
 
-class IImuSensor {
-public:
-    virtual ~IImuSensor() = default;
-    virtual bool read(ImuData &out) = 0;
-    virtual int health() const { return health_; }
+// ── Layer 2: Concrete sensor type aliases ───────────────────────────
 
-protected:
-    int health_ = 0;
-};
+// Each concrete sensor inherits SensorBase<Self, DataType> and implements:
+//   bool read_impl(DataType &out);  — sensor-specific read logic
+//
+// Example (in infrastructure/sensors/):
+//
+//   class SimulatedLidar : public SensorBase<SimulatedLidar, LidarScan> {
+//       bool read_impl(LidarScan &out) { ... }
+//   };
+//
+//   class SickTiM781Adapter : public SensorBase<SickTiM781Adapter, LidarScan> {
+//       bool read_impl(LidarScan &out) { ... }
+//   };
 
-class ICameraSensor {
-public:
-    virtual ~ICameraSensor() = default;
-    virtual bool read(CameraFrame &out) = 0;
-    virtual int health() const { return health_; }
-
-protected:
-    int health_ = 0;
-};
+// Compile-time contract enforcement (C++17, SFINAE-based)
+//
+// At template instantiation site (e.g. PerceptionService constructor), use:
+//   static_assert(
+//       std::is_invocable_r_v<bool, decltype(&SensorT::read), SensorT&, DataType&>,
+//       "SensorT must implement bool read(DataType&)");
+//
+// This gives a clear error message at compile time if the sensor contract
+// is violated — no virtual dispatch, no runtime check.
 
 } // namespace amr::domain::sensor
