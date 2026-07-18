@@ -354,3 +354,69 @@ HealthMonitor 需要对外暴露节点健康数据，供运维系统消费。
 - robot_localization: [https://github.com/cra-ros-pkg/robot_localization](https://github.com/cra-ros-pkg/robot_localization)
 - FusionCore: [https://github.com/manankharwar/fusioncore](https://github.com/manankharwar/fusioncore)
 - Moore & Stouch (2014): "A Generalized Extended Kalman Filter Implementation for the Robot Operating System"
+
+---
+
+## ADR-10: DDD 目录分层 vs ROS2 包结构
+
+**Date:** 2026-07-18
+**Status:** Accepted
+
+### 上下文
+
+项目从单层架构（业务逻辑混在 ROS2 回调中）演进到 DDD 四层架构，需要决定代码的物理目录组织方式。
+
+### 决策
+
+**1. DDD 四层在 `include/` 和 `src/` 内部实现，不体现在顶层包目录。**
+
+```
+ros2_amr_framework/              ← ROS2 package root（ament_cmake 决定结构）
+├── include/ros2_robot_middleware/
+│   ├── domain/                  ← 纯业务规则，零 ROS2 依赖
+│   │   ├── perception/          ← KF、聚类、降级策略
+│   │   ├── planning/            ← 目标选择、抢占策略
+│   │   ├── execution/           ← 轨迹插值
+│   │   └── monitoring/          ← 心跳分析、恢复策略
+│   ├── application/             ← 用例编排，依赖 domain
+│   ├── infrastructure/          ← ROS2 适配器（唯一可 #include <rclcpp> 的层）
+│   └── observability/           ← 横切关注点（traces/metrics/logs）
+├── src/
+│   └── infrastructure/          ← 源文件镜像 header 结构
+├── launch/ config/ msg/ srv/ action/  ← ROS2 框架要求
+├── test/ doc/ worlds/ toolkit/ .github/  ← 工程支撑
+├── CMakeLists.txt
+└── package.xml
+```
+
+**2. `src/` 只有 `infrastructure/` 子目录。**
+
+domain 和 application 是 header-only 模板库，业务逻辑在 `.hpp` 中内联实现。只有 infrastructure 层有 `.cpp` 源文件，因此 `src/` 仅需镜像 `infrastructure/`。
+
+**3. observability 作为顶级横切目录，不归入 infrastructure。**
+
+observability 只被 infrastructure 层引用（domain 和 application 不依赖它），依赖方向正确。作为独立目录比埋在 `infrastructure/` 下更容易被开发者发现。
+
+### 替代方案
+
+| 方案 | 优点 | 为什么没选 |
+|------|------|-----------|
+| DDD 四层体现为独立 ROS2 package | 包级隔离，A 不能依赖 B | 8 个 package 的 CMake 管理复杂度远超收益，且编译时长增加 |
+| `observability/` 归入 `infrastructure/` | DDD 纯粹 | 目录嵌套过深，开发者查找成本高 |
+| `src/` 按 DDD 层域名建立空目录占位 | 镜像一致 | 空目录没有价值，header-only 的层不需要 `src/` 对应 |
+
+### 依赖规则（编译期强制）
+
+```
+domain/        → 不依赖任何 ROS2 头文件
+application/   → 只依赖 domain/
+infrastructure/→ 依赖 domain/ + application/ + rclcpp
+observability/ → 零项目内依赖（纯工具库）
+```
+
+违反此规则的代码在 `colcon build` 时即可发现——缺少对应 `find_package` 或 `#include` 路径无法解析。
+
+### 代价
+
+- 新成员需要理解 DDD 四层的职责边界（通过 README + 此 ADR 解决）
+- `infrastructure/` 这个目录名比 `nodes/` 抽象，但 DDD 术语的精确性 > 直觉性

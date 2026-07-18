@@ -125,19 +125,31 @@ See [doc/03-adr.md](doc/03-adr.md) for full context, alternatives considered, an
 ## Project Structure
 
 ```
-ros2_robot_middleware/
+ros2_amr_framework/
 ├── include/ros2_robot_middleware/
-│   ├── lidar_node.hpp             # Sensor layer (sensor_msgs)
-│   ├── imu_node.hpp
-│   ├── camera_node.hpp
-│   ├── fusion_node.hpp            # Fusion + Kalman Filter + degradation
-│   ├── decision_node.hpp          # Decision + preemption + retry
-│   ├── motor_ctrl_node.hpp        # Actuation Action Server
-│   ├── health_monitor_node.hpp    # Health monitoring + watchdog recovery
-│   ├── fleet_manager_node.hpp     # Multi-AMR fleet orchestration
-│   ├── kalman_filter.hpp          # Standalone 2D Kalman Filter library
-│   └── aliases.hpp                # Type aliases
-├── src/                            # 8 node .cpp + 8 main.cpp
+│   ├── domain/                     # Pure business logic — zero ROS2 dependency
+│   │   ├── perception/             #   KF, clustering, degradation policy
+│   │   ├── planning/               #   Target selection, preemption
+│   │   ├── execution/              #   Trajectory interpolation
+│   │   └── monitoring/             #   Heartbeat analysis, recovery policy
+│   ├── application/                # Use case orchestration — depends on domain
+│   │   ├── perception_service.hpp
+│   │   ├── planning_service.hpp
+│   │   ├── execution_service.hpp
+│   │   └── monitoring_service.hpp
+│   ├── infrastructure/             # ROS2 adapters — only layer allowed to depend on rclcpp
+│   │   ├── lidar_node.hpp
+│   │   ├── imu_node.hpp
+│   │   ├── camera_node.hpp
+│   │   ├── fusion_node.hpp
+│   │   ├── decision_node.hpp
+│   │   ├── motor_ctrl_node.hpp
+│   │   ├── health_monitor_node.hpp
+│   │   ├── fleet_manager_node.hpp
+│   │   └── aliases.hpp
+│   └── observability/              # Cross-cutting — traces, metrics, logs
+├── src/
+│   └── infrastructure/             # Mirrors include structure (domain/app are header-only)
 ├── test/test_robot_middleware.cpp  # 13 GWT integration tests
 ├── msg/                            # Custom messages
 ├── srv/SetParam.srv
@@ -156,7 +168,7 @@ ros2_robot_middleware/
 │   └── system_secure.launch.py     # SROS2 encrypted launch
 ├── .github/workflows/ci.yml        # CI/CD pipeline
 ├── .clang-tidy                     # Static analysis configuration
-├── doc/                            # PRD, design docs, ADR, workflow logs
+├── doc/                            # Design docs, ADR, observability design
 └── toolkit/                        # Docker/Podman multi-stage build
 ```
 
