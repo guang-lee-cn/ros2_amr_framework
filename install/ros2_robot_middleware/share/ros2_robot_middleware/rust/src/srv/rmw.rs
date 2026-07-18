@@ -1,0 +1,181 @@
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
+
+
+#[link(name = "ros2_robot_middleware__rosidl_typesupport_c")]
+extern "C" {
+    fn rosidl_typesupport_c__get_message_type_support_handle__ros2_robot_middleware__srv__SetParam_Request() -> *const std::ffi::c_void;
+}
+
+#[link(name = "ros2_robot_middleware__rosidl_generator_c")]
+extern "C" {
+    fn ros2_robot_middleware__srv__SetParam_Request__init(msg: *mut SetParam_Request) -> bool;
+    fn ros2_robot_middleware__srv__SetParam_Request__Sequence__init(seq: *mut rosidl_runtime_rs::Sequence<SetParam_Request>, size: usize) -> bool;
+    fn ros2_robot_middleware__srv__SetParam_Request__Sequence__fini(seq: *mut rosidl_runtime_rs::Sequence<SetParam_Request>);
+    fn ros2_robot_middleware__srv__SetParam_Request__Sequence__copy(in_seq: &rosidl_runtime_rs::Sequence<SetParam_Request>, out_seq: *mut rosidl_runtime_rs::Sequence<SetParam_Request>) -> bool;
+}
+
+// Corresponds to ros2_robot_middleware__srv__SetParam_Request
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+
+
+// This struct is not documented.
+#[allow(missing_docs)]
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
+pub struct SetParam_Request {
+    /// parameter key
+    pub param_name: rosidl_runtime_rs::String,
+
+    /// new value
+    pub value: f64,
+
+}
+
+
+
+impl Default for SetParam_Request {
+  fn default() -> Self {
+    unsafe {
+      let mut msg = std::mem::zeroed();
+      if !ros2_robot_middleware__srv__SetParam_Request__init(&mut msg as *mut _) {
+        panic!("Call to ros2_robot_middleware__srv__SetParam_Request__init() failed");
+      }
+      msg
+    }
+  }
+}
+
+impl rosidl_runtime_rs::SequenceAlloc for SetParam_Request {
+  fn sequence_init(seq: &mut rosidl_runtime_rs::Sequence<Self>, size: usize) -> bool {
+    // SAFETY: This is safe since the pointer is guaranteed to be valid/initialized.
+    unsafe { ros2_robot_middleware__srv__SetParam_Request__Sequence__init(seq as *mut _, size) }
+  }
+  fn sequence_fini(seq: &mut rosidl_runtime_rs::Sequence<Self>) {
+    // SAFETY: This is safe since the pointer is guaranteed to be valid/initialized.
+    unsafe { ros2_robot_middleware__srv__SetParam_Request__Sequence__fini(seq as *mut _) }
+  }
+  fn sequence_copy(in_seq: &rosidl_runtime_rs::Sequence<Self>, out_seq: &mut rosidl_runtime_rs::Sequence<Self>) -> bool {
+    // SAFETY: This is safe since the pointer is guaranteed to be valid/initialized.
+    unsafe { ros2_robot_middleware__srv__SetParam_Request__Sequence__copy(in_seq, out_seq as *mut _) }
+  }
+}
+
+impl rosidl_runtime_rs::Message for SetParam_Request {
+  type RmwMsg = Self;
+  fn into_rmw_message(msg_cow: std::borrow::Cow<'_, Self>) -> std::borrow::Cow<'_, Self::RmwMsg> { msg_cow }
+  fn from_rmw_message(msg: Self::RmwMsg) -> Self { msg }
+}
+
+impl rosidl_runtime_rs::RmwMessage for SetParam_Request where Self: Sized {
+  const TYPE_NAME: &'static str = "ros2_robot_middleware/srv/SetParam_Request";
+  fn get_type_support() -> *const std::ffi::c_void {
+    // SAFETY: No preconditions for this function.
+    unsafe { rosidl_typesupport_c__get_message_type_support_handle__ros2_robot_middleware__srv__SetParam_Request() }
+  }
+}
+
+
+#[link(name = "ros2_robot_middleware__rosidl_typesupport_c")]
+extern "C" {
+    fn rosidl_typesupport_c__get_message_type_support_handle__ros2_robot_middleware__srv__SetParam_Response() -> *const std::ffi::c_void;
+}
+
+#[link(name = "ros2_robot_middleware__rosidl_generator_c")]
+extern "C" {
+    fn ros2_robot_middleware__srv__SetParam_Response__init(msg: *mut SetParam_Response) -> bool;
+    fn ros2_robot_middleware__srv__SetParam_Response__Sequence__init(seq: *mut rosidl_runtime_rs::Sequence<SetParam_Response>, size: usize) -> bool;
+    fn ros2_robot_middleware__srv__SetParam_Response__Sequence__fini(seq: *mut rosidl_runtime_rs::Sequence<SetParam_Response>);
+    fn ros2_robot_middleware__srv__SetParam_Response__Sequence__copy(in_seq: &rosidl_runtime_rs::Sequence<SetParam_Response>, out_seq: *mut rosidl_runtime_rs::Sequence<SetParam_Response>) -> bool;
+}
+
+// Corresponds to ros2_robot_middleware__srv__SetParam_Response
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+
+
+// This struct is not documented.
+#[allow(missing_docs)]
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
+pub struct SetParam_Response {
+    /// true if applied
+    pub success: bool,
+
+    /// human-readable result
+    pub message: rosidl_runtime_rs::String,
+
+}
+
+
+
+impl Default for SetParam_Response {
+  fn default() -> Self {
+    unsafe {
+      let mut msg = std::mem::zeroed();
+      if !ros2_robot_middleware__srv__SetParam_Response__init(&mut msg as *mut _) {
+        panic!("Call to ros2_robot_middleware__srv__SetParam_Response__init() failed");
+      }
+      msg
+    }
+  }
+}
+
+impl rosidl_runtime_rs::SequenceAlloc for SetParam_Response {
+  fn sequence_init(seq: &mut rosidl_runtime_rs::Sequence<Self>, size: usize) -> bool {
+    // SAFETY: This is safe since the pointer is guaranteed to be valid/initialized.
+    unsafe { ros2_robot_middleware__srv__SetParam_Response__Sequence__init(seq as *mut _, size) }
+  }
+  fn sequence_fini(seq: &mut rosidl_runtime_rs::Sequence<Self>) {
+    // SAFETY: This is safe since the pointer is guaranteed to be valid/initialized.
+    unsafe { ros2_robot_middleware__srv__SetParam_Response__Sequence__fini(seq as *mut _) }
+  }
+  fn sequence_copy(in_seq: &rosidl_runtime_rs::Sequence<Self>, out_seq: &mut rosidl_runtime_rs::Sequence<Self>) -> bool {
+    // SAFETY: This is safe since the pointer is guaranteed to be valid/initialized.
+    unsafe { ros2_robot_middleware__srv__SetParam_Response__Sequence__copy(in_seq, out_seq as *mut _) }
+  }
+}
+
+impl rosidl_runtime_rs::Message for SetParam_Response {
+  type RmwMsg = Self;
+  fn into_rmw_message(msg_cow: std::borrow::Cow<'_, Self>) -> std::borrow::Cow<'_, Self::RmwMsg> { msg_cow }
+  fn from_rmw_message(msg: Self::RmwMsg) -> Self { msg }
+}
+
+impl rosidl_runtime_rs::RmwMessage for SetParam_Response where Self: Sized {
+  const TYPE_NAME: &'static str = "ros2_robot_middleware/srv/SetParam_Response";
+  fn get_type_support() -> *const std::ffi::c_void {
+    // SAFETY: No preconditions for this function.
+    unsafe { rosidl_typesupport_c__get_message_type_support_handle__ros2_robot_middleware__srv__SetParam_Response() }
+  }
+}
+
+
+
+
+
+
+#[link(name = "ros2_robot_middleware__rosidl_typesupport_c")]
+extern "C" {
+    fn rosidl_typesupport_c__get_service_type_support_handle__ros2_robot_middleware__srv__SetParam() -> *const std::ffi::c_void;
+}
+
+// Corresponds to ros2_robot_middleware__srv__SetParam
+#[allow(missing_docs, non_camel_case_types)]
+pub struct SetParam;
+
+impl rosidl_runtime_rs::Service for SetParam {
+    type Request = SetParam_Request;
+    type Response = SetParam_Response;
+
+    fn get_type_support() -> *const std::ffi::c_void {
+        // SAFETY: No preconditions for this function.
+        unsafe { rosidl_typesupport_c__get_service_type_support_handle__ros2_robot_middleware__srv__SetParam() }
+    }
+}
+
+

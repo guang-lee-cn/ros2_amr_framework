@@ -13,6 +13,7 @@
 #include "ros2_robot_middleware/decision_node.hpp"
 #include "ros2_robot_middleware/fusion_node.hpp"
 #include "ros2_robot_middleware/motor_ctrl_node.hpp"
+#include "ros2_robot_middleware/observability/logging.hpp"
 
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
@@ -20,6 +21,9 @@
 int main(int argc, char *argv[])
 {
   rclcpp::init(argc, argv);
+
+  // Observability: start background log worker
+  amr::observability::Logging::init();
 
   auto exec = std::make_shared<rclcpp::executors::MultiThreadedExecutor>();
 
@@ -31,7 +35,6 @@ int main(int argc, char *argv[])
   exec->add_node(decision->get_node_base_interface());
   exec->add_node(motor->get_node_base_interface());
 
-  // Lifecycle auto-activation
   fusion->configure();
   fusion->activate();
   decision->configure();
@@ -41,5 +44,8 @@ int main(int argc, char *argv[])
 
   exec->spin();
   rclcpp::shutdown();
+
+  // Drain remaining log events before exit
+  amr::observability::Logging::shutdown();
   return 0;
 }

@@ -1,0 +1,19 @@
+# Move robot to target pose — long-running action with progress feedback
+
+# Goal
+float32 target_x
+float32 target_y
+float32 target_theta
+float32 max_speed
+---
+# Result
+bool    reached
+float32 final_x
+float32 final_y
+float32 elapsed_time
+---
+# Feedback
+float32 current_x
+float32 current_y
+float32 distance_remaining
+float32 percent_complete

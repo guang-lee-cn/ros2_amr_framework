@@ -1,0 +1,26 @@
+// generated from rosidl_adapter/resource/msg.idl.em
+// with input from ros2_robot_middleware/msg/Object.msg
+// generated code does not contain a copyright notice
+
+
+module ros2_robot_middleware {
+  module msg {
+    struct Object {
+      @verbatim (language="comment", text=
+        "物体唯一标识")
+      string id;
+
+      @verbatim (language="comment", text=
+        "base_link 坐标系, 前方 (m)")
+      float x;
+
+      @verbatim (language="comment", text=
+        "base_link 坐标系, 左方 (m)")
+      float y;
+
+      @verbatim (language="comment", text=
+        "base_link 坐标系, 上方 (m)")
+      float z;
+    };
+  };
+};
