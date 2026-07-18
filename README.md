@@ -77,6 +77,8 @@ ros2 launch ros2_robot_middleware simulation.launch.py
 | **M5** | SROS2 security (keystore + per-node ACL) |
 | **M6** | GitHub Actions CI + clang-tidy |
 | **M7** | **Observability: Traces / Metrics / Logs** ✅ |
+| **M8** | **Hardware Abstraction Layer** (planned) — `sensor_interface.hpp` + adapters for real sensors |
+| **M9** | **Production hardening** — spdlog migration, OTA simulation, ARM cross-compile |
 
 ## Architecture Decisions (ADR)
 
