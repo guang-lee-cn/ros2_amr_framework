@@ -180,10 +180,12 @@ ros2_amr_framework/
 | RMW | Fast-DDS (eProsima) with XML profile |
 | Message standard | sensor_msgs — interoperable with sick_scan2, realsense-ros |
 | Build | colcon + ament_cmake + static library |
-| Test | GoogleTest, 13 GWT cases, LifecycleNode fixtures |
+| Test | GoogleTest, 48 cases in 7 modules, LifecycleNode fixtures |
 | CI/CD | GitHub Actions + clang-tidy |
 | Simulation | Gazebo Harmonic + ros_gz_bridge |
 | Security | SROS2 + DDS-Security |
+| Observability | Traces (TracerContext) + Metrics (Prometheus + shm) + Logs (ring buffer → JSON) |
+| Calman Filter | EKF with pluggable measurement models (linear + range-bearing) |
 | Language | C++17 |
 
 ## Docs

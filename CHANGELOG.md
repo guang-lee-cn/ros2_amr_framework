@@ -1,5 +1,45 @@
 # Changelog
 
+## [2.0.0] — 2026-07-18
+
+### Added — M7: Observability System
+- **Traces**: TracerContext (thread_local + atomic trace_id) for in-process span correlation
+- **Trace Points**: 15 constexpr symbols in `trace_points.hpp` — single source of truth for span names
+- **Metrics**: Prometheus endpoint (:9090/metrics) with 4 histogram tiers (fusion/decision/motor/e2e)
+- **Metrics**: POSIX shared memory (`shm_open`) for cross-process counter aggregation
+- **Logs**: Lock-free SPSC RingBuffer (~10ns push) + background JSON serializer
+- **Grafana**: 8-panel dashboard JSON (`config/grafana_dashboard.json`)
+- **Docs**: `doc/07-observability-design.md`, `doc/08-observability-usage.md`
+
+### Added — ADR-6: EKF Upgrade
+- Pluggable measurement models: LinearMeasurement (default) + RangeBearingMeasurement
+- Compile-time template policy — zero runtime overhead
+- `init_from_measurement()` avoids singular Jacobian at origin
+- Joseph form covariance + Mahalanobis outlier rejection preserved
+
+### Changed — DDD Refactoring
+- 4-layer architecture: domain/application/infrastructure/observability
+- Physical directory restructuring: headers in `include/.../infrastructure/`, source in `src/infrastructure/`
+- `kalman_filter.hpp` moved to `domain/perception/`
+- ADR-10: DDD directory layering decision record
+
+### Changed — Test Suite
+- Split from 1 monolithic file (13 cases) to 7 modules (48 cases)
+- `AMR_TEST_ONLY()` macro for test-only instrumentation
+- Injectable degradation timeouts: degradation tests from 8s → 1s
+- Total suite: 37s → 2.8s
+- New modules: test_observability, test_kalman_filter, test_monitoring
+
+### Changed — ADR-7 Finalized
+- Hybrid executor: MultiThreadedExecutor (compute_container) + SingleThreadedExecutor (sensors/monitor)
+- P99 e2e latency reduced ~50% (25ms → 12ms)
+
+### Changed — Launch
+- `clean_shm` step removes stale `/dev/shm/amr_metrics_registry` on startup
+- All 4 launch files updated
+
+---
+
 ## [0.1.0] — 2026-06-17
 
 ### Added — Phase 9: Docker
