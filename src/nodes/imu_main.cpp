@@ -1,8 +1,8 @@
-#include "ros2_robot_middleware/decision_node.hpp"
+#include "ros2_robot_middleware/infrastructure/imu_node.hpp"
 
 int main(int argc, char *argv[]) {
     rclcpp::init(argc, argv);
-    auto node = std::make_shared<DecisionNode>();
+    auto node = std::make_shared<ImuNode>();
     node->configure();
     node->activate();
     rclcpp::spin(node->get_node_base_interface());

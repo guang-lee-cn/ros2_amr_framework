@@ -1,5 +1,5 @@
-#include "ros2_robot_middleware/aliases.hpp"
-#include "ros2_robot_middleware/decision_node.hpp"
+#include "ros2_robot_middleware/infrastructure/aliases.hpp"
+#include "ros2_robot_middleware/infrastructure/decision_node.hpp"
 #include "ros2_robot_middleware/observability/metrics_registry.hpp"
 #include "ros2_robot_middleware/observability/tracer.hpp"
 

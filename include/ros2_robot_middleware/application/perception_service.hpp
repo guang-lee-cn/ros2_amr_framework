@@ -3,7 +3,7 @@
 
 #include "ros2_robot_middleware/domain/perception/cluster_detector.hpp"
 #include "ros2_robot_middleware/domain/perception/degradation_policy.hpp"
-#include "ros2_robot_middleware/kalman_filter.hpp"
+#include "ros2_robot_middleware/domain/perception/kalman_filter.hpp"
 
 #include <vector>
 

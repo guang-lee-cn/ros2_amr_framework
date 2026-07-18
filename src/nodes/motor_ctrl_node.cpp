@@ -1,6 +1,6 @@
 #include <rclcpp_components/register_node_macro.hpp>
-#include "ros2_robot_middleware/motor_ctrl_node.hpp"
-#include "ros2_robot_middleware/aliases.hpp"
+#include "ros2_robot_middleware/infrastructure/motor_ctrl_node.hpp"
+#include "ros2_robot_middleware/infrastructure/aliases.hpp"
 #include "ros2_robot_middleware/observability/metrics_registry.hpp"
 #include "ros2_robot_middleware/observability/tracer.hpp"
 

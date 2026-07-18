@@ -1,8 +1,8 @@
-#include "ros2_robot_middleware/motor_ctrl_node.hpp"
+#include "ros2_robot_middleware/infrastructure/camera_node.hpp"
 
 int main(int argc, char *argv[]) {
     rclcpp::init(argc, argv);
-    auto node = std::make_shared<MotorCtrlNode>();
+    auto node = std::make_shared<CameraNode>();
     node->configure();
     node->activate();
     rclcpp::spin(node->get_node_base_interface());

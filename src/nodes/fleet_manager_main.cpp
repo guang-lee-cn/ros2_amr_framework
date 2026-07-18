@@ -1,4 +1,4 @@
-#include "ros2_robot_middleware/fleet_manager_node.hpp"
+#include "ros2_robot_middleware/infrastructure/fleet_manager_node.hpp"
 
 int main(int argc, char *argv[]) {
   rclcpp::init(argc, argv);

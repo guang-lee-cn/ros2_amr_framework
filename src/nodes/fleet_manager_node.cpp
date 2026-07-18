@@ -1,4 +1,4 @@
-#include "ros2_robot_middleware/fleet_manager_node.hpp"
+#include "ros2_robot_middleware/infrastructure/fleet_manager_node.hpp"
 
 #include <sstream>
 

@@ -1,4 +1,4 @@
-#include "ros2_robot_middleware/imu_node.hpp"
+#include "ros2_robot_middleware/infrastructure/imu_node.hpp"
 #include "ros2_robot_middleware/observability/metrics_registry.hpp"
 #include "ros2_robot_middleware/observability/tracer.hpp"
 

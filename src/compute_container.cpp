@@ -10,9 +10,9 @@
 //   health_monitor_node (PID 5) ─── independent, must not share fate with monitored
 //   fleet_manager_node  (PID 6) ─── independent, cross-AMR
 
-#include "ros2_robot_middleware/decision_node.hpp"
-#include "ros2_robot_middleware/fusion_node.hpp"
-#include "ros2_robot_middleware/motor_ctrl_node.hpp"
+#include "ros2_robot_middleware/infrastructure/decision_node.hpp"
+#include "ros2_robot_middleware/infrastructure/fusion_node.hpp"
+#include "ros2_robot_middleware/infrastructure/motor_ctrl_node.hpp"
 #include "ros2_robot_middleware/observability/logging.hpp"
 
 #include <memory>
