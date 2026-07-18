@@ -13,11 +13,10 @@
 # ------------------------------------------------------------------
 set -eo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"                         # ros2_amr_framework
-WS_DIR="$(cd "$PROJECT_DIR/../.." && pwd)"                    # ros2_ws root
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"   # ros2_amr_framework
+WS_DIR="$(dirname "$SCRIPT_DIR")"             # ros2_ws root
 BUILD_DIR="$WS_DIR/build/ros2_robot_middleware"
-COV_DIR="$SCRIPT_DIR/coverage"
+COV_DIR="$SCRIPT_DIR/test/coverage"
 COV_INFO="/tmp/amr_cov.info"
 COV_FILTERED="/tmp/amr_cov_filtered.info"
 COV_FILE="$COV_DIR/coverage.txt"
@@ -117,7 +116,7 @@ tail -5 "$COV_FULL"
 
 # ── HTML (optional) ──────────────────────────────────────────────────
 if [[ "${1:-}" == "html" ]]; then
-  OUT_DIR="$PROJECT_DIR/doc/coverage"
+  OUT_DIR="$COV_DIR/html"
   mkdir -p "$OUT_DIR"
   genhtml "$COV_FILTERED" --output-directory "$OUT_DIR" 2>&1 | tail -1
   echo "HTML: $OUT_DIR/index.html"
