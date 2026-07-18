@@ -109,7 +109,7 @@ public:
 private:
   ClusterDetector   detector_;
   DegradationPolicy policy_;
-  KalmanFilter2D    kf_;
+  KalmanFilter2D<>  kf_;
 
   // Current sensor data
   const float *lidar_ranges_    = nullptr;

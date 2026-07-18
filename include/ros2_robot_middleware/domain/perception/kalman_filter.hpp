@@ -2,41 +2,111 @@
 #define ROS2_ROBOT_MIDDLEWARE_KALMAN_FILTER_HPP_
 
 #include <cmath>
+#include <cstddef>
+#include <utility>
 
-// 2D 线性卡尔曼滤波器 — 恒加速度模型，商用级实现
+// ── Measurement models (pluggable via template policy) ───────────────
 //
-// 状态向量 (4D): [x, y, vx, vy]
-//   位置由 LiDAR 观测，速度由 IMU 加速度驱动
-//
-// ADR-9 选型结论：
-//   评估了 robot_localization (EKF)、FusionCore (23-state UKF)、Fuse (因子图)
-//   三种商用方案。对于 2D 仓库 AMR，4 状态线性 KF 是最优选择：
-//   - robot_localization 的 15 维 EKF 不估计 sensor bias，且需要 sudo 安装
-//   - FusionCore 的 23 维 UKF 针对室外 GPS+IMU bias 估计场景，仓库 AMR 用不上
-//   - 保留 4 状态模型，修复数值稳定性/野值剔除后即可满足商用需求
-//   - 如需 GPS/多传感器 bias 估计，推荐切换 FusionCore (Apache 2.0, 纯 C++17)
-//
-// 商用级改进（v1.1.0）：
-//   1. Joseph 形式协方差更新 — 保证 P 始终对称正定
-//   2. Mahalanobis 距离野值剔除 — 拒绝 >3σ 的异常观测
-//   3. 独立更新 x/y 维度，保持计算高效
+// Each model provides:
+//   static constexpr int kMeasDim — measurement vector size
+//   h(state) → measurement prediction ẑ
+//   jacobian(state) → measurement Jacobian H (kMeasDim × kDim)
 
+struct LinearMeasurement {
+  static constexpr int kMeasDim = 2;
+
+  static void h(const double state[4], double z_pred[2]) noexcept {
+    z_pred[0] = state[0];  // x
+    z_pred[1] = state[1];  // y
+  }
+
+  static void jacobian(const double /*state*/[4], double H[2 * 4]) noexcept {
+    // H = [[1, 0, 0, 0],
+    //      [0, 1, 0, 0]]
+    for (int i = 0; i < 8; ++i) H[i] = 0.0;
+    H[0] = 1.0;  // ∂h0/∂x  = 1
+    H[5] = 1.0;  // ∂h1/∂y  = 1
+  }
+};
+
+struct RangeBearingMeasurement {
+  static constexpr int kMeasDim = 2;
+
+  static void h(const double state[4], double z_pred[2]) noexcept {
+    double x = state[0];
+    double y = state[1];
+    double r = std::sqrt(x * x + y * y);
+    z_pred[0] = r;
+    z_pred[1] = (r > 1e-9) ? std::atan2(y, x) : 0.0;
+  }
+
+  static void jacobian(const double state[4], double H[2 * 4]) noexcept {
+    double x = state[0];
+    double y = state[1];
+    double r2 = x * x + y * y;
+    double r  = std::sqrt(r2);
+    double r3 = r2 * r;
+
+    for (int i = 0; i < 8; ++i) H[i] = 0.0;
+
+    if (r > 1e-9) {
+      H[0] = x / r;          // ∂r/∂x
+      H[1] = y / r;          // ∂r/∂y
+      H[4] = -y / r2;        // ∂θ/∂x
+      H[5] =  x / r2;        // ∂θ/∂y
+    }
+  }
+};
+
+// ── Extended Kalman Filter — 2D, constant-acceleration model ────────
+//
+// Template parameter MeasureModel: measurement model policy.
+//   Default: LinearMeasurement — (x, y) from LiDAR cluster centroids.
+//   Optional: RangeBearingMeasurement — (r, θ) from raw LiDAR returns.
+//
+// State (4D): [x, y, vx, vy]
+// Prediction: linear constant-acceleration (F is always linear)
+// Update:     nonlinear via MeasureModel::h() + Jacobian
+//
+// ADR-6 (EKF upgrade): replaces linear-only KF with pluggable measurement.
+//   Benefits:
+//     1. Range-bearing measurements natively supported (no Cartesian conversion)
+//     2. Measurement model is a compile-time policy — zero runtime overhead
+//     3. Linear model preserved as default — existing callers unchanged
+//   Trade-offs:
+//     Linearization error in range-bearing when r ≈ 0 (handled by 1e-9 guard)
+//
+// Numerical stability (v1.1.0, preserved):
+//   - Joseph form covariance update — P always symmetric positive-definite
+//   - Mahalanobis 3σ outlier rejection — rejects anomalous measurements
+
+template <typename MeasureModel = LinearMeasurement>
 class KalmanFilter2D {
 public:
-  static constexpr int kDim  = 4;   // state: [x, y, vx, vy]
-  static constexpr int kMeas = 2;   // measurement: [x, y]
+  static constexpr int kDim  = 4;                     // state dimension
+  static constexpr int kMeas = MeasureModel::kMeasDim; // measurement dimension
 
   KalmanFilter2D() { reset(); }
 
   void reset() {
     for (double &v : state_) v = 0.0;
     for (double &v : cov_) v = 0.0;
-    for (int i = 0; i < kDim; ++i) cov_[i * kDim + i] = 1.0;
+    // Position uncertainty: 10m (large — accepts first measurement far from origin)
+    // Velocity uncertainty: 1 m/s
+    cov_[0] = 100.0;   // Pxx
+    cov_[5] = 100.0;   // Pyy
+    cov_[10] = 1.0;    // Pvxvx
+    cov_[15] = 1.0;    // Pvyvy
+    initialized_ = false;
   }
 
-  // 预测步 — dt 秒, ax/ay 为 IMU 加速度 (m/s²)
+  // ── Prediction (linear, unchanged) ────────────────────────────────
+
   void predict(double dt, double ax, double ay) {
-    // F: 状态转移矩阵 (4x4, 恒加速度)
+    // F = [[1, 0, dt, 0],
+    //      [0, 1, 0, dt],
+    //      [0, 0, 1,  0],
+    //      [0, 0, 0,  1]]
     const double f[16] = {
       1.0, 0.0, dt,  0.0,
       0.0, 1.0, 0.0, dt,
@@ -46,9 +116,9 @@ public:
 
     // x = F·x + B·u
     double x_new[4] = {};
-    for (int i = 0; i < kDim; ++i) {
-      for (int j = 0; j < kDim; ++j) { x_new[i] += f[i * kDim + j] * state_[j]; }
-    }
+    for (int i = 0; i < kDim; ++i)
+      for (int j = 0; j < kDim; ++j)
+        x_new[i] += f[i * kDim + j] * state_[j];
     x_new[0] += 0.5 * dt * dt * ax;
     x_new[1] += 0.5 * dt * dt * ay;
     x_new[2] += dt * ax;
@@ -71,114 +141,194 @@ public:
     for (int i = 0; i < kDim; ++i) state_[i] = x_new[i];
   }
 
-  // 更新步 — zx/zy 为 LiDAR 聚类中心 (x,y)，返回是否接受了该测量
+  // ── EKF Update (nonlinear measurement via policy) ─────────────────
   //
-  // 商用改进 1: Mahalanobis 距离野值剔除
-  //   如果 |z - Hx| > kMahalanobisThreshold × sqrt(P_ii + R)，拒绝更新。
-  //   防止镜面反射/噪点产生的异常聚类中心污染状态估计。
+  // z[0..kMeas-1]: measurement vector
+  // R_diag[0..kMeas-1]: measurement noise variance per dimension
   //
-  // 商用改进 2: Joseph 形式协方差更新
-  //   P = (I - KH)P(I - KH)^T + KRK^T，保证 P 始终对称正定，
-  //   避免标准形式 P = (I - KH)P 在浮点累积误差下发散。
-  //
-  // 返回 true 表示测量被接受，false 表示被野值剔除拒绝。
-  bool update(double zx, double zy, double measurement_noise = 0.1) {
-    // ── 独立更新 x 维度 ──────────────────────────────────────
-    bool x_ok = update_dimension(0, zx, measurement_noise);
-    // ── 独立更新 y 维度 ──────────────────────────────────────
-    bool y_ok = update_dimension(1, zy, measurement_noise);
+  // Returns true if measurement accepted (passes Mahalanobis gate).
 
-    return x_ok && y_ok;
+  bool update(const double z[kMeas], const double R_diag[kMeas]) {
+    // 1. Predicted measurement: ẑ = h(x)
+    double z_pred[kMeas];
+    MeasureModel::h(state_, z_pred);
+
+    // 2. Innovation: y = z - ẑ
+    double y[kMeas];
+    for (int i = 0; i < kMeas; ++i) y[i] = z[i] - z_pred[i];
+
+    // 3. Measurement Jacobian: H = ∂h/∂x
+    double H[kMeas * kDim];
+    MeasureModel::jacobian(state_, H);
+
+    // 4. Innovation covariance: S = H·P·H^T + R
+    //    HP = H × P
+    double hp[kMeas * kDim] = {};
+    for (int i = 0; i < kMeas; ++i)
+      for (int j = 0; j < kDim; ++j)
+        for (int k = 0; k < kDim; ++k)
+          hp[i * kDim + j] += H[i * kDim + k] * cov_[k * kDim + j];
+
+    //    S = HP × H^T + R
+    double S[kMeas * kMeas] = {};
+    for (int i = 0; i < kMeas; ++i) {
+      for (int j = 0; j < kMeas; ++j) {
+        for (int k = 0; k < kDim; ++k)
+          S[i * kMeas + j] += hp[i * kDim + k] * H[j * kDim + k];
+        S[i * kMeas + j] += (i == j) ? R_diag[i] : 0.0;
+      }
+    }
+
+    // 5. First update — initialize state from measurement directly.
+    //    EKF Jacobian is singular at origin for nonlinear models (e.g. range-bearing).
+    //    Direct init provides a valid linearization point for subsequent updates.
+    if (!initialized_) {
+      if (!init_from_measurement(z)) return false;
+      initialized_ = true;
+      // Recompute innovation + Jacobian with initialized state
+      MeasureModel::h(state_, z_pred);
+      for (int i = 0; i < kMeas; ++i) y[i] = z[i] - z_pred[i];
+      MeasureModel::jacobian(state_, H);
+      for (int i = 0; i < kMeas; ++i)
+        for (int j = 0; j < kDim; ++j)
+          for (int k = 0; k < kDim; ++k) {
+            hp[i * kDim + j] = 0.0;
+            hp[i * kDim + j] += H[i * kDim + k] * cov_[k * kDim + j];
+          }
+      for (int i = 0; i < kMeas; ++i)
+        for (int j = 0; j < kMeas; ++j) {
+          S[i * kMeas + j] = (i == j) ? R_diag[i] : 0.0;
+          for (int k = 0; k < kDim; ++k)
+            S[i * kMeas + j] += hp[i * kDim + k] * H[j * kDim + k];
+        }
+    }
+
+    // 6. Mahalanobis gate
+    if (!maha_check(y, S)) return false;
+
+    // 6. Kalman gain: K = P·H^T·S⁻¹
+    //    PH^T = P × H^T
+    double pht[kDim * kMeas] = {};
+    for (int i = 0; i < kDim; ++i)
+      for (int j = 0; j < kMeas; ++j)
+        for (int k = 0; k < kDim; ++k)
+          pht[i * kMeas + j] += cov_[i * kDim + k] * H[j * kDim + k];
+
+    //    K = PH^T × S⁻¹
+    double K[kDim * kMeas] = {};
+    if constexpr (kMeas == 2) {
+      // 2×2 S inverse (closed form)
+      double det = S[0] * S[3] - S[1] * S[2];
+      if (std::abs(det) < 1e-12) return false;
+      double inv_det = 1.0 / det;
+      double Si[4] = {S[3] * inv_det, -S[1] * inv_det, -S[2] * inv_det, S[0] * inv_det};
+      for (int i = 0; i < kDim; ++i)
+        for (int j = 0; j < kMeas; ++j)
+          for (int k = 0; k < kMeas; ++k)
+            K[i * kMeas + j] += pht[i * kMeas + k] * Si[k * kMeas + j];
+    } else {
+      // Scalar S: K = PH^T / S
+      double invS = 1.0 / S[0];
+      for (int i = 0; i < kDim; ++i) K[i] = pht[i] * invS;
+    }
+
+    // 7. State update: x = x + K·y
+    for (int i = 0; i < kDim; ++i)
+      for (int j = 0; j < kMeas; ++j)
+        state_[i] += K[i * kMeas + j] * y[j];
+
+    // 8. Joseph form covariance: P = (I-KH)P(I-KH)^T + KRK^T
+    joseph_update(K, H, R_diag);
+
+    return true;
   }
+
+  // ── Convenience: 2D linear update (backward-compatible) ────────────
+
+  bool update(double zx, double zy, double rx = 0.1, double ry = 0.1) {
+    static_assert(kMeas == 2, "Linear update requires 2D measurement model");
+    double z[2] = {zx, zy};
+    double R[2] = {rx, ry};
+    return update(z, R);
+  }
+
+  // ── Accessors ──────────────────────────────────────────────────────
 
   double x()  const { return state_[0]; }
   double y()  const { return state_[1]; }
   double vx() const { return state_[2]; }
   double vy() const { return state_[3]; }
+  const double *state() const { return state_; }
+  const double *covariance() const { return cov_; }
 
 private:
-  static constexpr double kMahalanobisThreshold = 3.0;  // 3σ 门限
-
-  bool update_dimension(int idx, double z, double R) {
-    // 残差 y = z - Hx (H 取对应行)
-    double y = z - state_[idx];
-
-    // 新息协方差 S = P[idx][idx] + R
-    double S = cov_[idx * kDim + idx] + R;
-
-    // Mahalanobis 距离 = y / sqrt(S)
-    // 如果 |y| > 3 × sqrt(S)，测量为野值，拒绝更新
-    if (std::abs(y) > kMahalanobisThreshold * std::sqrt(S)) {
-      return false;
+  // Initialize state from first measurement (bypasses singular Jacobian at origin)
+  bool init_from_measurement(const double z[kMeas]) {
+    if constexpr (kMeas == 2 && std::is_same_v<MeasureModel, LinearMeasurement>) {
+      state_[0] = z[0];
+      state_[1] = z[1];
+      return true;
     }
-
-    // 卡尔曼增益 K = P[:, idx] / S
-    double K[4] = {};
-    for (int i = 0; i < kDim; ++i) { K[i] = cov_[i * kDim + idx] / S; }
-
-    // 状态更新 x = x + K·y
-    for (int i = 0; i < kDim; ++i) { state_[i] += K[i] * y; }
-
-    // Joseph 形式协方差更新: P = (I - KH)P(I - KH)^T + KRK^T
-    //
-    // 等价于两步:
-    //   Step A: 中间矩阵 A = I - KH, 再算 A·P·A^T
-    //   Step B: + KRK^T (K × R × K^T，只有 idx 维度非零)
-    //
-    // 先算 A·P（A 的第 i 行 = δ(i,row) - K[row]·H[col]）
-    double ap[16] = {};
-    for (int row = 0; row < kDim; ++row) {
-      for (int col = 0; col < kDim; ++col) {
-        ap[row * kDim + col] = cov_[row * kDim + col];
-      }
-      // A = I - K·H, H 的第 idx 列为 1
-      ap[row * kDim + idx] -= K[row] * cov_[idx * kDim + idx];  // ≈ K·H·P
+    if constexpr (kMeas == 2 && std::is_same_v<MeasureModel, RangeBearingMeasurement>) {
+      double r = z[0], theta = z[1];
+      state_[0] = r * std::cos(theta);
+      state_[1] = r * std::sin(theta);
+      return (r > 0.0);
     }
-    // 更精确: A = I - K*H (H 只有 (idx,idx) 为 1)
-    // A·P = P - K·(H 的第 idx 行)·P
-    // 重写：对每个 col，A·P[row][col] = P[row][col] - K[row] * P[idx][col]
+    return false;  // fallback: can't init safely
+  }
 
-    double apa[16] = {};
-    for (int row = 0; row < kDim; ++row) {
-      for (int col = 0; col < kDim; ++col) {
-        double sum = 0.0;
-        for (int k = 0; k < kDim; ++k) {
-          double a_rk = (row == k ? 1.0 : 0.0) - K[row] * (k == idx ? 1.0 : 0.0);
-          sum += a_rk * cov_[k * kDim + col];
-        }
-        apa[row * kDim + col] = sum;
-      }
+  // Mahalanobis gate: per-dimension |y_i| < 3 × sqrt(S_ii)
+  bool maha_check(const double y[kMeas], const double S[kMeas * kMeas]) const {
+    for (int i = 0; i < kMeas; ++i) {
+      double sig = std::sqrt(S[i * kMeas + i]);
+      if (sig > 0.0 && std::abs(y[i]) > kMahaThreshold * sig) return false;
     }
+    return true;
+  }
 
-    // (A·P)·A^T
-    double p_new[16] = {};
-    for (int row = 0; row < kDim; ++row) {
-      for (int col = 0; col < kDim; ++col) {
-        double sum = 0.0;
-        for (int k = 0; k < kDim; ++k) {
-          double a_colk = (col == k ? 1.0 : 0.0) - K[col] * (k == idx ? 1.0 : 0.0);
-          sum += apa[row * kDim + k] * a_colk;
-        }
-        p_new[row * kDim + col] = sum;
-      }
+  // Joseph form: P = (I-KH)P(I-KH)^T + KRK^T
+  void joseph_update(const double K[kDim * kMeas], const double H[kMeas * kDim],
+                     const double R_diag[kMeas]) {
+    // IKH = I - K×H
+    double ikh[kDim * kDim] = {};
+    for (int i = 0; i < kDim; ++i) {
+      ikh[i * kDim + i] = 1.0;
+      for (int j = 0; j < kDim; ++j)
+        for (int k = 0; k < kMeas; ++k)
+          ikh[i * kDim + j] -= K[i * kMeas + k] * H[k * kDim + j];
     }
-
-    // + KRK^T (K × R × K^T = R × K × K^T，因为 R 是标量)
-    for (int row = 0; row < kDim; ++row) {
-      for (int col = 0; col < kDim; ++col) {
-        p_new[row * kDim + col] += K[row] * R * K[col];
-      }
-    }
+    // temp = IKH × P
+    double temp[kDim * kDim] = {};
+    for (int i = 0; i < kDim; ++i)
+      for (int j = 0; j < kDim; ++j)
+        for (int k = 0; k < kDim; ++k)
+          temp[i * kDim + j] += ikh[i * kDim + k] * cov_[k * kDim + j];
+    // P_new = temp × IKH^T
+    double p_new[kDim * kDim] = {};
+    for (int i = 0; i < kDim; ++i)
+      for (int j = 0; j < kDim; ++j)
+        for (int k = 0; k < kDim; ++k)
+          p_new[i * kDim + j] += temp[i * kDim + k] * ikh[j * kDim + k];
+    // + KRK^T
+    for (int i = 0; i < kDim; ++i)
+      for (int j = 0; j < kDim; ++j)
+        for (int k = 0; k < kMeas; ++k)
+          p_new[i * kDim + j] += K[i * kMeas + k] * R_diag[k] * K[j * kMeas + k];
 
     for (int i = 0; i < kDim * kDim; ++i) cov_[i] = p_new[i];
-    return true;
   }
 
   double state_[kDim] = {};
   double cov_[kDim * kDim] = {};
+  bool initialized_ = false;
 
-  // 过程噪声 Q 对角元素 (越小 = 越信任模型预测)
+  static constexpr double kMahaThreshold = 3.0;
   static constexpr double kQdiag[4] = {0.01, 0.01, 0.1, 0.1};
 };
+
+// ── Type aliases ─────────────────────────────────────────────────────
+using KalmanFilter2D_Linear       = KalmanFilter2D<LinearMeasurement>;
+using KalmanFilter2D_RangeBearing = KalmanFilter2D<RangeBearingMeasurement>;
 
 #endif

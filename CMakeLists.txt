@@ -112,6 +112,7 @@ if(BUILD_TESTING)
   add_amr_test(test_decision       test/test_decision.cpp)
   add_amr_test(test_fusion         test/test_fusion.cpp)
   add_amr_test(test_observability  test/test_observability.cpp)
+  add_amr_test(test_kalman_filter test/test_kalman_filter.cpp)
 endif()
 
 ament_package()
