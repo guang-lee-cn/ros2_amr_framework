@@ -1,5 +1,11 @@
 # ROS2 AMR Framework
 
+[![CI](https://github.com/guang-lee-cn/ros2_amr_framework/actions/workflows/ci.yml/badge.svg)](https://github.com/guang-lee-cn/ros2_amr_framework/actions)
+[![Coverage](https://img.shields.io/badge/coverage-77.6%25-green)](test/coverage/coverage.txt)
+[![ROS2](https://img.shields.io/badge/ROS%202-Jazzy-22303C?logo=ros)](https://docs.ros.org/en/jazzy/)
+[![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=c%2B%2B)](https://en.cppreference.com/w/cpp/17)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+
 A production-grade autonomous mobile robot application framework built on ROS 2 Jazzy. Covers lifecycle management, fault tolerance, QoS tuning, multi-robot coordination, security encryption, and Gazebo simulation.
 
 ## Architecture
@@ -196,6 +202,18 @@ ros2_amr_framework/
 - [Design Document](doc/02-design-doc.md)
 - [Architecture Decision Records](doc/03-adr.md) — 8 decisions with context and trade-offs
 - [DDS Customization Guide](doc/06-dds-customization.md)
+
+## Status
+
+| Metric | Value |
+|--------|-------|
+| Build | [![CI](https://github.com/guang-lee-cn/ros2_amr_framework/actions/workflows/ci.yml/badge.svg)](https://github.com/guang-lee-cn/ros2_amr_framework/actions) |
+| Coverage | 77.6% (filtered) — see [test/coverage/](test/coverage/coverage.txt) |
+| Tests | 52 cases, 8 modules, ~3s |
+| Lines of Code | ~3,800 (include + src) |
+| Commits | 80+ |
+| ROS 2 | Jazzy Jalisco (LTS, EOL 2029) |
+| Language | C++17 |
 
 ## License
 
