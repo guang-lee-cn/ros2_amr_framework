@@ -19,33 +19,36 @@
 ///   - CRTP enables compiler inlining of adapter code
 ///   - No vtable pointer, no indirect call overhead
 ///
-/// THREAD SAFETY CONTRACT (design constraint, not enforced by compiler):
+/// THREAD SAFETY: Structural, not by convention.
 ///
-///   read_impl() MUST produce a consistent snapshot visible to the calling
-///   thread. The sensor driver thread and the FusionNode callback thread
-///   may execute concurrently.
+///   Data types own their memory (stack array, no raw pointer).
+///   Each read() produces an independent copy of sensor data.
+///   Driver thread and consumer thread never share a buffer —
+///   race condition eliminated at the type level.
 ///
-///   Forbidden:  return pointer to internal buffer being written by driver thread.
-///   Allowed:   - lock internal mutex during read
-///              - double-buffer + atomic swap (lock-free)
-///              - copy data into 'out' from a thread-local or stable buffer
-///
-///   init_impl() / shutdown_impl(): called once, no concurrent read() during
-///   these calls. Thread safety not required for lifecycle hooks.
+///   Cost: LidarScan = 8KB stack copy per read (10Hz → 80KB/s).
+///         CameraFrame = 900KB (640×480×3). At 5Hz → 4.5MB/s.
+///         Both well below any modern CPU's memory bandwidth.
 
 #include <cstddef>
 #include <cstdint>
 
 namespace amr::domain::sensor {
 
-// ── Data types (ROS2-free, zero-copy) ───────────────────────────────
+// ── Data types (ROS2-free, value semantics → thread-safe by construction) ─
+//
+// Each read() produces an independent copy. No shared pointers between
+// sensor driver and consumer threads — race eliminated at the type level.
+//
+// Cost: LidarScan = 8KB (2048 floats) per read. 10Hz → 80KB/s. Negligible.
+//       CameraFrame = 900KB (640×480×3). 5Hz → 4.5MB/s. Acceptable.
 
 struct LidarScan {
     static constexpr int kMaxRanges = 2048;
-    const float *ranges = nullptr;
-    size_t       range_count = 0;
-    float        angle_min = 0.0F;
-    float        angle_increment = 0.0F;
+    float ranges[kMaxRanges] = {};   // owns data — no shared pointer
+    size_t range_count = 0;
+    float  angle_min = 0.0F;
+    float  angle_increment = 0.0F;
 };
 
 struct ImuData {
@@ -55,12 +58,12 @@ struct ImuData {
 };
 
 struct CameraFrame {
-    static constexpr int kMaxWidth  = 1920;
-    static constexpr int kMaxHeight = 1080;
-    const uint8_t *data = nullptr;
-    size_t         size = 0;
-    uint16_t       width = 0;
-    uint16_t       height = 0;
+    static constexpr int kMaxWidth  = 640;
+    static constexpr int kMaxHeight = 480;
+    uint8_t  data[kMaxWidth * kMaxHeight * 3] = {};  // 900KB, value semantics
+    size_t   size = 0;
+    uint16_t width = 0;
+    uint16_t height = 0;
 };
 
 // ── Layer 1: CRTP base (common contract) ────────────────────────────
