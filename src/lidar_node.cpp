@@ -111,7 +111,7 @@ void LidarNode::timer_callback()
   auto t_end = std::chrono::steady_clock::now();
   auto lat_us = std::chrono::duration_cast<std::chrono::microseconds>(
                     t_end - t_start).count();
-  auto &m = amr::observability::MetricsRegistry::instance();
+  auto &m = amr::observability::shared_metrics();
   // Compute rate as 1/dt — simplified, using last interval
   static auto last_ts = t_start;
   auto dt_us = std::chrono::duration_cast<std::chrono::microseconds>(

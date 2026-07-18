@@ -98,7 +98,7 @@ void CameraNode::timer_callback()
   auto dt_us = std::chrono::duration_cast<std::chrono::microseconds>(
                    t_start - last_ts).count();
   if (dt_us > 0) {
-    amr::observability::MetricsRegistry::instance().camera_rate_ds.store(
+    amr::observability::shared_metrics().camera_rate_ds.store(
         static_cast<int32_t>(10'000'000 / dt_us), std::memory_order_relaxed);
   }
   last_ts = t_start;

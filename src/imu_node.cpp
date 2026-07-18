@@ -97,7 +97,7 @@ void ImuNode::timer_callback()
   static auto last_ts = t_start;
   auto dt_us = std::chrono::duration_cast<std::chrono::microseconds>(
                    t_start - last_ts).count();
-  auto &m = amr::observability::MetricsRegistry::instance();
+  auto &m = amr::observability::shared_metrics();
   if (dt_us > 0) {
     m.imu_rate_ds.store(static_cast<int32_t>(10'000'000 / dt_us),
                         std::memory_order_relaxed);

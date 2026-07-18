@@ -359,7 +359,7 @@ void HealthMonitorNode::prometheus_accept()
 
 std::string HealthMonitorNode::prometheus_metrics() const
 {
-  auto &m = amr::observability::MetricsRegistry::instance();
+  auto &m = amr::observability::shared_metrics();
   std::ostringstream out;
 
   // ── Health (existing) ──────────────────────────────────────────────

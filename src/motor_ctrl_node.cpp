@@ -156,7 +156,7 @@ void MotorCtrlNode::execute(const std::shared_ptr<ServerGoalHandle> goal_handle)
     auto now_ns = std::chrono::steady_clock::now();
     auto lat_us = std::chrono::duration_cast<std::chrono::microseconds>(
                       now_ns - step_start).count();
-    auto &m = amr::observability::MetricsRegistry::instance();
+    auto &m = amr::observability::shared_metrics();
     m.motor_latency.record(lat_us);
 
     auto sensor_ts = m.last_sensor_timestamp_ns.load(std::memory_order_relaxed);

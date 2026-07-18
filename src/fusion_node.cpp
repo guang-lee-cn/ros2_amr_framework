@@ -145,7 +145,7 @@ void FusionNode::timer_callback() {
   fusion_pub_->publish(msg);
 
   // ── Observability: metrics ────────────────────────────────────────────
-  auto &m = amr::observability::MetricsRegistry::instance();
+  auto &m = amr::observability::shared_metrics();
   m.fusion_cycle_count.fetch_add(1, std::memory_order_relaxed);
   m.object_count.store(static_cast<int32_t>(msg.objects.size()),
                        std::memory_order_relaxed);

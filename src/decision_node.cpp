@@ -83,7 +83,7 @@ void DecisionNode::on_perception(const PerceptionObjects::SharedPtr& objs)
 
   if (objs->objects.empty()) return;
 
-  auto &m = amr::observability::MetricsRegistry::instance();
+  auto &m = amr::observability::shared_metrics();
   m.object_count.store(static_cast<int32_t>(objs->objects.size()),
                        std::memory_order_relaxed);
 
