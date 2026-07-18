@@ -19,29 +19,30 @@
 ///   - CRTP enables compiler inlining of adapter code
 ///   - No vtable pointer, no indirect call overhead
 ///
-/// THREAD SAFETY: Structural, not by convention.
+/// THREAD SAFETY: Hybrid — by construction for small data, by lock for large data.
 ///
-///   Data types own their memory (stack array, no raw pointer).
-///   Each read() produces an independent copy of sensor data.
-///   Driver thread and consumer thread never share a buffer —
-///   race condition eliminated at the type level.
+///   LidarScan / ImuData: value type → each read() = independent copy.
+///     No shared buffer exists. Race condition impossible.
 ///
-///   Cost: LidarScan = 8KB stack copy per read (10Hz → 80KB/s).
-///         CameraFrame = 900KB (640×480×3). At 5Hz → 4.5MB/s.
-///         Both well below any modern CPU's memory bandwidth.
+///   CameraFrame: caller-owns-buffer → read_impl writes into caller's heap
+///     buffer under internal mutex. Caller allocates once, reuses across reads.
+///     is not shared with driver thread's internal write buffer.
 
 #include <cstddef>
 #include <cstdint>
 
 namespace amr::domain::sensor {
 
-// ── Data types (ROS2-free, value semantics → thread-safe by construction) ─
+// ── Data types (ROS2-free) ──────────────────────────────────────────
 //
-// Each read() produces an independent copy. No shared pointers between
-// sensor driver and consumer threads — race eliminated at the type level.
+// LidarScan / ImuData: value semantics. Stack copy per read().
+//   → Thread-safe by construction. No shared buffer.
+//   LidarScan = 8KB @ 10Hz = 80KB/s. ImuData = 12B @ 100Hz = 1.2KB/s.
 //
-// Cost: LidarScan = 8KB (2048 floats) per read. 10Hz → 80KB/s. Negligible.
-//       CameraFrame = 900KB (640×480×3). 5Hz → 4.5MB/s. Acceptable.
+// CameraFrame: caller-owns-buffer semantics. Too large for stack copy.
+//   Caller pre-allocates buffer (heap), passes pointer in `data`/`capacity`.
+//   read_impl fills it under internal lock. Caller keeps ownership.
+//   CameraFrame = 900KB @ 5Hz = 4.5MB/s.
 
 struct LidarScan {
     static constexpr int kMaxRanges = 2048;
@@ -57,11 +58,18 @@ struct ImuData {
     float angular_vel_z = 0.0F;
 };
 
+// CameraFrame: too large (900KB+) for stack copy. Instead, read_impl
+// writes into a caller-provided buffer. Ownership stays with the caller.
+// Thread safety: caller allocates buffer once, read_impl fills it under
+// internal mutex lock. No shared pointers between threads.
 struct CameraFrame {
     static constexpr int kMaxWidth  = 640;
     static constexpr int kMaxHeight = 480;
-    uint8_t  data[kMaxWidth * kMaxHeight * 3] = {};  // 900KB, value semantics
-    size_t   size = 0;
+    static constexpr size_t kMaxSize = kMaxWidth * kMaxHeight * 3;  // 900KB
+
+    uint8_t *data = nullptr;     // points to caller-owned buffer
+    size_t   capacity = 0;       // size of caller's buffer
+    size_t   size = 0;           // actual bytes written by read_impl
     uint16_t width = 0;
     uint16_t height = 0;
 };
