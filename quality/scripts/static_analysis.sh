@@ -1,6 +1,8 @@
 #!/bin/bash
-# ── Static Analysis: cppcheck + clang-tidy ───────────────────────────
-# Run manually: ./quality/scripts/static_analysis.sh
+# ── Static Analysis: cppcheck ────────────────────────────────────────
+# Run before tests — exits non-zero on real errors (not style/info).
+# CI: runs as blocking step before test.
+# Local: ./quality/scripts/static_analysis.sh
 set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -10,22 +12,32 @@ INCLUDE_DIR="$PROJECT_DIR/include"
 SRC_DIR="$PROJECT_DIR/src"
 
 echo "=== cppcheck ==="
-cppcheck --enable=all --suppress=missingIncludeSystem \
-  --suppress=unmatchedSuppression --suppress=unusedFunction \
+
+TMP_LOG=$(mktemp)
+cppcheck --enable=warning,performance,portability \
+  --suppress=missingIncludeSystem \
+  --suppress=unmatchedSuppression \
+  --suppress=unusedFunction \
+  --suppress=missingInclude \
+  --suppress=useStlAlgorithm \
   --inline-suppr \
   -I "$INCLUDE_DIR" \
   "$SRC_DIR" "$INCLUDE_DIR" \
-  2>&1 | grep -v "^Checking" || true
+  2>"$TMP_LOG" || true
+
+# Only fail on errors (not style/info/performance notes)
+ERRORS=$(grep -c "(error)" "$TMP_LOG" 2>/dev/null || echo 0)
+WARNINGS=$(grep -c "(warning)" "$TMP_LOG" 2>/dev/null || echo 0)
+
+cat "$TMP_LOG"
+rm -f "$TMP_LOG"
 
 echo ""
-echo "=== clang-tidy ==="
-if command -v clang-tidy &>/dev/null; then
-  find "$SRC_DIR" "$INCLUDE_DIR" -name "*.cpp" -o -name "*.hpp" \
-    | xargs clang-tidy -p "$PROJECT_DIR/build/ros2_robot_middleware" \
-        --quiet 2>&1 | head -50 || true
-else
-  echo "(clang-tidy not installed — skip)"
+echo "cppcheck: errors=$ERRORS warnings=$WARNINGS"
+
+if [ "$ERRORS" -gt 0 ]; then
+  echo "FAIL — cppcheck found $ERRORS error(s)"
+  exit 1
 fi
 
-echo ""
-echo "Static analysis done."
+echo "Static analysis passed."

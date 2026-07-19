@@ -52,16 +52,16 @@ jobs:
         with:
           path: src/ros2_robot_middleware
 
+      - name: Static Analysis
+        shell: bash
+        run: |
+          . /opt/ros/jazzy/setup.sh
+          cd src/ros2_robot_middleware
+          ./quality/scripts/static_analysis.sh
+
       - name: Build + Test + Coverage
         shell: bash
         run: |
           . /opt/ros/jazzy/setup.sh
           cd src/ros2_robot_middleware
           ./quality/quality.sh
-
-      - name: Static Analysis (non-blocking)
-        shell: bash
-        run: |
-          . /opt/ros/jazzy/setup.sh
-          cd src/ros2_robot_middleware
-          ./quality/scripts/static_analysis.sh || true
