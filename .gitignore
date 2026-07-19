@@ -16,3 +16,4 @@ mdDoc/
 coverage.info
 *.gcda
 *.gcno
+quality/data/html/

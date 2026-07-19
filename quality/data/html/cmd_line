@@ -1,1 +1,0 @@
-genhtml /tmp/amr_cov_filtered.info --output-directory /home/guang/code/ros2_ws/src/ros2_amr_framework/test/coverage/html
