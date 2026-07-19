@@ -289,6 +289,7 @@ PID 6: fleet_manager      — 独立 (跨 AMR 编排)
 
 | 想看什么 | 去哪里 |
 |---------|--------|
+| 迭代计划（逐章推进） | [ITERATION.md](ITERATION.md) |
 | 某个模块的内部设计 | [subsystems/](subsystems/) |
 | 关键技术决策及备选方案 | [adr/03-adr.md](adr/03-adr.md) |
 | DDS QoS 配置 | [guides/06-dds-customization.md](guides/06-dds-customization.md) |

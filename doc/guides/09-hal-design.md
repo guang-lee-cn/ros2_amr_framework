@@ -243,31 +243,5 @@ SickTiM781Adapter lidar{*this, "/newlidar/scan"};  // 另一个 LiDAR
 
 ## 七、迭代计划
 
-### 已完成（v2.0.0）
-
-| 任务 | 描述 |
-|------|------|
-| ✅ ISensor 接口注入 | 替代模板参数，依赖注入 |
-| ✅ Sick TiM781 适配器 | 真实硬件适配器，ROS2→HAL 桥接 |
-| ✅ YAML 传感器配置 | 运行时传感器选型，不重新编译 |
-| ✅ DBSCAN 聚类 | 笛卡尔空间密度聚类 |
-| ✅ 跨帧目标跟踪 | 最近邻关联 + 每 Track 独立 KF |
-| ✅ TF2 坐标变换 | ITransformProvider + tf2_ros，LiDAR→base_link |
-| ✅ spdlog 迁移 | LOG_OBS→spdlog async, JSON pattern |
-| ✅ 文档重构 | 三层目录 + Mermaid 三图 + 6 子系统文档 |
-| ✅ quality/ 目录 | 脚本/源码/数据分离 + 覆盖率门禁 |
-
-### 暂缓
-
-| 任务 | 原因 |
-|------|------|
-| ⏸️ ARM64 交叉编译 | 需要物理 ARM 硬件验证，当前 WSL2 x86_64 可展示 |
-| ⏸️ OTA 模拟 | 非核心面试能力，可在后续项目加入 |
-| ⏸️ FleetManager 集成测试 | 需要多进程 launch，当前手动验证 |
-
-### 技术债
-
-| 任务 | 描述 |
-|------|------|
-| HealthMonitor 硬件看门狗 | 重启机制依赖 `lifecycle_msgs/srv/ChangeState`，当前仅在 watchdog 触发时 log warning |
-| test_helpers.hpp 推广 | test_motor_ctrl / test_decision 中仍有本地 `spin_until` 副本 |
+> 完整计划已独立到 [ITERATION.md](../ITERATION.md)——以 14 章架构说明书为牵引，
+> 逐章盘点现状与缺口，分 P1/P2/P3 三期。
