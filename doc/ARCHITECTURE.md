@@ -41,30 +41,25 @@
 ```mermaid
 flowchart TB
     subgraph drivers["外部系统"] 
-        direction LR
-        SICK["LiDAR 驱动<br/>sick_scan2"]
-        BMI["IMU 驱动<br/>realsense-ros"]
-        REAL["Camera 驱动<br/>librealsense"]
-        PROM["Prometheus<br/>指标采集"]
-        GRAF["Grafana<br/>可视化"]
+        SICK["LiDAR 驱动 (sick_scan2)"]
+        BMI["IMU 驱动"]
+        REAL["Camera 驱动"]
+        PROM["Prometheus"]
+        GRAF["Grafana"]
     end
 
     subgraph infra["基础设施服务 (独立进程)"]
-        direction LR
-        HEALTH["HealthMonitor<br/>看门狗 · 降级管理"]
-        FLEET["FleetManager<br/>多 AMR 编排 (骨架)"]
+        HEALTH["HealthMonitor"]
+        FLEET["FleetManager"]
     end
 
     subgraph compute["计算容器 (单进程 · SHM 传输)"]
-        direction LR
         subgraph app["Application"]
-            direction LR
-            PS["PerceptionService<br/>融合 · EKF · Tracker"]
-            PLS["PlanningService<br/>目标选择 · 抢占"]
-            EXS["ExecutionService<br/>轨迹插值"]
+            PS["PerceptionService"]
+            PLS["PlanningService"]
+            EXS["ExecutionService"]
         end
-        subgraph adapters["HAL (内嵌)"]
-            direction LR
+        subgraph adapters["HAL (内嵌于 FusionNode)"]
             HAL_L["LidarAdapter"]
             HAL_I["ImuAdapter"]
             HAL_C["CameraAdapter"]
@@ -75,9 +70,8 @@ flowchart TB
     end
 
     subgraph cross["横切关注点"]
-        direction LR
-        OBS["Observability<br/>Traces · Metrics · Logs"]
-        CFG["Configuration<br/>sensors.yaml · DDS XML"]
+        OBS["Observability"]
+        CFG["Configuration"]
     end
 
     SICK -->|"LaserScan"| FUSION
@@ -232,7 +226,6 @@ stateDiagram-v2
 ```mermaid
 flowchart LR
     subgraph internal["ros2_amr_framework"]
-        direction TB
         SENSORS["传感器管线"]
         FUSION["融合管线"]
         DECISION["决策管线"]
