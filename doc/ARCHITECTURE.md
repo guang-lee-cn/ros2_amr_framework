@@ -149,6 +149,7 @@ stateDiagram-v2
 | 健康监控 | — | ✅ 看门狗 | — | [health-monitor.md](subsystems/health-monitor.md) |
 | 可观测性 | — | — | — | [observability.md](subsystems/observability.md) |
 | 硬件抽象层 | ✅ | — | — | [hal-design.md](../guides/hal-design.md) |
+| 坐标变换 | ✅ | — | — | [tf2-integration.md](subsystems/tf2-integration.md) (设计中) |
 
 ---
 
