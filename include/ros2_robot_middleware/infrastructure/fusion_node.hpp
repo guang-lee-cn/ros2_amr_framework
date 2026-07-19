@@ -9,6 +9,7 @@
 #include "ros2_robot_middleware/domain/perception/degradation_policy.hpp"
 #include "ros2_robot_middleware/domain/perception/sensor_interface.hpp"
 #include "ros2_robot_middleware/infrastructure/sensors/sensor_factory.hpp"
+#include "ros2_robot_middleware/infrastructure/tf2_transform_provider.hpp"
 #include "ros2_robot_middleware/msg/perception_objects.hpp"
 #include <std_msgs/msg/string.hpp>
 
@@ -60,7 +61,10 @@ private:
   std::unique_ptr<amr::domain::sensor::ISensor<amr::domain::sensor::ImuData>>     imu_;
   std::unique_ptr<amr::domain::sensor::ISensor<amr::domain::sensor::CameraFrame>> camera_;
 
-  // Domain layer — created after sensors are initialized
+  // Coordinate transform (needs ROS2 node → created in on_configure)
+  std::unique_ptr<amr::infrastructure::Tf2TransformProvider> tf2_;
+
+  // Domain layer — created after sensors + tf2 are initialized
   std::optional<amr::application::PerceptionService> perception_;
 
   amr::domain::perception::DegradationLevel current_level_{};

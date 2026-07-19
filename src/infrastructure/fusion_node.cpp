@@ -65,8 +65,13 @@ FusionNode::CallbackReturn FusionNode::on_configure(const rclcpp_lifecycle::Stat
   imu_->init();
   camera_->init();
 
-  // Wire domain layer after sensors are ready
+  // Coordinate transform provider (tf2_ros::Buffer + TransformListener)
+  tf2_ = std::make_unique<amr::infrastructure::Tf2TransformProvider>(
+      this->get_clock());
+
+  // Wire domain layer after sensors + tf2 are ready
   perception_.emplace(*lidar_, *imu_, *camera_);
+  perception_->set_transform(tf2_.get());
 
   fusion_pub_ = this->create_publisher<ros2_robot_middleware::msg::PerceptionObjects>(
       "/perception/objects", rclcpp::QoS(10).reliable());

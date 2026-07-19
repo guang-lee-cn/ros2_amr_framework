@@ -6,6 +6,7 @@
 #include "ros2_robot_middleware/domain/perception/kalman_filter.hpp"
 #include "ros2_robot_middleware/domain/perception/sensor_interface.hpp"
 #include "ros2_robot_middleware/domain/perception/tracker.hpp"
+#include "ros2_robot_middleware/domain/transform_provider.hpp"
 
 #include <vector>
 
@@ -13,7 +14,7 @@ namespace amr {
 namespace application {
 
 // PerceptionService — dependency injection via ISensor<DataType> interfaces.
-// Sensors injected at construction time — no templates, easily testable with mocks.
+// Sensors + Transform injected at construction time — no templates, easily testable.
 
 class PerceptionService {
 public:
@@ -24,6 +25,9 @@ public:
   using LidarSensor   = amr::domain::sensor::ISensor<amr::domain::sensor::LidarScan>;
   using ImuSensor     = amr::domain::sensor::ISensor<amr::domain::sensor::ImuData>;
   using CameraSensor  = amr::domain::sensor::ISensor<amr::domain::sensor::CameraFrame>;
+
+  /// @param tf — coordinate transform provider (non-owning)
+  void set_transform(amr::domain::ITransformProvider *tf) { tf_ = tf; }
 
   /// @param lidar, imu, camera — injected sensor interfaces (non-owning)
   PerceptionService(LidarSensor &lidar, ImuSensor &imu, CameraSensor &camera)
@@ -45,6 +49,14 @@ public:
     bool lidar_ok  = lidar_.read(lidar_scan);
     bool imu_ok    = imu_.read(imu_data);
     bool camera_ok = camera_.read(cam_frame);
+
+    // Transform LiDAR → base_link before downstream processing
+    if (lidar_ok && tf_) {
+      amr::domain::sensor::LidarScan transformed;
+      if (tf_->transform_scan(lidar_scan, transformed, "base_link")) {
+        lidar_scan = transformed;
+      }
+    }
 
     lidar_age_s_  = lidar_ok  ? 0.0 : lidar_age_s_  + dt;
     imu_age_s_    = imu_ok    ? 0.0 : imu_age_s_    + dt;
@@ -108,6 +120,7 @@ private:
   LidarSensor  &lidar_;
   ImuSensor    &imu_;
   CameraSensor &camera_;
+  amr::domain::ITransformProvider *tf_ = nullptr;
 
   const float *lidar_ranges_     = nullptr;
   size_t       lidar_range_count_ = 0;
