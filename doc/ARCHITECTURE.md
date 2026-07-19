@@ -108,12 +108,6 @@ flowchart TB
         HEALTH["HealthMonitor<br/>心跳 · 看门狗 · Prometheus"]
     end
 
-    subgraph legend["&nbsp;&nbsp;&nbsp;&nbsp; 图例 &nbsp;&nbsp;&nbsp;&nbsp;"]
-        direction LR
-        L1[" "] ---|"数据流"| L2[" "]
-        L3[" "] -.-|"控制流"| L4[" "]
-    end
-
     L -->|"LaserScan"| FUSION
     I -->|"Imu"| FUSION
     C -->|"Image"| FUSION
@@ -136,7 +130,6 @@ flowchart TB
     style DECISION fill:#fff3e0,stroke:#f57c00
     style MOTOR fill:#e8f5e9,stroke:#388e3c
     style HEALTH fill:#fce4ec,stroke:#c62828
-    style legend fill:#fafafa,stroke:#999
 ```
 
 > 实线 = 数据流（传感器→Fusion→Decision→Motor→Robot）<br/>
