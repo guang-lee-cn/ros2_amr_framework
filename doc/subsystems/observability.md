@@ -1,88 +1,118 @@
 # 可观测性
 
-## 在总体架构中的位置
+## 一、位置
 
 ```mermaid
 flowchart TB
     subgraph nodes["业务节点"]
-        L[LidarNode]
-        F[FusionNode]
-        D[DecisionNode]
-        M[MotorCtrlNode]
-        H[HealthMonitor]
+        FUSION[FusionNode]
+        DECISION[DecisionNode]
+        MOTOR[MotorCtrlNode]
+        HEALTH[HealthMonitor]
     end
 
-    subgraph obs["可观测性基础设施"]
+    subgraph obs["可观测性层 (库链接)"]
         TR[Traces: TracerContext]
         ME[Metrics: shared_metrics()]
-        LO[Logs: RingBuffer → JSON]
+        LO[Logs: spdlog async]
     end
 
-    L & F & D & M & H --> TR
-    L & F & D & M & H --> ME
-    F --> LO
+    FUSION & DECISION & MOTOR & HEALTH --> TR
+    FUSION & DECISION & MOTOR --> ME
+    FUSION --> LO
 
-    TR --> LTTNG[LTTng (kernel)]
-    ME --> PROM[Prometheus :9090]
-    LO --> STDOUT[stdout JSON]
-    
-    style obs fill:#f3e5f5,stroke:#7b1fa2
+    TR -.-> DIAG["/diagnostics + LTTng"]
+    ME -.-> PROM["Prometheus :9090"]
+    LO -.-> STDOUT["stdout JSON"]
+
+    style obs fill:#f3e5f5,stroke:#7b1fa2,stroke-width:3px
 ```
 
-> 可观测性是横切关注点——不参与数据流和控制流，但为两条流提供可视化。
+> 横切关注点，以库形式链接到所有业务节点。不参与数据流/控制流，为两条流提供可视化。
 
-## 三条支柱
+## 二、内部结构
 
-| 支柱 | 回答的问题 | 实现 | 热路径开销 |
-|------|-----------|------|:---:|
-| **Traces** | "一次请求经过了哪些节点？每跳多久？" | `TracerContext` (thread_local) | ~50ns |
-| **Metrics** | "IMU 频率稳定吗？P99 延迟在恶化吗？" | `shared_metrics()` (POSIX 共享内存) | ~10ns |
-| **Logs** | "这次错误发生在哪个 trace 里？" | SPSC RingBuffer + 后台 JSON serializer | ~10ns |
+| 支柱 | 组件 | 实现 | 热路径延迟 |
+|------|------|------|:---:|
+| **Traces** | `TracerContext` (thread_local) + `ScopedSpan` (RAII) | trace_id 自动注入 LOG_OBS | ~50ns |
+| **Metrics** | `shared_metrics()` → `std::atomic` → POSIX `shm_open` | 5 进程共享 `/amr_metrics_registry` | ~10ns |
+| **Logs** | `spdlog` async logger (1 thread, 8192 queue) | JSON pattern → stdout | ~100ns |
 
-### Traces
+### Trace Points (trace_points.hpp)
 
-```cpp
-TRACE_SCOPE(amr::trace::FUSION_TIMER);  // 进入 span，生成 trace_id
-LOG_OBS(INFO, "fusion", "done", lat_us); // trace_id 自动注入 log event
-// scope 退出 → 恢复父级 TracerContext
+| Span 名称 | 位置 | 说明 |
+|------|------|------|
+| `FUSION_TIMER` | FusionNode::timer_callback | 融合主循环 |
+| `FUSION_DEGRADATION` | FusionNode (降级时) | 降级事件标记 |
+| `FUSION_CLUSTER_DETECT` | PerceptionService::fuse | DBSCAN 聚类 |
+| `DECISION_ON_PERCEPTION` | DecisionNode::on_perception | 感知→Goal 分发 |
+| `DECISION_SEND_GOAL` | DecisionNode::send_goal | Action 发送 |
+| `MOTOR_EXECUTE` | MotorCtrlNode::execute | 轨迹执行 |
+| `MOTOR_STEP` | MotorCtrlNode (每步) | 单步插值 |
+| `HEALTH_CHECK` | HealthMonitor::check_health | 健康巡检 |
+
+### Metrics 速查
+
+| 指标 | 类型 | 说明 |
+|------|:---:|------|
+| `amr_sensor_rate_hz` | Gauge | LiDAR/IMU/Camera 实际频率 |
+| `amr_fusion_latency_seconds` | Histogram | 融合耗时分布 |
+| `amr_decision_latency_seconds` | Histogram | 决策耗时分布 |
+| `amr_motor_latency_seconds` | Histogram | 执行耗时分布 |
+| `amr_e2e_latency_seconds` | Histogram | 端到端 (sensor→cmd_vel) |
+| `amr_degradation_level` | Gauge | 当前降级等级 (0-4) |
+| `amr_degradation_events_total` | Counter | 降级事件累计 |
+| `amr_object_count` | Gauge | 跟踪目标数 |
+
+## 三、核心流程
+
+### Trace→Log 关联
+
+```
+TRACE_SCOPE(amr::trace::FUSION_TIMER) → TracerContext.trace_id = 42, span_id = 1
+  │
+  ├─ 业务逻辑...
+  │
+  └─ LOG_OBS(INFO, "fusion", "done", lat_us, count)
+       → LogEvent.trace_id = 42  ← 自动注入
+       → spdlog async queue → stdout JSON
 ```
 
-- 进程内（Fusion→Decision→MotorCtrl）trace_id 通过 thread_local 自动共享
-- 跨进程（sensor→compute）不传播——DDS 无标准 propagator（设计决策，见 M8 分析）
-
-### Metrics
-
-- `shared_metrics()` 通过 `shm_open("/amr_metrics_registry")` 映射同一块共享内存
-- 5 个进程（lidar/imu/camera/compute/health）共享同一套计数器
-- 热路径只有 `std::atomic` store，无 syscall
-
-### Logs
-
-- 热路径：`LOG_OBS` → `RingBuffer::try_push()` → ~10ns 返回
-- 后台线程：`RingBuffer::pop()` → JSON 序列化 → stdout
-- 固定大小 LogEvent (~192B)，消息字段限制 64 字节
-
-## Trace-Log 关联路径
+### 故障定位路径
 
 ```
-Metrics 告警 P99 > 50ms at 14:03:22
-  → Jaeger 搜索 14:03:20~14:03:25 的 trace
-  → trace_id=0x3f2a, fusion::cluster_detect 花了 800ms
-  → grep 日志 trace_id=0x3f2a
-  → "LiDAR outlier range=655.35 at idx=127"
-  → 根因：硬件瞬时异常 → 异常聚类 → 降级处理耗时暴增
+1. Prometheus 告警 P99 > 50ms @ 14:03:22
+2. grep 日志 14:03:20~14:03:25 → trace_id=0x3f2a
+3. 关联日志: "LiDAR outlier range=655.35" → 根因: 硬件瞬时异常
 ```
 
-## 依赖
+## 四、接口
 
-| 依赖 | 说明 |
+| 接口 | 类型 | 消费者 |
+|------|------|--------|
+| `TracerContext` (thread_local) | 进程内 | 所有业务节点 |
+| `shared_metrics()` (POSIX SHM) | 跨进程 | HealthMonitor (Prometheus) |
+| `spdlog` async logger | stdout JSON | Docker logging driver / journald |
+| `/diagnostics` (DDS) | 跨进程 | rqt_runtime_monitor |
+| `:9090/metrics` (HTTP) | 跨进程 | Prometheus → Grafana |
+
+## 五、边界与降级
+
+| 故障 | 行为 |
 |------|------|
-| `observability/ring_buffer.hpp` | 无锁 SPSC 环形缓冲区 |
-| `observability/tracer.hpp` | TracerContext + ScopedSpan |
-| `observability/metrics_registry.hpp` | POSIX 共享内存指标 |
-| `observability/trace_points.hpp` | Span 名称注册表 |
+| spdlog 队列满 (8192) | `async_overflow_policy::block` — 丢弃旧消息，不阻塞热路径 |
+| SHM 文件残留 | launch 脚本 `rm -f /dev/shm/amr_metrics_registry` 启动前清理 |
+| Prometheus socket bind 失败 | `RCLCPP_WARN`，业务不中断 |
+| TracerContext 未初始化 | `LOG_OBS` 中 trace_id = 0（无活跃 trace） |
 
-## 参考
+### 测试覆盖
 
-- [可观测性设计文档](../guides/07-observability-design.md) — 架构设计 + spdlog 对比
-- [可观测性使用指南](../guides/08-observability-usage.md) — API + 注意事项
+| 测试 | 覆盖 |
+|------|------|
+| `test_observability` (11) | RingBuffer (5), MetricsRegistry (3), TraceContext (3) |
+
+## 六、参考
+
+- [可观测性设计文档](../guides/07-observability-design.md)
+- [可观测性使用指南](../guides/08-observability-usage.md)
+- [Grafana Dashboard](https://github.com/guang-lee-cn/ros2_amr_framework/blob/main/config/grafana_dashboard.json)

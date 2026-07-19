@@ -1,78 +1,139 @@
 # 健康监控
 
-## 在总体架构中的位置
+## 一、位置
 
 ```mermaid
 flowchart LR
-    NODES[全部业务节点] -.->|heartbeat| H[HealthMonitorNode<br/>MonitoringService]
-    H -.->|重启指令| NODES
-    H --> PROM[Prometheus :9090]
-    
-    style H fill:#fce4ec,stroke:#c62828
+    subgraph arch["总体架构"]
+        ALL["全部业务节点"]
+        H[HealthMonitor]
+        PROM["Prometheus :9090"]
+        DIAG["/diagnostics"]
+    end
+    ALL -.->|health| H
+    H -.->|lifecycle restart| ALL
+    H --> PROM
+    H --> DIAG
+    style H fill:#fce4ec,stroke:#c62828,stroke-width:3px
 ```
 
-> 健康监控是控制流的关键组件。独立进程——不能与被监控节点共享命运。
+> 独立进程 (PID 5)，不能与被监控节点共享命运。
 
-## 核心业务
+## 二、内部结构
+
+```mermaid
+classDiagram
+    direction TB
+    class HealthMonitorNode {
+        -MonitoringService monitor_
+        -Subscriptions subs_[6]
+        -Timer timer_ (1Hz)
+        -Prometheus :9090
+        -DiagnosticPublisher
+        +check_health()
+        +try_restart_sequence(node)
+    }
+    class MonitoringService {
+        -HeartbeatAnalyzer analyzer_
+        -RecoveryPolicy recovery_
+        +heartbeat_received(node)
+        +tick(dt)
+        +evaluate(node) NodeStatus
+        +should_recover(node) bool
+    }
+    HealthMonitorNode *-- MonitoringService
+```
+
+| 组件 | 层 | 职责 |
+|------|:---:|------|
+| HealthMonitorNode | infrastructure | ROS2 订阅 6 节点 health + Prometheus + Lifecycle Client |
+| MonitoringService | application | 心跳老化 + 状态评估 + 恢复决策 |
+| HeartbeatAnalyzer | domain | 单节点状态判定 (OK/WARN/ERROR/STALE/FATAL) |
+| RecoveryPolicy | domain | 重试计数 + 最大次数限制 (kMaxRetries=3) |
+
+## 三、核心流程
 
 ```mermaid
 sequenceDiagram
-    participant NODES as 被监控节点
-    participant HM as HealthMonitorNode
+    participant NODES as 6 业务节点
+    participant HM as HealthMonitor
     participant MS as MonitoringService
-    participant PROM as Prometheus
+    participant LC as Lifecycle Client
 
     loop 1Hz
-        NODES->>HM: heartbeat (std_msgs/String)
-        Note over HM: 6 个节点各有独立 timeout
-
-        HM->>MS: heartbeat_received(node)
-        HM->>MS: tick(1.0) — 老化所有心跳
+        NODES->>HM: health signal (heartbeat/status topic)
+        HM->>MS: heartbeat_received(node) → age = 0
+        HM->>MS: tick(1.0) → age all heartbeats
         HM->>MS: evaluate(node) → OK/WARN/ERROR/STALE
 
-        alt node status == ERROR
+        alt status == ERROR
             HM->>MS: should_recover(node)
-            MS-->>HM: true (attempt < kMaxRetries)
-            HM->>NODES: lifecycle ChangeState(deactivate → activate)
+            MS-->>HM: true (attempt < 3)
+            HM->>LC: ChangeState(node, deactivate)
+            HM->>LC: ChangeState(node, activate)
+        else status == ERROR && attempt >= 3
+            HM->>HM: mark FATAL → 不再重试
         end
 
-        HM-->>PROM: HTTP GET /metrics
+        HM->>HM: publish /diagnostics
+        HM->>HM: Prometheus scrape :9090/metrics
     end
 ```
 
-### 状态判断
+### 状态判定表
 
-| 状态 | 条件 | 行为 |
-|------|------|------|
-| OK | `age < 80% × timeout` | 无 |
-| WARN | `age > 80% × timeout` | 仅日志 |
-| ERROR | `age > timeout` | 触发看门狗重启 |
-| STALE | `age < 0`（从未收到） | 标记为未激活 |
-| FATAL | 重启超过 `kMaxRetries=3` 次 | 放弃，标记 FATAL |
+| 条件 | 状态 | 行为 |
+|------|:---:|------|
+| `age < 80% × timeout` | OK | - |
+| `80% × timeout < age < timeout` | WARN | 仅日志 |
+| `age > timeout` | ERROR | 触发看门狗重启 |
+| `age < 0` (从未收到) | STALE | 标记为未激活 |
+| 重启超过 3 次 | FATAL | 放弃，系统 inactive |
 
-### Prometheus 端点
+### 监控节点配置
 
-`:9090/metrics` — 暴露 7 类指标。见 [可观测性](observability.md)。
+| 节点 | Health Topic | Timeout |
+|------|-------------|:---:|
+| lidar | `/sensor/lidar/heartbeat` | 1.5s |
+| imu | `/sensor/imu/heartbeat` | 0.5s |
+| camera | `/sensor/camera/heartbeat` | 3.0s |
+| fusion | `/sensor/fusion/heartbeat` | 1.0s |
+| decision | `/decision/heartbeat` | 2.0s |
+| motor_ctrl | `/cmd/status` | 2.0s |
 
-### ROS2 标准 Diagnostics
+## 四、接口
 
-同时发布到 `/diagnostics` topic（`diagnostic_msgs/DiagnosticArray`），兼容 `rqt_runtime_monitor` 等 ROS2 标准工具。指标数据通过 Prometheus（时序趋势），实时状态通过 `/diagnostics`（红/黄/绿灯）。两者互补。
+| 接口 | 类型 | 方向 | 说明 |
+|------|------|:---:|------|
+| 6 heartbeat topics | DDS sub | 入 | 各节点定期发布 health |
+| `/health/report` | DDS pub | 出 | HealthReport 汇总 |
+| `/diagnostics` | DDS pub | 出 | ROS2 标准 DiagnosticArray |
+| `:9090/metrics` | HTTP | 出 | Prometheus 指标 |
+| Lifecycle ChangeState | Service Client | 出 | 看门狗重启 |
 
-## 依赖
+## 五、边界与降级
 
-| 依赖 | 说明 |
+| 故障 | 行为 |
 |------|------|
-| `domain/monitoring/heartbeat_analyzer.hpp` | 心跳老化 + 状态评估 |
-| `domain/monitoring/recovery_policy.hpp` | 重启策略 |
-| `observability/metrics_registry.hpp` | Prometheus 指标数据源 |
-| POSIX socket API | HTTP server（单线程 accept + recv/send） |
+| 节点重启 3 次仍 ERROR | 标记 FATAL，停止重试 |
+| HealthMonitor 自身崩溃 | 独立进程——不影响计算管线 |
+| Prometheus socket 创建失败 | `RCLCPP_WARN`，指标不可用，业务不中断 |
 
-## 被依赖
+### 性能
 
-- **全部业务节点**：发布 heartbeat 到各自 topic
-- **FleetManager**：汇总 HealthReport
+| 指标 | 目标 |
+|------|:---:|
+| `check_health()` 耗时 | <1ms (6 节点评估) |
+| 看门狗重启延迟 | <2s |
 
-## 关键决策
+### 测试覆盖
 
-- **独立进程**：如果 health_monitor 和 compute_container 同进程，compute 挂了 health 也挂——无法执行重启
-- **Prometheus 不走 DDS**：DDS 挂了 metrics 也丢失 → 无法诊断"DDS 为什么挂了"。独立 HTTP 通道保障可观测性
+| 测试 | 覆盖 |
+|------|------|
+| `test_monitoring` (14) | HeartbeatAnalyzer (4), RecoveryPolicy (5), MonitoringService (5) |
+
+## 六、参考
+
+- [HeartbeatAnalyzer](https://github.com/guang-lee-cn/ros2_amr_framework/blob/main/include/ros2_robot_middleware/domain/monitoring/heartbeat_analyzer.hpp)
+- [RecoveryPolicy](https://github.com/guang-lee-cn/ros2_amr_framework/blob/main/include/ros2_robot_middleware/domain/monitoring/recovery_policy.hpp)
+- [ADR-4: Prometheus HTTP](../adr/03-adr.md#adr-4-健康监控暴露--prometheus-http-vs-ros2-topic)

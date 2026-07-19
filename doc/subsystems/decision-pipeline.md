@@ -1,64 +1,114 @@
 # 决策管线
 
-## 在总体架构中的位置
+## 一、位置
 
 ```mermaid
 flowchart LR
-    FUSION[融合管线] --> D[DecisionNode<br/>PlanningService]
-    D --> MOTOR[执行管线]
-    
-    style D fill:#fff3e0,stroke:#f57c00
+    subgraph arch["总体架构"]
+        F["融合管线"]
+        D[DecisionNode]
+        M["执行管线"]
+    end
+    F --> D --> M
+    style D fill:#fff3e0,stroke:#f57c00,stroke-width:3px
 ```
 
-> 决策管线是控制流的入口——接收感知结果，决定是否发送导航目标。
+## 二、内部结构
 
-## 核心业务
+```mermaid
+classDiagram
+    direction TB
+    class DecisionNode {
+        -PlanningService planning_
+        -ActionClient client_
+        -GoalHandle active_goal_
+        +on_perception(PerceptionObjects)
+        -send_goal(x, y)
+        -cancel_active_goal()
+    }
+    class PlanningService {
+        -TargetSelector selector_
+        -PreemptPolicy preempt_
+        +select_goal(objects, count) Goal
+        +should_preempt(has_active) bool
+        +should_retry(attempt) bool
+    }
+    DecisionNode *-- PlanningService
+```
+
+| 组件 | 职责 |
+|------|------|
+| DecisionNode | ROS2 订阅 + Action Client + Lifecycle |
+| PlanningService | 感知→Goal 映射 + 抢占决策 |
+| TargetSelector | 目标选择（当前取 objects[0]） |
+| PreemptPolicy | 新目标到达时是否取消旧 goal |
+
+## 三、核心流程
 
 ```mermaid
 sequenceDiagram
-    participant DDS as perception_sub_
+    participant DDS as /perception/objects
     participant DN as DecisionNode
     participant PS as PlanningService
     participant ACT as Action Client
 
-    Note over DDS,ACT: on_perception (event-driven)
-
-    DDS->>DN: PerceptionObjects 到达
+    DDS->>DN: PerceptionObjects arrives
     DN->>PS: should_preempt(has_active_goal)
-    
+
     alt 需要抢占
         DN->>ACT: cancel_active_goal()
     end
 
-    PS->>PS: select_goal(objects, count)
+    DN->>PS: select_goal(objects, count)
     PS-->>DN: Goal{x, y}
 
     DN->>ACT: async_send_goal(goal)
-    ACT-->>DN: GoalHandle (future)
 
-    Note over ACT: 异步等待执行管线响应<br/>Goal→Feedback→Result
+    alt Goal 被拒绝 & retry < max
+        DN->>DN: retry_count++ → send_goal again
+    else retry 耗尽
+        DN->>DN: RCLCPP_ERROR → 放弃
+    end
 ```
 
-### 抢占/重试策略
+### 抢占/重试参数
 
-- **抢占**：新感知目标到达 + 上一个 goal 未完成 → `cancel_active_goal()` → 发送新 goal
-- **重试**：goal 被拒绝 → 最多重试 `kMaxRetries` 次（`TargetSelector`）
-- **取消**：执行管线接受 `CancelResponse::ACCEPT`，交由执行管线自己决定如何取消
+| 参数 | 默认值 | 说明 |
+|------|:---:|------|
+| `kMaxRetries` | 3 | Goal 被拒绝后最大重试次数 |
+| `preempt` | 总是提前 | 新目标到达立即抢占旧目标 |
 
-## 依赖
+## 四、接口
 
-| 依赖 | 说明 |
+| 接口 | 类型 | 方向 | 消费方/提供方 |
+|------|------|:---:|------|
+| `PerceptionObjects` | DDS sub | 入 | FusionNode |
+| `MoveToPose` (Goal) | DDS Action | 出 | MotorCtrlNode |
+| heartbeat | DDS pub | 出 | HealthMonitor |
+
+## 五、边界与降级
+
+| 故障 | 行为 | 恢复 |
+|------|------|------|
+| Action server 不可用 | `RCLCPP_WARN_THROTTLE`，跳过本次 goal | server 恢复后自动重试 |
+| Goal 被拒绝 | 重试 `kMaxRetries` 次，每次间隔由 Action Client 重试逻辑决定 | 超过次数后放弃，等待下个感知结果 |
+| 感知结果为空 | `on_perception` 不处理 | 下一帧有数据时恢复 |
+
+### 性能
+
+| 指标 | 目标 |
+|------|:---:|
+| `on_perception` 耗时 | <0.5ms |
+| Goal 发送延迟 | <1ms (DDS SHM) |
+| 内存分配 | 0（复用 active_goal_ SharedPtr） |
+
+### 测试覆盖
+
+| 测试 | 覆盖 |
 |------|------|
-| `domain/planning/target_selector.hpp` | 感知目标 → Goal 映射 |
-| `domain/planning/preempt_policy.hpp` | 抢占决策 |
-| `PerceptionObjects` | 来自融合管线的 DDS 消息 |
-| ROS2 Action Client | `MoveToPose` action |
+| `test_decision` (1) | Perception→Goal 分发 + mock Action Server |
 
-## 被依赖
+## 六、参考
 
-- [执行管线](actuation-pipeline.md) — 接收 `MoveToPose` goal
-
-## 关键设计决策
-
-- **Action 而非 Service**：导航是长时间运行的任务，需要 Goal→Feedback→Result + 取消能力。Service 是请求-响应，不适用
-- **异步发送**：`async_send_goal` 返回 future，不阻塞回调线程
+- [MoveToPose.action](https://github.com/guang-lee-cn/ros2_amr_framework/blob/main/action/MoveToPose.action)
+- [ADR-3: Action 而非 Service](../adr/03-adr.md#adr-3-电机控制接口--action-而非-service)

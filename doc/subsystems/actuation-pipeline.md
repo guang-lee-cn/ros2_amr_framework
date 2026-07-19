@@ -1,60 +1,116 @@
 # 执行管线
 
-## 在总体架构中的位置
+## 一、位置
 
 ```mermaid
 flowchart LR
-    DECISION[决策管线] --> M[MotorCtrlNode<br/>ExecutionService]
-    M --> ROBOT[底盘 /cmd_vel]
-    
-    style M fill:#e8f5e9,stroke:#388e3c
+    subgraph arch["总体架构"]
+        D["决策管线"]
+        M[MotorCtrlNode]
+        R["Robot 底盘"]
+    end
+    D --> M --> R
+    style M fill:#e8f5e9,stroke:#388e3c,stroke-width:3px
 ```
 
-## 核心业务
+## 二、内部结构
 
-接收 `MoveToPose` goal，插值生成轨迹，逐步逼近目标。
+```mermaid
+classDiagram
+    direction TB
+    class MotorCtrlNode {
+        -ActionServer server_
+        -ExecutionService execution_
+        +execute(goal_handle)
+        -interpolate_step(target, current) Feedback
+    }
+    class ExecutionService {
+        -Interpolator interp_
+        -float step_size_
+        +step(target, current, feedback) bool
+        +set_step_size(float)
+    }
+    class Interpolator {
+        -step_size
+        +interpolate(target, current) State
+    }
+    MotorCtrlNode *-- ExecutionService
+    ExecutionService *-- Interpolator
+```
+
+| 组件 | 职责 |
+|------|------|
+| MotorCtrlNode | Action Server + 10Hz 执行循环 + lifecycle |
+| ExecutionService | 步进迭代 + 到达判定 |
+| Interpolator | 欧几里得插值 (current → target) |
+
+## 三、核心流程
 
 ```mermaid
 sequenceDiagram
     participant ACT as Action Server
     participant MC as MotorCtrlNode
-    participant EX as ExecutionService<br/>Interpolator
-    participant FB as feedback pub
+    participant EX as ExecutionService
+    participant FB as /cmd/move_to_pose (_feedback)
 
     ACT->>MC: execute(goal_handle)
-    
+    MC->>EX: step_size = 0.05m
+
     loop 10Hz until reached or canceled
-        MC->>EX: step(target, &current, &feedback)
-        
-        alt reached
-            MC->>ACT: goal_handle->succeed(result)
-        else cancel requested
-            MC->>ACT: goal_handle->canceled(result)
-        else in progress
+        MC->>EX: step(target, current, feedback)
+        alt 到达 (dist < step_size)
+            MC->>ACT: succeed(result)
+        else 取消请求
+            MC->>ACT: canceled(result)
+        else 进行中
             MC->>FB: publish_feedback(percent, distance)
         end
     end
 ```
 
-### 插值策略
+### 插值算法
 
-- `step_size = 0.05m`（可通过 SetParam service 运行时调）
-- 每步向目标方向移动 step_size，欧几里得距离 < step_size 视为到达
-- 10Hz 更新频率，100ms 步进周期
+```
+每步：direction = (target - current).normalize()
+      step = direction * step_size
+      new_pos = current + step
 
-## 依赖
+到达条件：|target - current| < step_size
 
-| 依赖 | 说明 |
+参数：
+  step_size = 0.05m (默认，可通过 /cmd/set_param 运行时调)
+  频率 = 10Hz (100ms 步进周期)
+```
+
+## 四、接口
+
+| 接口 | 类型 | 方向 | 消费方/提供方 |
+|------|------|:---:|------|
+| `MoveToPose` (Goal/Feedback/Result) | DDS Action | 入 | DecisionNode |
+| `SetParam` (step_size) | DDS Service | 入 | 外部调参 / HealthMonitor |
+| status | DDS pub | 出 | HealthMonitor |
+
+## 五、边界与降级
+
+| 故障 | 行为 | 恢复 |
+|------|------|------|
+| 目标在不可达位置 | 持续插值，永不到达（需上层超时） | Decision 发送新 goal 抢占 |
+| 取消被拒绝 | 继续执行当前 goal | 下次抢占再试 |
+| SetParam 未知参数 | 返回 `success=true, message="Unknown parameter"` | 不阻塞 |
+
+### 性能
+
+| 指标 | 目标 |
+|------|:---:|
+| 单步耗时 | <0.1ms |
+| 到达判定 | 浮点比较, ~ns |
+
+### 测试覆盖
+
+| 测试 | 覆盖 |
 |------|------|
-| `domain/execution/interpolator.hpp` | 步进插值 |
-| ROS2 Action Server | `MoveToPose` |
-| ROS2 Service | `/cmd/set_param`（运行时调参） |
+| `test_motor_ctrl` (4) | 近距离/远距离到达、SetParam known/unknown |
 
-## 被依赖
+## 六、参考
 
-- [决策管线](decision-pipeline.md) — 发送 `MoveToPose` goal
-
-## 关键决策
-
-- **Action Server**（而非简单 subscriber）：长时间运行的目标追踪需要 Goal→Feedback→Result 生命周期 + 取消语义
-- **SetParam Service**：运行时调 `step_size` 等参数，不需要重新编译或重启
+- [ADR-3: Action 而非 Service](../adr/03-adr.md#adr-3-电机控制接口--action-而非-service)

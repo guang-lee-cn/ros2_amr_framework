@@ -1,68 +1,82 @@
 # 通信中间件
 
-## 在总体架构中的位置
+## 一、位置
 
 ```mermaid
-flowchart LR
-    subgraph nodes["ROS2 Nodes"]
+flowchart TB
+    subgraph nodes["ROS2 节点"]
         L[LidarNode]
+        I[IMUNode]
+        C[CameraNode]
         F[FusionNode]
         D[DecisionNode]
         M[MotorCtrlNode]
         H[HealthMonitor]
+        FL[FleetManager]
     end
-
     subgraph comm["通信层"]
         DDS["Fast-DDS (RMW)"]
-        SHM["SHM 共享内存 (进程内)"]
+        SHM["SHM (进程内)"]
     end
-
-    L & F & D & M & H --> DDS
+    L & I & C & F & D & M & H & FL --> DDS
     F & D & M --> SHM
-
-    style comm fill:#f3e5f5,stroke:#7b1fa2
+    style comm fill:#f3e5f5,stroke:#7b1fa2,stroke-width:3px
 ```
 
-> 通信中间件基于 Fast-DDS，在 `compute_container` 内使用 SHM 传输消除序列化开销。
-
-## 核心机制
-
-### DDS 域划分
+## 二、内部结构
 
 ```
-单 AMR 模式：
-  DDS Domain 0 → 全部节点在同一域内通信
+compute_container (PID 4, 单进程)
+┌──────────────────────────────────────────┐
+│  FusionNode  →  DecisionNode  →  MotorCtrlNode   │
+│       │               │                │         │
+│  shared_ptr (零拷贝)   shared_ptr       shared_ptr│
+└──────────────────────────────────────────┘
 
-多 AMR 模式（ROS2 namespace）：
-  DDS Domain 0, partition "amr1" → AMR-1 内部通信
-  DDS Domain 0, partition "amr2" → AMR-2 内部通信
-  FleetManager 监听所有 partition 的 /health/report
+跨进程 (PID 1/2/3/5/6):
+  DDS → Fast-DDS → SHM (同机) / UDP (跨机)
 ```
 
-### QoS 分级
+| 传输方式 | 适用场景 | 延迟 | 序列化 |
+|---------|---------|:---:|:---:|
+| `shared_ptr` (进程内) | Fusion→Decision→Motor | <1μs | 无 |
+| DDS SHM | 传感器→Fusion (同机) | ~5μs | CDR |
+| DDS UDP | 跨设备 | ~100μs | CDR |
 
-| 数据类型 | QoS Profile | 原因 |
-|---------|------------|------|
-| IMU (100Hz) | RELIABLE, depth=10 | 增量数据，丢失影响 KF 收敛 |
-| PerceptionObjects | RELIABLE, depth=10 | 关键路径，不可丢失 |
-| Camera (5Hz) | BEST_EFFORT, depth=10 | 绝对数据，单帧丢失可接受 |
-| Heartbeat | RELIABLE, depth=10 | 监控数据，丢失会误触发恢复 |
-| LiDAR (10Hz) | BEST_EFFORT, depth=10 | 高频增量，偶发丢帧不影响 DBSCAN |
+## 三、QoS 配置
 
-### SHM 共享内存传输
-
-- `compute_container` 内 Fusion/Decision/MotorCtrl 共享进程 → 数据通过 `shared_ptr` 直接传递，不走 DDS 序列化
-- 跨进程 Metrics 通过 POSIX `shm_open("/amr_metrics_registry")` 共享——5 个进程读写同一块内存
-
-## 依赖
-
-| 依赖 | 版本 | 用途 |
+| Topic | QoS | 原因 |
 |------|------|------|
-| Fast-DDS (eProsima) | 2.14+ | RMW 实现 |
-| `rclcpp` | Jazzy | ROS2 客户端库，封装 DDS 调用 |
-| POSIX `shm_open` | — | 共享内存指标聚合 |
+| `/sensor/imu` | RELIABLE, depth=10 | IMU 增量数据，丢失影响 KF |
+| `/sensor/lidar` | BEST_EFFORT, depth=10 | 360 点，偶发丢帧不影响 |
+| `/sensor/camera` | BEST_EFFORT, depth=10 | 绝对数据，单帧丢失可接受 |
+| `/perception/objects` | RELIABLE, depth=10 | 关键链路，不可丢失 |
+| `/*/heartbeat` | RELIABLE, depth=10 | 监控数据，不可丢失 |
+| `/cmd/status` | RELIABLE, depth=10 | 同上 |
+| `/health/report` | RELIABLE, depth=10 | 同上 |
+| `/diagnostics` | RELIABLE, depth=10 | 同上 |
 
-## 参考
+> Fast-DDS XML profile 见 [DDS 定制指南](../guides/06-dds-customization.md)。
 
-- [DDS 定制指南](../guides/06-dds-customization.md) — Fast-DDS XML QoS profiles
+## 四、接口
+
+本模块是基础设施，不暴露业务 API。所有通信通过 ROS2 标准接口：
+
+- **Middleware 层**：Fast-DDS (eProsima)，ROS2 Jazzy 默认 RMW
+- **客户端库**：rclcpp + rclcpp_lifecycle + rclcpp_action
+- **传输层**：SHM (同机) / UDP (跨机)
+
+## 五、边界与降级
+
+| 故障 | 行为 |
+|------|------|
+| DDS discovery 慢 | 启动延迟 ~2s (ROS2 默认) |
+| DDS 消息丢失 (best_effort) | 上层降级策略处理 (NO_IMU/NO_LIDAR) |
+| DDS 消息丢失 (reliable) | Fast-DDS 自动重传，超时后丢弃 |
+| 跨机网络中断 | UDP 不可达 → DDS discovery 超时 → 节点进入 STALE |
+
+## 六、参考
+
 - [ADR-8: QoS 选择](../adr/03-adr.md#adr-8-qos-选择--按-topic-差异化)
+- [DDS 定制指南](../guides/06-dds-customization.md)
+- [Fast-DDS 文档](https://fast-dds.docs.eprosima.com/)

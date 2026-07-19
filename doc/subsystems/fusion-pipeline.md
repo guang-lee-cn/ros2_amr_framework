@@ -1,127 +1,185 @@
 # 融合管线
 
-## 在总体架构中的位置
+## 一、位置
 
 ```mermaid
 flowchart LR
-    SENSOR[传感器管线] --> F[FusionNode<br/>PerceptionService]
-    F --> DECISION[决策管线]
-    
-    style F fill:#e1f5fe,stroke:#0288d1
+    subgraph arch["总体架构"]
+        SENSORS["传感器层"]
+        F[FusionNode]
+        D[DecisionNode]
+        M[MotorCtrlNode]
+        H[HealthMonitor]
+    end
+    SENSORS --> F --> D --> M
+    F -.-> H
+    style F fill:#e1f5fe,stroke:#0288d1,stroke-width:3px
 ```
 
-> 融合管线是数据流的第一步处理——传感器数据进入，PerceptionObjects 输出。本模块还管理传感器降级状态。
+> 融合管线在 [总体架构](../ARCHITECTURE.md) 中的位置：传感器数据入口，PerceptionObjects 出口。运行在 compute_container 进程内。
 
-## 核心业务
+## 二、内部结构
+
+```mermaid
+classDiagram
+    direction TB
+
+    class FusionNode {
+        -ISensor~LidarScan~ lidar_
+        -ISensor~ImuData~ imu_
+        -ISensor~CameraFrame~ camera_
+        -Tf2TransformProvider tf2_
+        -PerceptionService perception_
+        +timer_callback()
+    }
+
+    class PerceptionService {
+        -ClusterDetector detector_
+        -KalmanFilter2D kf_
+        -MultiObjectTracker tracker_
+        -DegradationPolicy policy_
+        +tick(dt)
+        +fuse(level) vector~Cluster~
+        +fuse_tracked(level) vector~TrackedObject~
+    }
+
+    FusionNode *-- PerceptionService
+    PerceptionService *-- ClusterDetector
+    PerceptionService *-- KalmanFilter2D
+    PerceptionService *-- MultiObjectTracker
+    PerceptionService *-- DegradationPolicy
+```
+
+| 组件 | 层 | 职责 |
+|------|:---:|------|
+| FusionNode | infrastructure | ROS2 生命周期 + DDS pub/sub + 时钟驱动 |
+| PerceptionService | application | 编排 sensor→cluster→track 流程 |
+| ClusterDetector (DBSCAN) | domain | 密度聚类，输出 Cluster 列表 |
+| KalmanFilter2D | domain | 4D 状态估计 (x,y,vx,vy) |
+| MultiObjectTracker | domain | 最近邻关联 + 每 Track 独立 KF |
+| DegradationPolicy | domain | 传感器超时评估 6 等级 |
+| ITransformProvider | domain→infra | LiDAR→base_link 刚体变换 |
+
+## 三、核心流程
 
 ```mermaid
 sequenceDiagram
-    participant HAL as ISensor 接口
+    participant Timer as timer (200ms)
+    participant FN as FusionNode
     participant PS as PerceptionService
-    participant DBSCAN as ClusterDetector
+    participant CD as ClusterDetector (DBSCAN)
     participant KF as KalmanFilter2D
-    participant TRACKER as MultiObjectTracker
+    participant TR as MultiObjectTracker
     participant DDS as fusion_pub_
 
-    Note over HAL,DDS: timer_callback (200ms) — compute_container 进程
+    Timer->>FN: timer_callback()
+    FN->>PS: tick(dt)
 
-    HAL->>PS: lidar_.read(lidar_scan)
-    HAL->>PS: imu_.read(imu_data)
-    PS->>TF: transform_scan(lidar_scan, "base_link")
-    Note over TF: LiDAR frame → base_link<br/>刚体变换 (旋转+平移)<br/><10μs
-    TF-->>PS: LidarScan(base_link)
-    PS->>PS: tick(dt) — 传感器年龄 + degrade
+    Note over PS: ── 数据采集 ──
+    PS->>PS: lidar_.read(lidar_scan)
+    PS->>PS: imu_.read(imu_data)
+    PS->>PS: tf_.transform_scan(lidar_scan, "base_link")
+
+    Note over PS: ── 状态评估 ──
     PS->>PS: evaluate_degradation()
-
     PS->>KF: predict(dt, ax, ay)
-    PS->>DBSCAN: detect(ranges[], angle_min, angle_inc)
-    DBSCAN-->>PS: Clusters
 
-    PS->>TRACKER: update(clusters)
-    TRACKER-->>PS: TrackedObjects
+    Note over PS: ── 融合 ──
+    PS->>CD: detect(ranges[], angle_min, angle_inc)
+    CD-->>PS: vector<Cluster>
 
-    PS->>PS: 填充 PerceptionObjects
-    PS->>DDS: publish(msg)
+    PS->>TR: update(clusters)
+    TR-->>PS: vector<TrackedObject> (persistent IDs)
 
-    Note over PS: 降级时跳过聚类或直接输出空
+    PS->>FN: clusters + tracked objects
+    FN->>DDS: publish(PerceptionObjects)
 ```
 
-### 数据处理链
+### 参数配置
+
+| 参数 | 默认值 | 说明 | 配置位置 |
+|------|:---:|------|---------|
+| `eps` | 0.3m | DBSCAN 邻域半径 | `ClusterDetector::Params` |
+| `min_pts` | 5 | DBSCAN 最小点数（含核心点） | 同上 |
+| `association_radius` | 0.5m | Tracker 匹配门限 | `TrackerParams` |
+| `max_missed_frames` | 5 | 剪枝前连续丢失帧数 | 同上 |
+| `max_tracks` | 20 | 最大活跃 track 数 | 同上 |
+| `imu_timeout` | 0.5s | IMU 超时 → NO_IMU | `DegradationPolicy::Config` |
+| `lidar_timeout` | 1.5s | LiDAR 超时 → NO_LIDAR | 同上 |
+| `camera_timeout` | 3.0s | Camera 超时 → NO_CAMERA | 同上 |
+
+### 降级决策流程
 
 ```
-LidarScan (8KB) ─┐
-ImuData (12B)   ─┤ tick(dt) → DBSCAN → Tracker → PerceptionObjects
-CameraFrame     ─┘   ↑          ↑        ↑
-                     KF predict  密度聚类  最近邻关联
-                     恒加速度     eps=0.3m  spawn/prune
+tick(dt) → 读传感器 → 计算 age → evaluate() → Level
+                                          │
+              ┌───────────────────────────┼──────────────────────────┐
+              ▼                           ▼                          ▼
+         missing==0                   missing==1               missing>=2
+         FULL                        单传感器超时               CRITICAL
+              │                           │                          │
+         DBSCAN+KF+Tracker      部分降级（NO_*）           无融合输出
 ```
 
-### 降级策略
+## 四、接口
 
-| 级别 | 条件 | 融合行为 | Tracker 行为 |
-|------|------|---------|------------|
-| FULL | 全部正常 | 完整管线 | 正常跟踪 |
-| NO_IMU | IMU 缺失 | 加速度=0 | 正常 |
-| NO_LIDAR | LiDAR 缺失 | 无聚类 → 空输入 | 仅 predict |
-| NO_CAMERA | Camera 缺失 | 同 FULL | 正常 |
-| CRITICAL | ≥2 缺失 | 无输出 | 暂停 |
+### 输入
 
-> 状态变迁见 [总体架构](../ARCHITECTURE.md#三状态流传感器降级)。
+| 接口 | 类型 | 来源 | 频率 |
+|------|------|------|:---:|
+| `ISensor<LidarScan>::read()` | 函数调用 | 传感器适配器 | 5Hz |
+| `ISensor<ImuData>::read()` | 函数调用 | 传感器适配器 | 5Hz |
+| `ISensor<CameraFrame>::read()` | 函数调用 | 传感器适配器 | 5Hz |
+| `ITransformProvider::transform_scan()` | 函数调用 | tf2 基础设施 | 5Hz |
+| `config/sensors.yaml` | YAML 文件 | 启动加载 | 启动时 |
+| ROS2 params | `declare_parameter` | launch 文件 | 启动时 |
 
-### 坐标变换（TF2）
+### 输出
 
-**运行位置**：`compute_container` 进程内，`FusionNode::timer_callback()` 中，读传感器之后、送入 `PerceptionService::tick()` 之前。
+| 接口 | 类型 | 消费者 | 频率 |
+|------|------|--------|:---:|
+| `PerceptionObjects` (DDS) | `/perception/objects` | DecisionNode | ~5Hz |
+| heartbeat (DDS) | `/sensor/fusion/heartbeat` | HealthMonitor | 1Hz |
+| Metrics (SHM) | `shared_metrics()` | HealthMonitor (Prometheus) | 持续 |
 
-```mermaid
-flowchart LR
-    subgraph compute["compute_container 进程"]
-        HAL["ISensor<LidarScan>"] -->|"lidar_frame"| TF["ITransformProvider<br/>transform_scan()"]
-        TF -->|"base_link"| PS["PerceptionService"]
-    end
+## 五、边界与降级
 
-    TF_STATIC["/tf_static<br/>(sensors.yaml)"]
-    TF_STATIC -.->|"发布静态 TF"| TF2["tf2_ros::Buffer"]
-    TF2 -.->|"lookupTransform"| TF
+### 错误处理
 
-    style TF fill:#e8eaf6,stroke:#3949ab
-```
+| 故障 | 行为 | 恢复 |
+|------|------|------|
+| LiDAR read() 返回 false | `lidar_age += dt` → 超时后进入 NO_LIDAR | 传感器恢复后自动回 FULL |
+| IMU read() 返回 false | `imu_age += dt` → 超时后进入 NO_IMU | 同上 |
+| TF 变换不可用 | 跳过变换，直接用原始坐标 | TF 恢复后自动启用 |
+| DBSCAN 无簇 | 返回空 Clusters，Tracker 进入 predict-only 模式 | 下一帧有簇时恢复 |
+| Tracker 满 (20 tracks) | 新检测被丢弃 | 旧 track 超时剪枝后恢复 |
 
-| 属性 | 值 |
-|------|-----|
-| 变换类型 | 静态刚体变换（装配标定一次） |
-| 输入帧 | `lidar_frame` (传感器坐标系) |
-| 输出帧 | `base_link` (机器人本体坐标系) |
-| 变换内容 | 每个 range point: 旋转 + 平移 |
-| 计算量 | 360 点 × ~6 FLOP ≈ 2160 FLOP |
-| 延迟 | <10μs (含 tf2 Buffer 哈希查找) |
+### 性能预算
 
-**DDD 分层**：`ITransformProvider` (domain/) ← `Tf2TransformProvider` (infrastructure/)。domain 层不依赖 tf2。静态 TF 参数从 `config/sensors.yaml` 加载。
+| 指标 | 目标 | 实测 (x86_64) |
+|------|:---:|:---:|
+| tick() 总耗时 | <5ms | ~2ms |
+| DBSCAN (360 pts) | <1ms | ~0.1ms |
+| KF predict+update | <0.1ms | ~0.01ms |
+| Tracker update | <1ms | ~0.1ms |
+| 热路径内存分配 | 0 | 0 |
+| Process RSS | <150MB | ~120MB |
 
-### 为什么只变换 LiDAR
+### 测试覆盖
 
-- IMU 返回的是加速度向量，方向靠重力对齐，不需要位置变换
-- Camera 当前未参与融合
+| 测试 | 文件 | 覆盖内容 |
+|------|------|---------|
+| DBSCAN (6 cases) | `quality/src/test_dbscan.cpp` | 单簇、双簇、噪声、参数、空输入、上限 |
+| KF/EKF (8 cases) | `quality/src/test_kalman_filter.cpp` | 线性收敛、运动跟踪、野值拒绝、Joseph、range-bearing、跨模型一致性 |
+| Tracker (6 cases) | `quality/src/test_tracker.cpp` | 单目标、持久ID、超时剪枝、双目标、运动跟踪、重置 |
+| Fusion集成 (3 cases) | `quality/src/test_fusion.cpp` | 检测、降级、多周期运行 |
 
-## 依赖
+## 六、参考
 
-| 依赖 | 说明 |
-|------|------|
-| `ISensor<LidarScan>` | 传感器接口（依赖注入） |
-| `ISensor<ImuData>` | 同上 |
-| `ITransformProvider` | 坐标变换接口（依赖注入，domain 层纯虚接口） |
-| `tf2_ros::Buffer` (仅 infrastructure) | TF 树查询 |
-| `domain/perception/cluster_detector.hpp` | DBSCAN 聚类 |
-| `domain/perception/kalman_filter.hpp` | EKF 状态估计 |
-| `domain/perception/tracker.hpp` | 多目标跟踪 |
-| `domain/perception/degradation_policy.hpp` | 降级策略 |
-
-## 被依赖
-
-- [决策管线](decision-pipeline.md) — 订阅 `/perception/objects`
-- [健康监控](health-monitor.md) — 心跳
-
-## 关键设计决策
-
-- **DBSCAN 而非 scan-line**：笛卡尔空间聚类能分离角度连续但在空间中分开的物体。见 [ADR-9 选型](../adr/03-adr.md)
-- **每 Track 独立 KF**：Tracker 为每个物体维护独立 KF，而非共享全局 KF。好处：物体交叉时不会互相污染
-- **Joseph 形式协方差**：防止浮点累积误差导致 P 非对称正定
+- [DBSCAN 聚类设计](#) — `domain/perception/cluster_detector.hpp`
+- [KF/EKF 设计](#) — `domain/perception/kalman_filter.hpp`
+- [Tracker 设计](#) — `domain/perception/tracker.hpp`
+- [降级策略](#) — `domain/perception/degradation_policy.hpp`
+- [ADR-6: EKF 选型](../adr/03-adr.md#adr-6-calman-filter--ekf-upgrade-with-pluggable-measurement-models)
+- [ADR-9: KF 选型](../adr/03-adr.md#adr-9-状态估计库选型--自研-kf-vs-开源方案)
+- [HAL 设计](../guides/09-hal-design.md)
