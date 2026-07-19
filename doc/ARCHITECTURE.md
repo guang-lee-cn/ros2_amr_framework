@@ -16,9 +16,11 @@ flowchart LR
     end
 
     subgraph compute["计算层 (单进程)"]
-        HAL_L["LidarAdapter"]
-        HAL_I["ImuAdapter"]
-        HAL_C["CameraAdapter"]
+        subgraph hal["HAL (FusionNode 内部)"]
+            HAL_L["LidarAdapter"]
+            HAL_I["ImuAdapter"]
+            HAL_C["CameraAdapter"]
+        end
         FUSION["FusionNode"]
         DECISION["DecisionNode"]
         MOTOR["MotorCtrlNode"]
@@ -60,6 +62,16 @@ flowchart LR
 | HAL_I → Fusion | 进程内 | `ISensor<ImuData>::read()` | — |
 | HAL_C → Fusion | 进程内 | `ISensor<CameraFrame>::read()` | — |
 | Fusion → Decision | DDS | `/perception/objects` | reliable |
+
+> **Adapter 与 HAL 的关系**：三个 Adapter（LidarAdapter/ImuAdapter/CameraAdapter）都属于 HAL 层（`infrastructure/sensors/`），在 `FusionNode` 内部作为成员变量存在。它们由 `SensorFactory` 根据 `config/sensors.yaml` 创建。每增加一种传感器类型 = 新增一个 Adapter 类 + 在 `SensorFactory` 中加一个 `if` 分支。**
+
+| 传感器 | Adapter 类 | 位置 |
+|--------|-----------|------|
+| 模拟 LiDAR | `SimulatedLidar` | `infrastructure/sensors/simulated_sensors.hpp` |
+| SICK TiM781 | `SickTiM781Adapter` | `infrastructure/sensors/sick_tim781_adapter.hpp` |
+| 模拟 IMU | `SimulatedImu` | `infrastructure/sensors/simulated_sensors.hpp` |
+| 模拟 Camera | `SimulatedCamera` | `infrastructure/sensors/simulated_sensors.hpp` |
+| (新增传感器) | `NewSensorAdapter` | 新建 `infrastructure/sensors/new_sensor_adapter.hpp` |
 | Decision → Motor | DDS Action | `/cmd/move_to_pose` | — |
 | 各节点 → Health | DDS | `/*/heartbeat`, `/cmd/status` | reliable |
 | Health → Fleet | DDS | `/health/report` | reliable |
