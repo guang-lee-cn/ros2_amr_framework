@@ -260,7 +260,8 @@ SickTiM781Adapter lidar{*this, "/newlidar/scan"};  // 另一个 LiDAR
 
 | 优先级 | 任务 | 工作量 | 描述 |
 |:---:|------|:---:|------|
-| 1 | M9 生产加固 | 2d | spdlog 替换、ARM64 交叉编译、OTA 模拟 |
+| 1 | M9 spdlog 迁移 | ✅ 完成 | LOG_OBS→spdlog async, ~100ns, JSON pattern |
+| 2 | M9 ARM64 / OTA | ⏸️ 暂缓 | 不影响当前面试展示 |
 
 ### 技术债
 
