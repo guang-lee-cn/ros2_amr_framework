@@ -89,45 +89,37 @@ flowchart TB
 ## 二、数据流 / 控制流 / 状态流
 
 ```mermaid
-flowchart LR
-    subgraph sensors["传感器"]
-        L["LiDAR (10Hz)"]
-        I["IMU (100Hz)"]
-        C["Camera (5Hz)"]
+flowchart TB
+    subgraph sensors["传感器 (独立进程)"]
+        L["LiDAR 10Hz"]
+        I["IMU 100Hz"]
+        C["Camera 5Hz"]
     end
 
-    FUSION["FusionNode<br/>DBSCAN · EKF · Tracker"]
-    DECISION["DecisionNode<br/>目标分发 · 抢占"]
-    MOTOR["MotorCtrlNode<br/>插值 · Action Server"]
-    HEALTH["HealthMonitor<br/>心跳检测 · 看门狗"]
-    ROBOT["Robot<br/>底盘"]
+    subgraph pipeline["感知→执行管线 (compute_container)"]
+        direction LR
+        FUSION["FusionNode"]
+        DECISION["DecisionNode"]
+        MOTOR["MotorCtrlNode"]
+    end
 
-    L -->|"数据流 (LaserScan)"| FUSION
-    I -->|"数据流 (Imu)"| FUSION
-    C -->|"数据流 (Image)"| FUSION
-    FUSION -->|"数据流 (PerceptionObjects)"| DECISION
-    DECISION -->|"数据流 (MoveToPose Action)"| MOTOR
-    MOTOR -->|"数据流 (cmd_vel)"| ROBOT
+    subgraph infra["基础设施 (独立进程)"]
+        HEALTH["HealthMonitor"]
+    end
 
-    HEALTH -.->|"控制流 (lifecycle 重启)"| L
-    HEALTH -.->|"控制流 (lifecycle 重启)"| I
-    HEALTH -.->|"控制流 (lifecycle 重启)"| C
+    L -->|"LaserScan"| FUSION
+    I -->|"Imu"| FUSION
+    C -->|"Image"| FUSION
+    FUSION -->|"PerceptionObjects"| DECISION
+    DECISION -->|"MoveToPose Action"| MOTOR
 
-    FUSION -.->|"控制流 (heartbeat 1Hz)"| HEALTH
-    DECISION -.->|"控制流 (heartbeat 1Hz)"| HEALTH
-    MOTOR -.->|"控制流 (status 1Hz)"| HEALTH
+    FUSION -.->|"heartbeat 1Hz"| HEALTH
+    DECISION -.->|"heartbeat 1Hz"| HEALTH
+    MOTOR -.->|"status 1Hz"| HEALTH
 
-    linkStyle 0 stroke:#d32f2f,stroke-width:2px
-    linkStyle 1 stroke:#d32f2f,stroke-width:2px
-    linkStyle 2 stroke:#d32f2f,stroke-width:2px
-    linkStyle 3 stroke:#d32f2f,stroke-width:2px
-    linkStyle 4 stroke:#d32f2f,stroke-width:2px
-    linkStyle 5 stroke:#d32f2f,stroke-width:2px
-    linkStyle 6 stroke:#1976d2,stroke-width:2px,stroke-dasharray:6
-    linkStyle 7 stroke:#1976d2,stroke-width:2px,stroke-dasharray:6
-    linkStyle 8 stroke:#1976d2,stroke-width:2px,stroke-dasharray:6
-    linkStyle 9 stroke:#1976d2,stroke-width:2px,stroke-dasharray:6
-    linkStyle 10 stroke:#1976d2,stroke-width:2px,stroke-dasharray:6
+    HEALTH -.->|"lifecycle restart"| sensors
+
+    FUSION -.-|"降级状态"| DECISION
 
     style FUSION fill:#e1f5fe,stroke:#0288d1
     style DECISION fill:#fff3e0,stroke:#f57c00
