@@ -243,23 +243,31 @@ SickTiM781Adapter lidar{*this, "/newlidar/scan"};  // 另一个 LiDAR
 
 ## 七、迭代计划
 
+### 已完成（本次迭代）
+
+| 任务 | 描述 |
+|------|------|
+| ✅ ISensor 接口注入 | 替代模板参数，依赖注入，切换传感器改一行成员类型 |
+| ✅ Sick TiM781 适配器 | 第一个真实硬件适配器，ROS2 sensor_msgs → HAL 桥接 |
+| ✅ YAML 传感器配置 | `config/sensors.yaml` 驱动传感器选型，不重新编译 |
+
 ### 近期（提升面试技术深度）
 
 | 优先级 | 任务 | 工作量 | 描述 |
 |:---:|------|:---:|------|
-| 1 | **ClusterDetector → DBSCAN 或 PCL Euclidean** | 1d | 当前 range-threshold 聚类是原型级。移植 DBSCAN 或 PCL 的 Euclidean Clustering，处理多物体、遮挡、噪点。domain 层纯 C++，不影响其他模块 |
-| 2 | **跨帧目标跟踪（data association）** | 2d | 当前每帧独立检测，无轨迹。加入匈牙利算法或最近邻关联，KF 预测的 (x,y) 用于关联上一帧的物体 ID，输出带轨迹的 PerceptionObjects |
-| 3 | **TF2 坐标变换集成** | 0.5d | 传感器外参（LiDAR→base_link 的静态 TF），PerceptionObjects 输出坐标统一到 base_link 下 |
+| 1 | **ClusterDetector → DBSCAN** | 1d | 当前 range-threshold 聚类是原型级。实现 DBSCAN 或移植 PCL Euclidean Clustering，处理多物体、遮挡、噪点 |
+| 2 | **跨帧目标跟踪** | 2d | 当前每帧独立检测。加入匈牙利算法/最近邻关联，KF 预测用于物体 ID 关联，输出带轨迹的 PerceptionObjects |
+| 3 | **TF2 坐标变换** | 0.5d | 传感器外参统一到 base_link |
 
 ### 远期
 
 | 优先级 | 任务 | 工作量 | 描述 |
 |:---:|------|:---:|------|
-| 4 | M9 生产加固 | 2d | spdlog 替换自研 ring buffer、ARM64 交叉编译验证、OTA 模拟 |
+| 4 | M9 生产加固 | 2d | spdlog 替换、ARM64 交叉编译、OTA 模拟 |
 
-### 技术债（低优先级）
+### 技术债
 
 | 任务 | 描述 |
 |------|------|
-| FleetManager 集成测试 | 需要多进程 launch，当前通过手动测试验证 |
-| HealthMonitor 真实硬件整合 | 重启机制依赖 `lifecycle_msgs/srv/ChangeState`——当前只在 watchdog 触发时 log warning |
+| FleetManager 集成测试 | 需要多进程 launch |
+| HealthMonitor 硬件整合 | 重启机制待验证 |
