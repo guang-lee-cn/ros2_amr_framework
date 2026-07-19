@@ -13,8 +13,8 @@ flowchart TB
 
     subgraph obs["可观测性层 (库链接)"]
         TR[Traces: TracerContext]
-        ME[Metrics: shared_metrics()]
-        LO[Logs: spdlog async]
+        ME["Metrics: shared_metrics"]
+        LO["Logs: spdlog async"]
     end
 
     FUSION & DECISION & MOTOR & HEALTH --> TR
