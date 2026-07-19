@@ -5,6 +5,7 @@
 #include "ros2_robot_middleware/domain/perception/degradation_policy.hpp"
 #include "ros2_robot_middleware/domain/perception/kalman_filter.hpp"
 #include "ros2_robot_middleware/domain/perception/sensor_interface.hpp"
+#include "ros2_robot_middleware/domain/perception/tracker.hpp"
 
 #include <vector>
 
@@ -81,6 +82,14 @@ public:
     return clusters;
   }
 
+  /// Tracked objects with persistent IDs (runs tracker after clustering)
+  std::vector<amr::domain::perception::TrackedObject> fuse_tracked(Level degradation) {
+    auto clusters = fuse(degradation);
+    return tracker_.update(clusters);
+  }
+
+  size_t track_count() const { return tracker_.track_count(); }
+
   double kf_x()  const { return kf_.x(); }
   double kf_y()  const { return kf_.y(); }
   double kf_vx() const { return kf_.vx(); }
@@ -94,6 +103,7 @@ private:
   ClusterDetector   detector_;
   DegradationPolicy policy_;
   KalmanFilter2D<>  kf_;
+  amr::domain::perception::MultiObjectTracker tracker_;
 
   LidarSensor  &lidar_;
   ImuSensor    &imu_;
