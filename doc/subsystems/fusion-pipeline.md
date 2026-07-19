@@ -23,11 +23,14 @@ sequenceDiagram
     participant TRACKER as MultiObjectTracker
     participant DDS as fusion_pub_
 
-    Note over HAL,DDS: timer_callback (200ms)
+    Note over HAL,DDS: timer_callback (200ms) — compute_container 进程
 
     HAL->>PS: lidar_.read(lidar_scan)
     HAL->>PS: imu_.read(imu_data)
-    PS->>PS: tick(dt) — 计算传感器年龄
+    PS->>TF: transform_scan(lidar_scan, "base_link")
+    Note over TF: LiDAR frame → base_link<br/>刚体变换 (旋转+平移)<br/><10μs
+    TF-->>PS: LidarScan(base_link)
+    PS->>PS: tick(dt) — 传感器年龄 + degrade
     PS->>PS: evaluate_degradation()
 
     PS->>KF: predict(dt, ax, ay)
@@ -65,12 +68,48 @@ CameraFrame     ─┘   ↑          ↑        ↑
 
 > 状态变迁见 [总体架构](../ARCHITECTURE.md#三状态流传感器降级)。
 
+### 坐标变换（TF2）
+
+**运行位置**：`compute_container` 进程内，`FusionNode::timer_callback()` 中，读传感器之后、送入 `PerceptionService::tick()` 之前。
+
+```mermaid
+flowchart LR
+    subgraph compute["compute_container 进程"]
+        HAL["ISensor<LidarScan>"] -->|"lidar_frame"| TF["ITransformProvider<br/>transform_scan()"]
+        TF -->|"base_link"| PS["PerceptionService"]
+    end
+
+    TF_STATIC["/tf_static<br/>(sensors.yaml)"]
+    TF_STATIC -.->|"发布静态 TF"| TF2["tf2_ros::Buffer"]
+    TF2 -.->|"lookupTransform"| TF
+
+    style TF fill:#e8eaf6,stroke:#3949ab
+```
+
+| 属性 | 值 |
+|------|-----|
+| 变换类型 | 静态刚体变换（装配标定一次） |
+| 输入帧 | `lidar_frame` (传感器坐标系) |
+| 输出帧 | `base_link` (机器人本体坐标系) |
+| 变换内容 | 每个 range point: 旋转 + 平移 |
+| 计算量 | 360 点 × ~6 FLOP ≈ 2160 FLOP |
+| 延迟 | <10μs (含 tf2 Buffer 哈希查找) |
+
+**DDD 分层**：`ITransformProvider` (domain/) ← `Tf2TransformProvider` (infrastructure/)。domain 层不依赖 tf2。静态 TF 参数从 `config/sensors.yaml` 加载。
+
+### 为什么只变换 LiDAR
+
+- IMU 返回的是加速度向量，方向靠重力对齐，不需要位置变换
+- Camera 当前未参与融合
+
 ## 依赖
 
 | 依赖 | 说明 |
 |------|------|
 | `ISensor<LidarScan>` | 传感器接口（依赖注入） |
 | `ISensor<ImuData>` | 同上 |
+| `ITransformProvider` | 坐标变换接口（依赖注入，domain 层纯虚接口） |
+| `tf2_ros::Buffer` (仅 infrastructure) | TF 树查询 |
 | `domain/perception/cluster_detector.hpp` | DBSCAN 聚类 |
 | `domain/perception/kalman_filter.hpp` | EKF 状态估计 |
 | `domain/perception/tracker.hpp` | 多目标跟踪 |

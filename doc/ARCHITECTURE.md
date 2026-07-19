@@ -143,13 +143,12 @@ stateDiagram-v2
 | 模块 | 数据流 | 控制流 | 状态流 | 子系统文档 |
 |------|:---:|:---:|:---:|------|
 | 传感器管线 | ✅ | — | — | [sensor-pipeline.md](subsystems/sensor-pipeline.md) |
-| 融合管线 | ✅ | — | ✅ 降级 | [fusion-pipeline.md](subsystems/fusion-pipeline.md) |
+| 融合管线 | ✅ | ✅ TF 变换 | ✅ 降级 | [fusion-pipeline.md](subsystems/fusion-pipeline.md) |
 | 决策管线 | ✅ | ✅ Action | — | [decision-pipeline.md](subsystems/decision-pipeline.md) |
 | 执行管线 | ✅ | ✅ Action | — | [actuation-pipeline.md](subsystems/actuation-pipeline.md) |
 | 健康监控 | — | ✅ 看门狗 | — | [health-monitor.md](subsystems/health-monitor.md) |
 | 可观测性 | — | — | — | [observability.md](subsystems/observability.md) |
 | 硬件抽象层 | ✅ | — | — | [hal-design.md](../guides/hal-design.md) |
-| 坐标变换 | ✅ | — | — | [tf2-integration.md](subsystems/tf2-integration.md) (设计中) |
 
 ---
 
