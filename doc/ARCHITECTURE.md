@@ -86,7 +86,7 @@ flowchart TB
 
 ---
 
-## 二、数据流 / 控制流 / 状态流
+## 二、系统运行时视图
 
 ```mermaid
 flowchart TB
@@ -130,11 +130,25 @@ flowchart TB
     style DECISION fill:#fff3e0,stroke:#f57c00
     style MOTOR fill:#e8f5e9,stroke:#388e3c
     style HEALTH fill:#fce4ec,stroke:#c62828
+
+    linkStyle 0 stroke:#d32f2f,stroke-width:2px
+    linkStyle 1 stroke:#d32f2f,stroke-width:2px
+    linkStyle 2 stroke:#d32f2f,stroke-width:2px
+    linkStyle 3 stroke:#d32f2f,stroke-width:2px
+    linkStyle 4 stroke:#d32f2f,stroke-width:2px
+    linkStyle 5 stroke:#d32f2f,stroke-width:2px
+    linkStyle 6 stroke:#1976d2,stroke-width:1.5px,stroke-dasharray:5
+    linkStyle 7 stroke:#1976d2,stroke-width:1.5px,stroke-dasharray:5
+    linkStyle 8 stroke:#1976d2,stroke-width:1.5px,stroke-dasharray:5
+    linkStyle 9 stroke:#1976d2,stroke-width:1.5px,stroke-dasharray:5
+    linkStyle 10 stroke:#1976d2,stroke-width:1.5px,stroke-dasharray:5
+    linkStyle 11 stroke:#1976d2,stroke-width:1.5px,stroke-dasharray:5
+    linkStyle 12 stroke:#1976d2,stroke-width:1.5px,stroke-dasharray:5
+    linkStyle 13 stroke:#1976d2,stroke-width:1.5px,stroke-dasharray:5
+    linkStyle 14 stroke:#1976d2,stroke-width:1.5px,stroke-dasharray:5
 ```
 
-> 实线 = 数据流（传感器→Fusion→Decision→Motor→Robot）<br/>
-> 虚线 = 控制流（health 信号 + lifecycle 重启）<br/>
-> 状态流（降级）见下方状态图。Action 生命周期见 [执行管线](subsystems/actuation-pipeline.md)。
+> 红色实线 = 数据流 &nbsp;|&nbsp; 蓝色虚线 = 控制流 &nbsp;|&nbsp; 状态流见下方状态图
 
 ### 数据流（感知→执行链路明细）
 
