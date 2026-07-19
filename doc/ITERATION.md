@@ -8,10 +8,10 @@
 
 | 章 | 章节名 | 现状 | 优先级 |
 |:---:|------|:---:|:---:|
-| 一 | 基础元信息 | ✅ P1 | P1 |
+| 一 | 基础元信息 | ✅ ARCHITECTURE 开篇 | P1 |
 | 二 | 业务与需求背景 | ✅ requirements.md | P2 |
-| 三 | 系统边界与上下文 | ✅ 补入 ARCHITECTURE | P1 |
-| 四 | 总体架构设计 | ✅ ARCHITECTURE.md + ADR | — |
+| 三 | 系统边界与上下文 | ✅ ARCHITECTURE 第四节 | P1 |
+| 四 | 总体架构设计 | ✅ ARCHITECTURE.md + ADR + 类图 | — |
 | 五 | 分模块详细设计 | ✅ 8 subsystem 文档 | — |
 | 六 | 跨模块核心机制 | ✅ communication + configuration | P2 |
 | 七 | 数据架构设计 | ✅ data-architecture.md | P3 |
@@ -107,6 +107,21 @@
 - [ ] 关键代码片段（ISensor 接口示例、PerceptionService 注入示例、SensorFactory 创建示例）
 - [ ] CMakeLists 结构说明
 - [ ] 第三方组件官方文档链接
+
+---
+
+## 本迭代新增 (2026-07-19)
+
+| 任务 | 描述 |
+|------|------|
+| ✅ ARCHITECTURE 图重构 | 概览图（分层）+ 系统运行时视图（红/蓝双色线）+ 类关系图精简 |
+| ✅ 状态图优化 | `direction TB` 垂直严重度排列，去掉冗余互跳 |
+| ✅ Mermaid 语法修复 | 去嵌套子图、direction、`===` 厚线 → GitHub 正常渲染 |
+| ✅ /diagnostics 发布 | HealthMonitor → ROS2 标准 diagnostic_msgs，兼容 rqt_runtime_monitor |
+| ✅ 静态分析 | cppcheck 集成 CI，阻塞级 error，skip style/info |
+| ✅ ASan+UBSan+LSan | `./quality.sh asan` 一键跑，lsan.supp 压制 DDS/ROS2 噪音 |
+| ✅ LSan 压制 | 只扫描业务代码，mute rclcpp/rmw/Fast-DDS/gtest 泄漏 |
+| ✅ CI 顺序调整 | 静态分析 → 构建+测试+覆盖率（有问题不跑测试） |
 
 ---
 
