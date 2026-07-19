@@ -24,7 +24,8 @@ case "$MODE" in
   asan)
     CXX_FLAGS="-fsanitize=address,undefined -g -O1 -fno-omit-frame-pointer"
     LD_FLAGS="-fsanitize=address,undefined"
-    echo "[run_tests] Mode: ASan + UBSan"
+    echo "[run_tests] Mode: ASan + UBSan + LSan (suppressed: DDS/ROS2 internals)"
+    export LSAN_OPTIONS="suppressions=$PROJECT_DIR/quality/lsan.supp"
     ;;
   release)
     CXX_FLAGS="-O2 -DNDEBUG"

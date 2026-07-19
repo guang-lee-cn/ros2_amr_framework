@@ -6,7 +6,7 @@
 # Full gate: coverage build → test → coverage report → gate
 ./quality.sh
 
-# ASan + UBSan mode (memory errors + undefined behavior)
+# ASan + UBSan + LSan (memory errors + UB + leaks, DDS noise suppressed)
 ./quality.sh asan
 
 # Run tests only (coverage mode, no gate check)

@@ -1,0 +1,26 @@
+# LeakSanitizer suppressions — suppress known leaks in ROS2/DDS internals.
+# Only reports leaks from our own code (ros2_robot_middleware).
+#
+# Usage: LSAN_OPTIONS=suppressions=quality/lsan.supp ./test_binary
+
+# ROS2 rclcpp internals — static singletons, global allocators
+leak:rclcpp::
+leak:rcl::
+leak:rmw_::
+leak:rosidl::
+
+# Fast-DDS internal — participant/type lookup caches
+leak:eprosima::
+leak:fastdds::
+leak:fastrtps::
+
+# DDS transport — UDP buffers kept alive until shutdown
+leak:dds::
+leak:ipc::
+
+# GoogleTest framework — global test environment
+leak:testing::
+leak:gtest::
+
+# libstdc++/libc — locale, iostream global state
+leak:std:::
