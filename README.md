@@ -81,14 +81,14 @@ ros2 launch ros2_robot_middleware simulation.launch.py
 
 | Document | Description |
 |----------|-------------|
-| [Architecture & Project Structure](doc/ARCHITECTURE.md) | DDD layering, directory tree, design principles |
-| [Design Document](doc/02-design-doc.md) | Full technical design |
-| [ADR](doc/03-adr.md) | 10 architecture decisions with context and trade-offs |
-| [Observability Design](doc/07-observability-design.md) | Traces / Metrics / Logs architecture |
-| [Observability Usage](doc/08-observability-usage.md) | API, do's/don'ts, iteration plan |
-| [HAL Design](doc/09-hal-design.md) | Hardware abstraction layer |
-| [DDS Customization](doc/06-dds-customization.md) | Fast-DDS XML profiles |
-| [Test Guide](test/README.md) | Running tests, coverage, test patterns |
+| [Architecture Overview](doc/ARCHITECTURE.md) | 三张 Mermaid 图（数据流/控制流/状态流）+ 模块索引 |
+| [Subsystem Docs](doc/subsystems/) | 传感器 / 融合 / 决策 / 执行 / 健康监控 / 可观测性 — 每模块一页 |
+| [ADR](doc/adr/03-adr.md) | 11 个架构决策及备选方案 |
+| [DDS Customization](doc/guides/06-dds-customization.md) | Fast-DDS XML QoS profiles |
+| [Observability Design](doc/guides/07-observability-design.md) | Traces/Metrics/Logs 完整设计 |
+| [Observability Usage](doc/guides/08-observability-usage.md) | API、踩坑、选型对比 |
+| [HAL Design](doc/guides/09-hal-design.md) | 硬件抽象层 + 移植指南 + 行业方案 |
+| [Test Guide](test/README.md) | 测试运行、覆盖率、命名规范 |
 
 ## Status
 
