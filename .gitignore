@@ -6,7 +6,6 @@ build/
 install/
 log/
 compile_commands.json
-doc/coverage/
 
 # SROS2 keystore (contains private keys)
 config/sros2/private/

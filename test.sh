@@ -113,15 +113,28 @@ if $HAS_COVERAGE && [ "$LINE_COV" != "N/A" ]; then
   echo "  Line Coverage: $LINE_COV"
   echo "══════════════════════════════════════════════════"
 
+  COV_NUM=${LINE_COV%%\%}
+
   if [ -f "$COV_PREV" ]; then
     PREV=$(cat "$COV_PREV")
-    DELTA=$(awk "BEGIN { printf \"%+.1f\", ${LINE_COV%\%} - ${PREV%\%} }")
+    PREV_NUM=${PREV%%\%}
+    DELTA=$(awk "BEGIN { printf \"%+.1f\", ${COV_NUM} - ${PREV_NUM} }")
     echo "  Previous:     $PREV"
     echo "  Delta:        ${DELTA}pp"
-    if awk "BEGIN { exit (${LINE_COV%\%} >= ${PREV%\%}) ? 0 : 1 }"; then
-      echo "  Trend:        ▲ UP"
+
+    # Threshold gate:
+    #   coverage >= 80%  → skip check (minor fluctuations irrelevant at high coverage)
+    #   coverage <  80%  → must not drop below previous run
+    if awk "BEGIN { exit (${COV_NUM} >= 80.0) ? 0 : 1 }"; then
+      echo "  Gate:         SKIP (>= 80%, no threshold enforced)"
     else
-      echo "  Trend:        ▼ DOWN"
+      if awk "BEGIN { exit (${COV_NUM} >= ${PREV_NUM}) ? 0 : 1 }"; then
+        echo "  Gate:         PASS (>= previous ${PREV})"
+      else
+        echo "  Gate:         FAIL — coverage dropped from ${PREV} to ${LINE_COV}"
+        echo "                (threshold waived at >= 80%)"
+        COV_FAIL=true
+      fi
     fi
   else
     echo "  (first run — no baseline to compare)"
@@ -147,3 +160,9 @@ fi
 echo ""
 echo "Results saved: $COV_FILE"
 echo "Full detail:   $COV_FULL"
+
+if [ "${COV_FAIL:-false}" = true ]; then
+  echo ""
+  echo "ERROR: Coverage dropped below previous run while under 80% threshold."
+  exit 1
+fi
