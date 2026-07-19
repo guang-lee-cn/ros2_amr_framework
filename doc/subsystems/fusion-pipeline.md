@@ -35,10 +35,10 @@ sequenceDiagram
 
     PS->>KF: predict(dt, ax, ay)
     PS->>DBSCAN: detect(ranges[], angle_min, angle_inc)
-    DBSCAN-->>PS: vector&lt;Cluster&gt;
+    DBSCAN-->>PS: Clusters
 
     PS->>TRACKER: update(clusters)
-    TRACKER-->>PS: vector&lt;TrackedObject&gt;
+    TRACKER-->>PS: TrackedObjects
 
     PS->>PS: 填充 PerceptionObjects
     PS->>DDS: publish(msg)
