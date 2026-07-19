@@ -352,90 +352,42 @@ flowchart LR
 classDiagram
     direction TB
 
-    %% ── Domain 层 ──────────────────────────
-    class ISensor~DataType~ {
+    class ISensor {
         <<interface>>
-        +read(DataType&) bool
-        +health() int
+        domain 层定义
     }
     class ITransformProvider {
         <<interface>>
-        +transform_scan(LidarScan, LidarScan, string) bool
-    }
-    class ClusterDetector {
-        -Params params_
-        +detect(ranges[], angle_min, angle_inc) vector~Cluster~
-    }
-    class KalmanFilter2D {
-        +predict(dt, ax, ay)
-        +update(zx, zy) bool
-    }
-    class MultiObjectTracker {
-        +update(detections, dt) vector~TrackedObject~
-    }
-    class DegradationPolicy {
-        +evaluate(lidar_age, imu_age, camera_age) Level
+        domain 层定义
     }
 
-    %% ── Application 层 ─────────────────────
     class PerceptionService {
-        -ISensor~LidarScan~& lidar_
-        -ISensor~ImuData~& imu_
-        -ISensor~CameraFrame~& camera_
-        -ITransformProvider& tf_
-        -ClusterDetector detector_
-        -KalmanFilter2D kf_
-        -MultiObjectTracker tracker_
-        -DegradationPolicy policy_
-        +tick(dt)
-        +fuse(level) vector~Cluster~
-        +fuse_tracked(level) vector~TrackedObject~
+        application 层
+        编排 domain 对象
     }
 
-    %% ── Infrastructure 层 ──────────────────
-    class FusionNode {
-        -unique_ptr~ISensor~LidarScan~~ lidar_
-        -unique_ptr~ISensor~ImuData~~ imu_
-        -unique_ptr~ISensor~CameraFrame~~ camera_
-        -optional~PerceptionService~ perception_
-        +timer_callback()
-    }
     class SimulatedLidar {
-        +read_impl(LidarScan&) bool
+        infrastructure 层
+        实现 ISensor
     }
     class SickTiM781Adapter {
-        -Subscription sub_
-        +connect(Node&)
-        +read_impl(LidarScan&) bool
+        infrastructure 层
+        实现 ISensor
     }
-    class SensorFactory {
-        +create_lidar(cfg) LidarPtr
-        +create_imu(cfg) ImuPtr
-        +create_camera(cfg) CameraPtr
+    class FusionNode {
+        infrastructure 层
+        注入 ISensor + PerceptionService
     }
 
-    %% ── 关系 ──────────────────────────────
-    ISensor~LidarScan~ <|.. SimulatedLidar : implements
-    ISensor~LidarScan~ <|.. SickTiM781Adapter : implements
-    SensorFactory ..> SimulatedLidar : creates
-    SensorFactory ..> SickTiM781Adapter : creates
-
-    FusionNode *-- ISensor~LidarScan~ : owns
-    FusionNode *-- PerceptionService : owns
-    PerceptionService o-- ISensor~LidarScan~ : injected
-    PerceptionService o-- ITransformProvider : injected
-    PerceptionService *-- ClusterDetector
-    PerceptionService *-- KalmanFilter2D
-    PerceptionService *-- MultiObjectTracker
-    PerceptionService *-- DegradationPolicy
+    ISensor <|.. SimulatedLidar
+    ISensor <|.. SickTiM781Adapter
+    FusionNode --> ISensor : 持有
+    FusionNode --> PerceptionService : 持有
+    PerceptionService --> ISensor : 注入
+    PerceptionService --> ITransformProvider : 注入
 ```
 
-| 关系 | 含义 |
-|------|------|
-| `*--` | 组合（拥有生命周期） |
-| `o--` | 聚合（依赖注入，不拥有生命周期） |
-| `<|..` | 接口实现 |
-| `..>` | 依赖（创建/使用） |
+> 详细类成员和方法签名见各 [子系统文档](subsystems/)。关系图例：`<|..` 实现、`-->` 依赖。
 
 ---
 
