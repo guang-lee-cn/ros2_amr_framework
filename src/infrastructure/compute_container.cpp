@@ -13,7 +13,7 @@
 #include "ros2_robot_middleware/infrastructure/decision_node.hpp"
 #include "ros2_robot_middleware/infrastructure/fusion_node.hpp"
 #include "ros2_robot_middleware/infrastructure/motor_ctrl_node.hpp"
-#include "ros2_robot_middleware/observability/logging.hpp"
+#include "ros2_robot_middleware/observability/spdlog_adapter.hpp"
 
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
@@ -22,8 +22,8 @@ int main(int argc, char *argv[])
 {
   rclcpp::init(argc, argv);
 
-  // Observability: start background log worker
-  amr::observability::Logging::init();
+  // Observability: spdlog async logger (replaces ring buffer)
+  amr::observability::Logging::init_spdlog();
 
   auto exec = std::make_shared<rclcpp::executors::MultiThreadedExecutor>();
 
