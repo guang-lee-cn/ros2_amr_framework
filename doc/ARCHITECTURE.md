@@ -10,30 +10,30 @@
 ```mermaid
 flowchart LR
     subgraph sensors["传感器层 (独立进程)"]
-        L[SICK TiM781<br/>10Hz]
-        I[BMI088 IMU<br/>100Hz]
-        C[RealSense D435<br/>5Hz]
+        L["SICK TiM781 (10Hz)"]
+        I["BMI088 IMU (100Hz)"]
+        C["RealSense D435 (5Hz)"]
     end
 
-    subgraph compute["计算层 (单进程, MultiThreadedExecutor)"]
-        HAL[传感器适配器<br/>ISensor 接口]
-        FUSION[FusionNode<br/>+ PerceptionService]
-        DECISION[DecisionNode<br/>+ PlanningService]
-        MOTOR[MotorCtrlNode<br/>+ ExecutionService]
+    subgraph compute["计算层 (单进程)"]
+        HAL["传感器适配器 (ISensor 接口)"]
+        FUSION["FusionNode"]
+        DECISION["DecisionNode"]
+        MOTOR["MotorCtrlNode"]
     end
 
     subgraph infra["基础设施 (独立进程)"]
-        HEALTH[HealthMonitor<br/>看门狗 + Prometheus]
-        FLEET[FleetManager<br/>多 AMR 编排]
+        HEALTH["HealthMonitor"]
+        FLEET["FleetManager"]
     end
 
-    L -->|sensor_msgs/LaserScan| HAL
-    I -->|sensor_msgs/Imu| HAL
-    C -->|sensor_msgs/Image| HAL
-    HAL -->|LidarScan/ImuData| FUSION
-    FUSION -->|PerceptionObjects| DECISION
-    DECISION -->|MoveToPose Action| MOTOR
-    MOTOR -->|/cmd_vel (planned)| Robot
+    L -->|"LaserScan"| HAL
+    I -->|"Imu"| HAL
+    C -->|"Image"| HAL
+    HAL -->|"LidarScan"| FUSION
+    FUSION -->|"PerceptionObjects"| DECISION
+    DECISION -->|"MoveToPose Action"| MOTOR
+    MOTOR -->|"cmd_vel"| ROBOT["Robot"]
 
     FUSION -.->|heartbeat| HEALTH
     DECISION -.->|heartbeat| HEALTH
@@ -42,7 +42,7 @@ flowchart LR
     C -.->|heartbeat| HEALTH
     MOTOR -.->|status| HEALTH
 
-    HEALTH -.->|HealthReport| FLEET
+    HEALTH -.->|"HealthReport"| FLEET
 
     style FUSION fill:#e1f5fe
     style DECISION fill:#fff3e0
@@ -112,19 +112,19 @@ sequenceDiagram
 stateDiagram-v2
     [*] --> FULL
 
-    FULL --> NO_IMU: IMU timeout > 0.5s
-    FULL --> NO_LIDAR: LiDAR timeout > 1.5s
-    FULL --> NO_CAMERA: Camera timeout > 3.0s
+    FULL --> NO_IMU    : IMU timeout
+    FULL --> NO_LIDAR  : LiDAR timeout
+    FULL --> NO_CAMERA : Camera timeout
 
-    NO_IMU --> FULL: IMU 恢复
-    NO_IMU --> NO_LIDAR: +LiDAR timeout
-    NO_IMU --> CRITICAL: +Camera timeout
+    NO_IMU --> FULL     : IMU recovered
+    NO_IMU --> NO_LIDAR : LiDAR also lost
+    NO_IMU --> CRITICAL : Camera also lost
 
-    NO_LIDAR --> FULL: LiDAR 恢复
-    NO_LIDAR --> NO_IMU: +IMU timeout
+    NO_LIDAR --> FULL     : LiDAR recovered
+    NO_LIDAR --> NO_IMU   : IMU also lost
 
-    CRITICAL --> FULL: 任意传感器恢复
-    CRITICAL --> FATAL: 超过看门狗最大重试次数
+    CRITICAL --> FULL  : sensor recovered
+    CRITICAL --> FATAL : max retries exceeded
 ```
 
 | 等级 | 含义 | 融合行为 |
