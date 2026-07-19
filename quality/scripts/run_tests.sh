@@ -1,8 +1,12 @@
 #!/bin/bash
-# ── Build + Test (no coverage analysis) ──────────────────────────────
-# Run from quality.sh or standalone:
-#   quality/scripts/run_tests.sh
+# ── Build + Test ─────────────────────────────────────────────────────
+# Usage:
+#   quality/scripts/run_tests.sh           # coverage build (default)
+#   quality/scripts/run_tests.sh asan      # AddressSanitizer + UBSan build
+#   quality/scripts/run_tests.sh release   # release build (no extra flags)
 set -eo pipefail
+
+MODE="${1:-coverage}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 QUALITY_DIR="$(dirname "$SCRIPT_DIR")"
@@ -11,15 +15,38 @@ WS_DIR="$(dirname "$PROJECT_DIR")"
 
 source /opt/ros/jazzy/setup.bash 2>/dev/null || true
 
-echo "[run_tests] Building with coverage flags..."
+case "$MODE" in
+  coverage)
+    CXX_FLAGS="--coverage -g -O0"
+    LD_FLAGS="--coverage"
+    echo "[run_tests] Mode: coverage"
+    ;;
+  asan)
+    CXX_FLAGS="-fsanitize=address,undefined -g -O1 -fno-omit-frame-pointer"
+    LD_FLAGS="-fsanitize=address,undefined"
+    echo "[run_tests] Mode: ASan + UBSan"
+    ;;
+  release)
+    CXX_FLAGS="-O2 -DNDEBUG"
+    LD_FLAGS=""
+    echo "[run_tests] Mode: release"
+    ;;
+  *)
+    echo "Unknown mode: $MODE (use: coverage | asan | release)"
+    exit 1
+    ;;
+esac
+
+echo "[run_tests] Building..."
 cd "$WS_DIR"
 
+# shellcheck disable=SC2086
 colcon build \
   --packages-select ros2_robot_middleware \
   --cmake-clean-first \
   --cmake-args \
-    -DCMAKE_CXX_FLAGS="--coverage -g -O0" \
-    -DCMAKE_EXE_LINKER_FLAGS="--coverage" \
+    -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
+    -DCMAKE_EXE_LINKER_FLAGS="$LD_FLAGS" \
   --no-warn-unused-cli \
   2>&1 | tail -5
 BUILD_RC=${PIPESTATUS[0]}

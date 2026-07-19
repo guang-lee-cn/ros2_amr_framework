@@ -3,14 +3,17 @@
 ## Quick Run
 
 ```bash
-# Full quality gate: build → test → coverage → gate
+# Full gate: coverage build → test → coverage report → gate
 ./quality.sh
 
-# Also generate HTML coverage report
-./quality.sh html
+# ASan + UBSan mode (memory errors + undefined behavior)
+./quality.sh asan
 
-# Run tests only (no coverage analysis)
-./scripts/run_tests.sh
+# Run tests only (coverage mode, no gate check)
+./scripts/run_tests.sh coverage
+
+# Static analysis (cppcheck)
+./scripts/static_analysis.sh
 ```
 
 ## Test Modules (52 cases, 8 modules)

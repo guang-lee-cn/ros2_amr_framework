@@ -23,8 +23,8 @@ COV_FULL="$COV_DIR/coverage_full.txt"
 mkdir -p "$COV_DIR"
 
 # ── Step 1: Build + Test ────────────────────────────────────────────
-echo "[quality] step 1/2: build + test..."
-bash "$SCRIPT_DIR/scripts/run_tests.sh"
+echo "[quality] step 1/2: build + test (mode: ${1:-coverage})..."
+bash "$SCRIPT_DIR/scripts/run_tests.sh" "${1:-coverage}"
 
 # ── Step 2: Coverage ────────────────────────────────────────────────
 echo "[quality] step 2/2: coverage + gate..."
