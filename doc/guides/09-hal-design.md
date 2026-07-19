@@ -243,27 +243,24 @@ SickTiM781Adapter lidar{*this, "/newlidar/scan"};  // 另一个 LiDAR
 
 ## 七、迭代计划
 
-### 已完成（本次迭代）
+### 已完成
 
 | 任务 | 描述 |
 |------|------|
 | ✅ ISensor 接口注入 | 替代模板参数，依赖注入，切换传感器改一行成员类型 |
 | ✅ Sick TiM781 适配器 | 第一个真实硬件适配器，ROS2 sensor_msgs → HAL 桥接 |
 | ✅ YAML 传感器配置 | `config/sensors.yaml` 驱动传感器选型，不重新编译 |
+| ✅ DBSCAN 聚类 | 笛卡尔空间密度聚类，分离多物体 + 噪声拒绝 |
+| ✅ 跨帧目标跟踪 | 最近邻关联 + 每 Track 独立 KF + spawn/prune |
+| ✅ 文档重构 | doc/ 三层目录 (架构/子系统/指南)，Mermaid 数据流/控制流/状态流 |
+| ✅ quality/ 目录 | 脚本/源码/数据分离，覆盖率门禁 (<80% 不能降) |
 
-### 近期（提升面试技术深度）
-
-| 优先级 | 任务 | 工作量 | 描述 |
-|:---:|------|:---:|------|
-| 1 | **ClusterDetector → DBSCAN** | 1d | 当前 range-threshold 聚类是原型级。实现 DBSCAN 或移植 PCL Euclidean Clustering，处理多物体、遮挡、噪点 |
-| 2 | **跨帧目标跟踪** | 2d | 当前每帧独立检测。加入匈牙利算法/最近邻关联，KF 预测用于物体 ID 关联，输出带轨迹的 PerceptionObjects |
-| 3 | **TF2 坐标变换** | 0.5d | 传感器外参统一到 base_link |
-
-### 远期
+### 下一步
 
 | 优先级 | 任务 | 工作量 | 描述 |
 |:---:|------|:---:|------|
-| 4 | M9 生产加固 | 2d | spdlog 替换、ARM64 交叉编译、OTA 模拟 |
+| 1 | TF2 坐标变换集成 | 0.5d | 传感器外参统一到 base_link |
+| 2 | M9 生产加固 | 2d | spdlog 替换、ARM64 交叉编译、OTA 模拟 |
 
 ### 技术债
 
@@ -271,3 +268,4 @@ SickTiM781Adapter lidar{*this, "/newlidar/scan"};  // 另一个 LiDAR
 |------|------|
 | FleetManager 集成测试 | 需要多进程 launch |
 | HealthMonitor 硬件整合 | 重启机制待验证 |
+| test_helpers.hpp 推广 | test_motor_ctrl/test_decision 中仍有本地 `spin_until` 副本 |
