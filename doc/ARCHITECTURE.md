@@ -16,11 +16,6 @@ flowchart LR
     end
 
     subgraph compute["计算层 (单进程)"]
-        subgraph hal["HAL (FusionNode 内部)"]
-            HAL_L["LidarAdapter"]
-            HAL_I["ImuAdapter"]
-            HAL_C["CameraAdapter"]
-        end
         FUSION["FusionNode"]
         DECISION["DecisionNode"]
         MOTOR["MotorCtrlNode"]
@@ -31,12 +26,9 @@ flowchart LR
         FLEET["FleetManager"]
     end
 
-    L -->|"LaserScan"| HAL_L
-    I -->|"Imu"| HAL_I
-    C -->|"Image"| HAL_C
-    HAL_L -->|"LidarScan"| FUSION
-    HAL_I -->|"ImuData"| FUSION
-    HAL_C -->|"CameraFrame"| FUSION
+    L -->|"LaserScan"| FUSION
+    I -->|"Imu"| FUSION
+    C -->|"Image"| FUSION
     FUSION -->|"PerceptionObjects"| DECISION
     DECISION -->|"MoveToPose Action"| MOTOR
     MOTOR -->|"cmd_vel"| ROBOT["Robot"]
@@ -57,25 +49,14 @@ flowchart LR
 
 | 边 | 类型 | Topic / 接口 | QoS |
 |---|------|-------------|-----|
-| 传感器 → HAL | DDS | `/sensor/lidar`, `/sensor/imu`, `/sensor/camera` | best_effort / reliable |
-| HAL_L → Fusion | 进程内 | `ISensor<LidarScan>::read()` | — |
-| HAL_I → Fusion | 进程内 | `ISensor<ImuData>::read()` | — |
-| HAL_C → Fusion | 进程内 | `ISensor<CameraFrame>::read()` | — |
+| 传感器 → Fusion | DDS | `/sensor/lidar`, `/sensor/imu`, `/sensor/camera` | best_effort / reliable |
 | Fusion → Decision | DDS | `/perception/objects` | reliable |
-
-> **Adapter 与 HAL 的关系**：三个 Adapter（LidarAdapter/ImuAdapter/CameraAdapter）都属于 HAL 层（`infrastructure/sensors/`），在 `FusionNode` 内部作为成员变量存在。它们由 `SensorFactory` 根据 `config/sensors.yaml` 创建。每增加一种传感器类型 = 新增一个 Adapter 类 + 在 `SensorFactory` 中加一个 `if` 分支。**
-
-| 传感器 | Adapter 类 | 位置 |
-|--------|-----------|------|
-| 模拟 LiDAR | `SimulatedLidar` | `infrastructure/sensors/simulated_sensors.hpp` |
-| SICK TiM781 | `SickTiM781Adapter` | `infrastructure/sensors/sick_tim781_adapter.hpp` |
-| 模拟 IMU | `SimulatedImu` | `infrastructure/sensors/simulated_sensors.hpp` |
-| 模拟 Camera | `SimulatedCamera` | `infrastructure/sensors/simulated_sensors.hpp` |
-| (新增传感器) | `NewSensorAdapter` | 新建 `infrastructure/sensors/new_sensor_adapter.hpp` |
 | Decision → Motor | DDS Action | `/cmd/move_to_pose` | — |
 | 各节点 → Health | DDS | `/*/heartbeat`, `/cmd/status` | reliable |
 | Health → Fleet | DDS | `/health/report` | reliable |
 | Motor → Robot | (planned) | `/cmd_vel` | — |
+
+> 传感器到 Fusion 的内部适配（HAL）详见 [传感器管线](subsystems/sensor-pipeline.md) 和 [融合管线](subsystems/fusion-pipeline.md)。
 
 ---
 
@@ -195,6 +176,97 @@ stateDiagram-v2
 ```
 
 编译期强制：`domain/` 不 `#include` 任何 ROS2 头文件。违反此规则 → `colcon build` 失败。
+
+### 类关系图
+
+```mermaid
+classDiagram
+    direction TB
+
+    %% ── Domain 层 ──────────────────────────
+    class ISensor~DataType~ {
+        <<interface>>
+        +read(DataType&) bool
+        +health() int
+    }
+    class ITransformProvider {
+        <<interface>>
+        +transform_scan(LidarScan, LidarScan, string) bool
+    }
+    class ClusterDetector {
+        -Params params_
+        +detect(ranges[], angle_min, angle_inc) vector~Cluster~
+    }
+    class KalmanFilter2D {
+        +predict(dt, ax, ay)
+        +update(zx, zy) bool
+    }
+    class MultiObjectTracker {
+        +update(detections, dt) vector~TrackedObject~
+    }
+    class DegradationPolicy {
+        +evaluate(lidar_age, imu_age, camera_age) Level
+    }
+
+    %% ── Application 层 ─────────────────────
+    class PerceptionService {
+        -ISensor~LidarScan~& lidar_
+        -ISensor~ImuData~& imu_
+        -ISensor~CameraFrame~& camera_
+        -ITransformProvider& tf_
+        -ClusterDetector detector_
+        -KalmanFilter2D kf_
+        -MultiObjectTracker tracker_
+        -DegradationPolicy policy_
+        +tick(dt)
+        +fuse(level) vector~Cluster~
+        +fuse_tracked(level) vector~TrackedObject~
+    }
+
+    %% ── Infrastructure 层 ──────────────────
+    class FusionNode {
+        -unique_ptr~ISensor~LidarScan~~ lidar_
+        -unique_ptr~ISensor~ImuData~~ imu_
+        -unique_ptr~ISensor~CameraFrame~~ camera_
+        -optional~PerceptionService~ perception_
+        +timer_callback()
+    }
+    class SimulatedLidar {
+        +read_impl(LidarScan&) bool
+    }
+    class SickTiM781Adapter {
+        -Subscription sub_
+        +connect(Node&)
+        +read_impl(LidarScan&) bool
+    }
+    class SensorFactory {
+        +create_lidar(cfg) LidarPtr
+        +create_imu(cfg) ImuPtr
+        +create_camera(cfg) CameraPtr
+    }
+
+    %% ── 关系 ──────────────────────────────
+    ISensor~LidarScan~ <|.. SimulatedLidar : implements
+    ISensor~LidarScan~ <|.. SickTiM781Adapter : implements
+    SensorFactory ..> SimulatedLidar : creates
+    SensorFactory ..> SickTiM781Adapter : creates
+
+    FusionNode *-- ISensor~LidarScan~ : owns
+    FusionNode *-- PerceptionService : owns
+    PerceptionService o-- ISensor~LidarScan~ : injected
+    PerceptionService o-- ITransformProvider : injected
+    PerceptionService *-- ClusterDetector
+    PerceptionService *-- KalmanFilter2D
+    PerceptionService *-- MultiObjectTracker
+    PerceptionService *-- DegradationPolicy
+```
+
+| 关系 | 含义 |
+|------|------|
+| `*--` | 组合（拥有生命周期） |
+| `o--` | 聚合（依赖注入，不拥有生命周期） |
+| `<|..` | 接口实现 |
+| `..>` | 依赖（创建/使用） |
 
 ---
 
