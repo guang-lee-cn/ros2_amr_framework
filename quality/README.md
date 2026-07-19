@@ -1,13 +1,16 @@
-# Test Guide
+# Quality Engineering
 
 ## Quick Run
 
 ```bash
-# Build + test + coverage — single command
-./test.sh
+# Full quality gate: build → test → coverage → gate
+./quality.sh
 
 # Also generate HTML coverage report
-./test.sh html
+./quality.sh html
+
+# Run tests only (no coverage analysis)
+./scripts/run_tests.sh
 ```
 
 ## Test Modules (52 cases, 8 modules)

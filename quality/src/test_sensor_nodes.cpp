@@ -8,29 +8,15 @@
 #include <sensor_msgs/msg/laser_scan.hpp>
 
 #include <gtest/gtest.h>
-#include <rclcpp/rclcpp.hpp>
+#include "test_helpers.hpp"
 
-#include <chrono>
-#include <memory>
+#include <rclcpp/rclcpp.hpp>
 
 class SensorNodeTest : public ::testing::Test {
 protected:
   static void SetUpTestSuite() { rclcpp::init(0, nullptr); }
   static void TearDownTestSuite() { rclcpp::shutdown(); }
 };
-
-template <typename Predicate>
-bool spin_until(rclcpp::node_interfaces::NodeBaseInterface::SharedPtr node_iface,
-                Predicate pred, std::chrono::milliseconds timeout) {
-  auto start = std::chrono::steady_clock::now();
-  rclcpp::executors::SingleThreadedExecutor exec;
-  exec.add_node(node_iface);
-  while (!pred() && (std::chrono::steady_clock::now() - start) < timeout) {
-    exec.spin_once(std::chrono::milliseconds(10));
-  }
-  exec.remove_node(node_iface);
-  return pred();
-}
 
 // ── LidarNode ────────────────────────────────────────────────────────
 

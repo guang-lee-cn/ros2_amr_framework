@@ -56,4 +56,4 @@ jobs:
         run: |
           . /opt/ros/jazzy/setup.sh
           cd src/ros2_robot_middleware
-          ./test.sh
+          ./quality/quality.sh

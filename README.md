@@ -1,7 +1,7 @@
 # ROS2 AMR Framework
 
 [![CI](https://github.com/guang-lee-cn/ros2_amr_framework/actions/workflows/ci.yml/badge.svg)](https://github.com/guang-lee-cn/ros2_amr_framework/actions)
-[![Coverage](https://img.shields.io/badge/coverage-77.6%25-green)](test/coverage/coverage.txt)
+[![Coverage](https://img.shields.io/badge/coverage-78.8%25-green)](quality/data/coverage.txt)
 [![ROS2](https://img.shields.io/badge/ROS%202-Jazzy-22303C?logo=ros)](https://docs.ros.org/en/jazzy/)
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=c%2B%2B)](https://en.cppreference.com/w/cpp/17)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
@@ -58,7 +58,7 @@ ros2 launch ros2_robot_middleware fleet_multi.launch.py
 ros2 launch ros2_robot_middleware simulation.launch.py
 
 # Run tests
-./src/ros2_robot_middleware/test.sh
+./quality/quality.sh
 ```
 
 ## Tech Stack
@@ -69,7 +69,7 @@ ros2 launch ros2_robot_middleware simulation.launch.py
 | RMW | Fast-DDS with XML QoS profile |
 | Messages | sensor_msgs (standard) + 5 custom (msg/srv/action) |
 | Build | colcon + ament_cmake |
-| Test | GoogleTest, 52 cases in 8 modules |
+| Test | GoogleTest, 65 cases in 9 modules |
 | CI | GitHub Actions |
 | Simulation | Gazebo Harmonic + ros_gz_bridge |
 | Security | SROS2 + DDS-Security |
@@ -88,15 +88,15 @@ ros2 launch ros2_robot_middleware simulation.launch.py
 | [Observability Design](doc/guides/07-observability-design.md) | Traces/Metrics/Logs 完整设计 |
 | [Observability Usage](doc/guides/08-observability-usage.md) | API、踩坑、选型对比 |
 | [HAL Design](doc/guides/09-hal-design.md) | 硬件抽象层 + 移植指南 + 行业方案 |
-| [Test Guide](test/README.md) | 测试运行、覆盖率、命名规范 |
+| [Quality Guide](quality/README.md) | 质量门禁、测试模块、覆盖率、命名规范 |
 
 ## Status
 
 | Metric | Value |
 |--------|-------|
 | Build | [![CI](https://github.com/guang-lee-cn/ros2_amr_framework/actions/workflows/ci.yml/badge.svg)](https://github.com/guang-lee-cn/ros2_amr_framework/actions) |
-| Coverage | 77.6% — [test/coverage/](test/coverage/coverage.txt) |
-| Tests | 52 cases, 8 modules |
+| Coverage | 78.8% — [quality/data/](quality/data/coverage.txt) |
+| Tests | 65 cases, 9 modules |
 | Lines | ~3,800 (include + src) |
 | ROS 2 | Jazzy Jalisco (LTS, EOL 2029) |
 
