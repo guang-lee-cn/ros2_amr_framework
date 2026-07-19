@@ -196,6 +196,9 @@ void HealthMonitorNode::check_health()
   }
 
   pub_->publish(report);
+
+  // Publish ROS2 standard diagnostics (for rqt_runtime_monitor compatibility)
+  publish_diagnostics();
 }
 
 void HealthMonitorNode::create_service_server()
@@ -231,6 +234,9 @@ void HealthMonitorNode::create_report_publisher()
 {
   pub_ = this->create_publisher<ros2_robot_middleware::msg::HealthReport>(
     "/health/report", rclcpp::QoS(10).reliable());
+
+  diagnostic_pub_ = this->create_publisher<diagnostic_msgs::msg::DiagnosticArray>(
+    "/diagnostics", rclcpp::QoS(10).reliable());
 }
 
 void HealthMonitorNode::create_restart_clients()
@@ -448,4 +454,40 @@ std::string HealthMonitorNode::prometheus_metrics() const
       << m.fusion_cycle_count.load(std::memory_order_relaxed) << "\n";
 
   return out.str();
+}
+
+// ── ROS2 standard diagnostics (rqt_runtime_monitor compatible) ──────
+
+void HealthMonitorNode::publish_diagnostics()
+{
+  auto msg = diagnostic_msgs::msg::DiagnosticArray{};
+  msg.header.stamp = this->now();
+  msg.header.frame_id = "health_monitor";
+
+  for (const auto &cfg : kNdes) {
+    auto status = monitor_.escalated_status(cfg.node);
+
+    auto diag = diagnostic_msgs::msg::DiagnosticStatus{};
+    diag.name    = cfg.node;
+    diag.level   = to_diag_level(status);
+    diag.message = amr::domain::monitoring::to_string(status);
+
+    msg.status.push_back(diag);
+  }
+
+  diagnostic_pub_->publish(msg);
+}
+
+uint8_t HealthMonitorNode::to_diag_level(
+    amr::domain::monitoring::NodeStatus status) const
+{
+  using amr::domain::monitoring::NodeStatus;
+  switch (status) {
+    case NodeStatus::OK:    return diagnostic_msgs::msg::DiagnosticStatus::OK;
+    case NodeStatus::WARN:  return diagnostic_msgs::msg::DiagnosticStatus::WARN;
+    case NodeStatus::ERROR: return diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+    case NodeStatus::STALE: return diagnostic_msgs::msg::DiagnosticStatus::STALE;
+    case NodeStatus::FATAL: return diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+    default:                return diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+  }
 }

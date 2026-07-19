@@ -7,6 +7,8 @@
 #include <thread>
 #include <unordered_map>
 
+#include "diagnostic_msgs/msg/diagnostic_array.hpp"
+#include "diagnostic_msgs/msg/diagnostic_status.hpp"
 #include "lifecycle_msgs/srv/change_state.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/string.hpp"
@@ -47,6 +49,9 @@ private:
   void prometheus_accept();
   std::string prometheus_metrics() const;
 
+  void publish_diagnostics();
+  uint8_t to_diag_level(amr::domain::monitoring::NodeStatus status) const;
+
   // Domain layer
   amr::application::MonitoringService monitor_;
 
@@ -76,8 +81,9 @@ private:
   std::unordered_map<std::string, double> timeouts_;
   double check_interval_s_ = 1.0;
 
-  // Watchdog infrastructure (ROS2 lifecycle service clients)
+  // Watchdog + diagnostics
   std::unordered_map<std::string, rclcpp::Client<lifecycle_msgs::srv::ChangeState>::SharedPtr> restart_clients_;
+  rclcpp_lifecycle::LifecyclePublisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr diagnostic_pub_;
 
   int prom_socket_ = -1;
   std::thread prom_thread_;

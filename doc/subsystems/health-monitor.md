@@ -52,7 +52,11 @@ sequenceDiagram
 
 ### Prometheus 端点
 
-`:9090/metrics` — 暴露 7 类指标（传感器速率、四级延迟直方图、降级事件计数器等）。见 [可观测性](observability.md)。
+`:9090/metrics` — 暴露 7 类指标。见 [可观测性](observability.md)。
+
+### ROS2 标准 Diagnostics
+
+同时发布到 `/diagnostics` topic（`diagnostic_msgs/DiagnosticArray`），兼容 `rqt_runtime_monitor` 等 ROS2 标准工具。指标数据通过 Prometheus（时序趋势），实时状态通过 `/diagnostics`（红/黄/绿灯）。两者互补。
 
 ## 依赖
 
