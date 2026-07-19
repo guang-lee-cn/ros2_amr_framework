@@ -5,7 +5,7 @@
 | 版本 | v2.0.0 |
 | 最后更新 | 2026-07-19 |
 | 作者 | guang |
-| 读者 | 面试官 / 技术团队 / 开源社区 |
+| 读者 | 技术团队 / 开源社区 |
 | 适用范围 | ros2_amr_framework 感知→决策→执行链路。不含 SLAM、路径规划、真实电机驱动。 |
 | 参考 | [ITERATION.md](ITERATION.md) · [adr/](adr/) · [subsystems/](subsystems/) · [guides/](guides/) |
 
@@ -272,7 +272,7 @@ flowchart LR
 | 维度 | 选择 | 备选方案 | 选择理由 |
 |------|------|---------|---------|
 | DDS | Fast-DDS | CycloneDDS / RTI Connext | ROS2 默认 RMW，XML QoS profile 粒度够细，SHM 传输成熟 |
-| 日志 | spdlog async (M9) | 自研 RingBuffer (M7) | spdlog 工程完备性更好（日志轮转/多 sink/级别过滤），但自研方案展示了延迟确定性意识 |
+| 日志 | spdlog async (M9) | 自研 RingBuffer (M7) | spdlog 工程完备性更好（日志轮转/多 sink/级别过滤）；RingBuffer 延迟更确定（~10ns vs ~100ns），适合实时约束严格场景 |
 | 聚类 | DBSCAN | scan-line 角度聚类 | 笛卡尔空间距离，分离相邻物体，显式噪点标记 |
 | 状态估计 | 自研 EKF | robot_localization / FusionCore | 4 维状态对仓库 AMR 足够；Joseph 形式 + Mahalanobis 离群值拒绝达到商用级 |
 | 传感器接口 | `ISensor<T>` 虚接口注入 | CRTP 模板参数 / SensorRegistry | 依赖注入兼顾灵活性和类型安全，传感器数量少时比注册表简洁 |

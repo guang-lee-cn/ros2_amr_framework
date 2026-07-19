@@ -91,7 +91,7 @@ rmw_cyclonedds_cpp.so  → Cyclone DDS
 | 嵌入式适配 | ★★★ | ★★★★★ | iTOP-4412 |
 
 **本项目选择 Fast-DDS (默认) 的理由：**
-- R0 需求是"展示 DDS 层定制能力"，Fast-DDS XML Profile 自定义空间最大
+- 需求是"DDS 层深度定制能力"，Fast-DDS XML Profile 自定义空间最大
 - 全 localhost 通信，不碰网络瓶颈
 - 6 节点不超过 5MB/s 带宽，远低于二者上限
 
