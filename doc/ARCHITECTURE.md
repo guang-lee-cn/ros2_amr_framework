@@ -256,6 +256,9 @@ flowchart LR
 | 非功能约束 | — | — | — | [non-functional.md](non-functional.md) |
 | 接口规范 | ✅ | ✅ | — | [interfaces.md](interfaces.md) |
 | 风险矩阵 | — | — | — | [risks.md](risks.md) |
+| 数据架构 | ✅ | — | — | [data-architecture.md](data-architecture.md) |
+| 部署运维 | — | ✅ | — | [deployment.md](deployment.md) |
+| 附录 | — | — | — | [appendix.md](appendix.md) |
 
 ---
 

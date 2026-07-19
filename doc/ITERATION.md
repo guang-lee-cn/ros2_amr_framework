@@ -14,14 +14,14 @@
 | 四 | 总体架构设计 | ✅ ARCHITECTURE.md + ADR | — |
 | 五 | 分模块详细设计 | ✅ 8 subsystem 文档 | — |
 | 六 | 跨模块核心机制 | ✅ communication + configuration | P2 |
-| 七 | 数据架构设计 | ❌ 缺 | P3 |
+| 七 | 数据架构设计 | ✅ data-architecture.md | P3 |
 | 八 | 接口设计规范 | ✅ interfaces.md | P2 |
 | 九 | 非功能专项设计 | ✅ non-functional.md | P1 |
-| 十 | 部署与运维架构 | ❌ 缺 | P3 |
+| 十 | 部署与运维架构 | ✅ deployment.md | P3 |
 | 十一 | 风险与应对方案 | ✅ risks.md | P2 |
 | 十二 | 测试架构设计 | ✅ quality/README | — |
 | 十三 | 落地实施规划 | ✅ ITERATION.md | — |
-| 十四 | 附录 | ⚠️ 未集中 | P3 |
+| 十四 | 附录 | ✅ appendix.md | P3 |
 
 ---
 
