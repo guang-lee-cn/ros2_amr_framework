@@ -250,8 +250,12 @@ flowchart LR
 | 执行管线 | ✅ | ✅ Action | — | [actuation-pipeline.md](subsystems/actuation-pipeline.md) |
 | 健康监控 | — | ✅ 看门狗 | — | [health-monitor.md](subsystems/health-monitor.md) |
 | 可观测性 | — | — | — | [observability.md](subsystems/observability.md) |
+| 通信中间件 | ✅ | — | — | [communication.md](subsystems/communication.md) |
+| 配置管理 | — | ✅ | — | [configuration.md](subsystems/configuration.md) |
 | 硬件抽象层 | ✅ | — | — | [hal-design.md](../guides/hal-design.md) |
 | 非功能约束 | — | — | — | [non-functional.md](non-functional.md) |
+| 接口规范 | ✅ | ✅ | — | [interfaces.md](interfaces.md) |
+| 风险矩阵 | — | — | — | [risks.md](risks.md) |
 
 ---
 
