@@ -40,62 +40,39 @@
 
 ```mermaid
 flowchart TB
-    subgraph drivers["外部系统"] 
-        SICK["LiDAR 驱动 (sick_scan2)"]
-        BMI["IMU 驱动"]
-        REAL["Camera 驱动"]
+    subgraph drivers["外部驱动 · 监控"]
+        SICK["sick_scan2 (LiDAR)"]
+        BMI["BMI088 (IMU)"]
+        REAL["RealSense (Camera)"]
         PROM["Prometheus"]
-        GRAF["Grafana"]
     end
 
-    subgraph infra["基础设施服务 (独立进程)"]
+    subgraph infra["基础设施服务 PID 5/6"]
         HEALTH["HealthMonitor"]
         FLEET["FleetManager"]
     end
 
-    subgraph compute["计算容器 (单进程 · SHM 传输)"]
-        subgraph app["Application"]
-            PS["PerceptionService"]
-            PLS["PlanningService"]
-            EXS["ExecutionService"]
-        end
-        subgraph adapters["HAL (内嵌于 FusionNode)"]
-            HAL_L["LidarAdapter"]
-            HAL_I["ImuAdapter"]
-            HAL_C["CameraAdapter"]
-        end
+    subgraph compute["计算容器 PID 4"]
         FUSION["FusionNode"]
         DECISION["DecisionNode"]
         MOTOR["MotorCtrlNode"]
     end
 
-    subgraph cross["横切关注点"]
-        OBS["Observability"]
-        CFG["Configuration"]
-    end
-
     SICK -->|"LaserScan"| FUSION
     BMI  -->|"Imu"| FUSION
     REAL -->|"Image"| FUSION
-    PROM -->|"pull /metrics"| HEALTH
-    HEALTH -->|"dashboard"| GRAF
+    FUSION -->|"PerceptionObjects"| DECISION
+    DECISION -->|"MoveToPose Action"| MOTOR
 
     FUSION -.->|heartbeat| HEALTH
     DECISION -.->|heartbeat| HEALTH
     MOTOR -.->|status| HEALTH
     HEALTH -.->|"HealthReport"| FLEET
+    PROM -.->|"pull /metrics"| HEALTH
 
-    OBS -.-> FUSION
-    OBS -.-> DECISION
-    OBS -.-> MOTOR
-    OBS -.-> HEALTH
-
-    style compute fill:#f5f5f5,stroke:#333
-    style infra fill:#e3f2fd,stroke:#1565c0
     style drivers fill:#fff3e0,stroke:#e65100
-    style cross fill:#f3e5f5,stroke:#7b1fa2
-    style app fill:#e8f5e9,stroke:#2e7d32
-    style adapters fill:#fce4ec,stroke:#c62828
+    style infra fill:#e3f2fd,stroke:#1565c0
+    style compute fill:#f5f5f5,stroke:#333
 ```
 
 | 层 | 说明 | 物理边界 |
