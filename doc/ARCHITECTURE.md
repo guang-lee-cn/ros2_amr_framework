@@ -89,35 +89,26 @@ flowchart TB
 ## 二、数据流 / 控制流 / 状态流
 
 ```mermaid
-flowchart TB
-    subgraph sensors["传感器 (独立进程)"]
-        L["LiDAR 10Hz"]
-        I["IMU 100Hz"]
-        C["Camera 5Hz"]
-    end
+flowchart LR
+    L["LiDAR 10Hz"] -->|"LaserScan"| FUSION
+    I["IMU 100Hz"]  -->|"Imu"| FUSION
+    C["Camera 5Hz"] -->|"Image"| FUSION
 
-    subgraph pipeline["感知→执行管线 (compute_container)"]
-        direction LR
-        FUSION["FusionNode"]
-        DECISION["DecisionNode"]
-        MOTOR["MotorCtrlNode"]
-    end
+    FUSION["FusionNode"] -->|"PerceptionObjects"| DECISION["DecisionNode"]
+    DECISION -->|"MoveToPose Action"| MOTOR["MotorCtrlNode"]
+    MOTOR -->|"cmd_vel"| ROBOT["Robot 底盘"]
 
-    subgraph infra["基础设施 (独立进程)"]
-        HEALTH["HealthMonitor"]
-    end
+    FUSION -.->|"health 1Hz"| HEALTH["HealthMonitor"]
+    DECISION -.->|"health 1Hz"| HEALTH
+    MOTOR -.->|"health 1Hz"| HEALTH
 
-    L -->|"LaserScan"| FUSION
-    I -->|"Imu"| FUSION
-    C -->|"Image"| FUSION
-    FUSION -->|"PerceptionObjects"| DECISION
-    DECISION -->|"MoveToPose Action"| MOTOR
+    L -.->|"health 1Hz"| HEALTH
+    I -.->|"health 1Hz"| HEALTH
+    C -.->|"health 1Hz"| HEALTH
 
-    FUSION -.->|"heartbeat 1Hz"| HEALTH
-    DECISION -.->|"heartbeat 1Hz"| HEALTH
-    MOTOR -.->|"status 1Hz"| HEALTH
-
-    HEALTH -.->|"lifecycle restart"| sensors
+    HEALTH -.->|"lifecycle restart"| L
+    HEALTH -.->|"lifecycle restart"| I
+    HEALTH -.->|"lifecycle restart"| C
 
     FUSION -.-|"降级状态"| DECISION
 
