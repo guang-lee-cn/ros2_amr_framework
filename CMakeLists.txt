@@ -116,6 +116,7 @@ if(BUILD_TESTING)
   add_amr_test(test_monitoring    test/test_monitoring.cpp)
   add_amr_test(test_sensor_hal    test/test_sensor_hal.cpp)
   add_amr_test(test_dbscan        test/test_dbscan.cpp)
+  add_amr_test(test_tracker       test/test_tracker.cpp)
 endif()
 
 ament_package()
