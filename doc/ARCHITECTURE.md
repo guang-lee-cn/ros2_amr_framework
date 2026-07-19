@@ -89,41 +89,59 @@ flowchart TB
 ## 二、数据流 / 控制流 / 状态流
 
 ```mermaid
-flowchart LR
-    L["LiDAR 10Hz"] -->|"LaserScan"| FUSION
-    I["IMU 100Hz"]  -->|"Imu"| FUSION
-    C["Camera 5Hz"] -->|"Image"| FUSION
+flowchart TB
+    subgraph sensors["&nbsp;&nbsp;&nbsp;&nbsp; 传感器层 (独立进程) &nbsp;&nbsp;&nbsp;&nbsp;"]
+        direction LR
+        L["LiDAR<br/>10Hz"]
+        I["IMU<br/>100Hz"]
+        C["Camera<br/>5Hz"]
+    end
 
-    FUSION["FusionNode"] -->|"PerceptionObjects"| DECISION["DecisionNode"]
-    DECISION -->|"MoveToPose Action"| MOTOR["MotorCtrlNode"]
+    subgraph compute["&nbsp;&nbsp;&nbsp;&nbsp; 计算层 (compute_container 单进程) &nbsp;&nbsp;&nbsp;&nbsp;"]
+        direction LR
+        FUSION["FusionNode<br/>DBSCAN · EKF · Tracker"]
+        DECISION["DecisionNode<br/>目标分发 · 抢占"]
+        MOTOR["MotorCtrlNode<br/>插值 · Action"]
+    end
+
+    subgraph infra["&nbsp;&nbsp;&nbsp;&nbsp; 基础设施 (独立进程) &nbsp;&nbsp;&nbsp;&nbsp;"]
+        HEALTH["HealthMonitor<br/>心跳 · 看门狗 · Prometheus"]
+    end
+
+    subgraph legend["&nbsp;&nbsp;&nbsp;&nbsp; 图例 &nbsp;&nbsp;&nbsp;&nbsp;"]
+        direction LR
+        L1[" "] ---|"数据流"| L2[" "]
+        L3[" "] -.-|"控制流"| L4[" "]
+    end
+
+    L -->|"LaserScan"| FUSION
+    I -->|"Imu"| FUSION
+    C -->|"Image"| FUSION
+    FUSION -->|"PerceptionObjects"| DECISION
+    DECISION -->|"MoveToPose Action"| MOTOR
     MOTOR -->|"cmd_vel"| ROBOT["Robot 底盘"]
 
-    FUSION -.->|"health 1Hz"| HEALTH["HealthMonitor"]
-    DECISION -.->|"health 1Hz"| HEALTH
-    MOTOR -.->|"health 1Hz"| HEALTH
+    L -.-|"health 1Hz"| HEALTH
+    I -.-|"health 1Hz"| HEALTH
+    C -.-|"health 1Hz"| HEALTH
+    FUSION -.-|"health 1Hz"| HEALTH
+    DECISION -.-|"health 1Hz"| HEALTH
+    MOTOR -.-|"health 1Hz"| HEALTH
 
-    L -.->|"health 1Hz"| HEALTH
-    I -.->|"health 1Hz"| HEALTH
-    C -.->|"health 1Hz"| HEALTH
-
-    HEALTH -.->|"lifecycle restart"| L
-    HEALTH -.->|"lifecycle restart"| I
-    HEALTH -.->|"lifecycle restart"| C
-
-    FUSION -.-|"降级状态"| DECISION
+    HEALTH -.-|"lifecycle restart"| L
+    HEALTH -.-|"lifecycle restart"| I
+    HEALTH -.-|"lifecycle restart"| C
 
     style FUSION fill:#e1f5fe,stroke:#0288d1
     style DECISION fill:#fff3e0,stroke:#f57c00
     style MOTOR fill:#e8f5e9,stroke:#388e3c
     style HEALTH fill:#fce4ec,stroke:#c62828
+    style legend fill:#fafafa,stroke:#999
 ```
 
-| 颜色 | 图例 | 承载内容 |
-|:---:|---|------|
-| **红色实线** | 数据流 | 传感器 → Fusion → Decision → Motor → Robot |
-| **蓝色虚线** | 控制流 | Lifecycle 启动/重启、心跳、Action Goal/Feedback/Result |
-
-> 状态流（5 级降级）见下方状态图。Action 生命周期见 [执行管线](subsystems/actuation-pipeline.md)。
+> 实线 = 数据流（传感器→Fusion→Decision→Motor→Robot）<br/>
+> 虚线 = 控制流（health 信号 + lifecycle 重启）<br/>
+> 状态流（降级）见下方状态图。Action 生命周期见 [执行管线](subsystems/actuation-pipeline.md)。
 
 ### 数据流（感知→执行链路明细）
 
