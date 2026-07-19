@@ -174,31 +174,31 @@ flowchart TB
 
 ```mermaid
 stateDiagram-v2
+    direction TB
+
     [*] --> FULL
 
-    FULL --> NO_IMU    : IMU timeout
-    FULL --> NO_LIDAR  : LiDAR timeout
+    FULL --> NO_IMU : IMU timeout
+    FULL --> NO_LIDAR : LiDAR timeout
     FULL --> NO_CAMERA : Camera timeout
 
-    NO_IMU --> FULL     : IMU recovered
-    NO_IMU --> NO_LIDAR : LiDAR also lost
-    NO_IMU --> CRITICAL : Camera also lost
+    NO_IMU --> FULL : recovered
+    NO_LIDAR --> FULL : recovered
+    NO_CAMERA --> FULL : recovered
 
-    NO_LIDAR --> FULL     : LiDAR recovered
-    NO_LIDAR --> NO_IMU   : IMU also lost
+    NO_IMU --> CRITICAL : another sensor lost
+    NO_LIDAR --> CRITICAL : another sensor lost
 
-    CRITICAL --> FULL  : sensor recovered
-    CRITICAL --> FATAL : max retries exceeded
+    CRITICAL --> FULL : any sensor recovered
+    CRITICAL --> FATAL : max retries (3)
 ```
 
-| 等级 | 融合行为 |
-|------|---------|
-| FULL | DBSCAN 聚类 + KF 更新 + Tracker 关联 |
-| NO_IMU | KF predict 用加速度=0，其余正常 |
-| NO_LIDAR | 无聚类输出，Tracker 仅 predict |
-| NO_CAMERA | 不影响（LiDAR 为主传感器） |
-| CRITICAL | ≥2 传感器缺失，无融合输出 |
-| FATAL | 看门狗重试耗尽，系统 inactive |
+| 等级 | 触发条件 | 融合行为 |
+|------|---------|---------|
+| FULL | 全部传感器 OK | DBSCAN + KF + Tracker 完整管线 |
+| NO_IMU / NO_LIDAR / NO_CAMERA | 单个传感器超时 | 部分降级，其余正常 |
+| CRITICAL | ≥2 传感器缺失 | 无融合输出，系统等待恢复 |
+| FATAL | 看门狗重试耗尽 (3 次) | 系统 inactive，需人工介入 |
 
 ---
 
