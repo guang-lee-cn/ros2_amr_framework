@@ -16,7 +16,9 @@ flowchart LR
     end
 
     subgraph compute["计算层 (单进程)"]
-        HAL["传感器适配器 (ISensor 接口)"]
+        HAL_L["LidarAdapter"]
+        HAL_I["ImuAdapter"]
+        HAL_C["CameraAdapter"]
         FUSION["FusionNode"]
         DECISION["DecisionNode"]
         MOTOR["MotorCtrlNode"]
@@ -27,10 +29,12 @@ flowchart LR
         FLEET["FleetManager"]
     end
 
-    L -->|"LaserScan"| HAL
-    I -->|"Imu"| HAL
-    C -->|"Image"| HAL
-    HAL -->|"LidarScan"| FUSION
+    L -->|"LaserScan"| HAL_L
+    I -->|"Imu"| HAL_I
+    C -->|"Image"| HAL_C
+    HAL_L -->|"LidarScan"| FUSION
+    HAL_I -->|"ImuData"| FUSION
+    HAL_C -->|"CameraFrame"| FUSION
     FUSION -->|"PerceptionObjects"| DECISION
     DECISION -->|"MoveToPose Action"| MOTOR
     MOTOR -->|"cmd_vel"| ROBOT["Robot"]
@@ -52,7 +56,9 @@ flowchart LR
 | 边 | 类型 | Topic / 接口 | QoS |
 |---|------|-------------|-----|
 | 传感器 → HAL | DDS | `/sensor/lidar`, `/sensor/imu`, `/sensor/camera` | best_effort / reliable |
-| HAL → Fusion | 进程内 | `ISensor<DataType>::read()` | — |
+| HAL_L → Fusion | 进程内 | `ISensor<LidarScan>::read()` | — |
+| HAL_I → Fusion | 进程内 | `ISensor<ImuData>::read()` | — |
+| HAL_C → Fusion | 进程内 | `ISensor<CameraFrame>::read()` | — |
 | Fusion → Decision | DDS | `/perception/objects` | reliable |
 | Decision → Motor | DDS Action | `/cmd/move_to_pose` | — |
 | 各节点 → Health | DDS | `/*/heartbeat`, `/cmd/status` | reliable |
