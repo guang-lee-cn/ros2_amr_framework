@@ -117,8 +117,6 @@ flowchart LR
     DECISION -.->|"控制流 (heartbeat 1Hz)"| HEALTH
     MOTOR -.->|"控制流 (status 1Hz)"| HEALTH
 
-    FUSION ==="状态流 (FULL→NO_IMU→CRITICAL)"===> DECISION
-
     linkStyle 0 stroke:#d32f2f,stroke-width:2px
     linkStyle 1 stroke:#d32f2f,stroke-width:2px
     linkStyle 2 stroke:#d32f2f,stroke-width:2px
@@ -130,7 +128,6 @@ flowchart LR
     linkStyle 8 stroke:#1976d2,stroke-width:2px,stroke-dasharray:6
     linkStyle 9 stroke:#1976d2,stroke-width:2px,stroke-dasharray:6
     linkStyle 10 stroke:#1976d2,stroke-width:2px,stroke-dasharray:6
-    linkStyle 11 stroke:#388e3c,stroke-width:2px
 
     style FUSION fill:#e1f5fe,stroke:#0288d1
     style DECISION fill:#fff3e0,stroke:#f57c00
@@ -142,9 +139,8 @@ flowchart LR
 |:---:|---|------|
 | **红色实线** | 数据流 | 传感器 → Fusion → Decision → Motor → Robot |
 | **蓝色虚线** | 控制流 | Lifecycle 启动/重启、心跳、Action Goal/Feedback/Result |
-| **绿色粗线** | 状态流 | 5 级降级 (FULL→NO_IMU→NO_LIDAR→CRITICAL→FATAL) |
 
-> 详细降级状态变迁见 [融合管线](subsystems/fusion-pipeline.md) 的状态流章节。Action 生命周期见 [执行管线](subsystems/actuation-pipeline.md)。
+> 状态流（5 级降级）见下方状态图。Action 生命周期见 [执行管线](subsystems/actuation-pipeline.md)。
 
 ### 数据流（感知→执行链路明细）
 
