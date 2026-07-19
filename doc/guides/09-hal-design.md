@@ -254,13 +254,13 @@ SickTiM781Adapter lidar{*this, "/newlidar/scan"};  // 另一个 LiDAR
 | ✅ 跨帧目标跟踪 | 最近邻关联 + 每 Track 独立 KF + spawn/prune |
 | ✅ 文档重构 | doc/ 三层目录 (架构/子系统/指南)，Mermaid 数据流/控制流/状态流 |
 | ✅ quality/ 目录 | 脚本/源码/数据分离，覆盖率门禁 (<80% 不能降) |
+| ✅ TF2 坐标变换 | ITransformProvider 接口 + tf2_ros 实现，LiDAR→base_link 刚体变换 |
 
 ### 下一步
 
 | 优先级 | 任务 | 工作量 | 描述 |
 |:---:|------|:---:|------|
-| 1 | TF2 坐标变换集成 | 0.5d | 传感器外参统一到 base_link |
-| 2 | M9 生产加固 | 2d | spdlog 替换、ARM64 交叉编译、OTA 模拟 |
+| 1 | M9 生产加固 | 2d | spdlog 替换、ARM64 交叉编译、OTA 模拟 |
 
 ### 技术债
 
