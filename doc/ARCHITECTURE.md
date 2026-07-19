@@ -32,51 +32,150 @@
 | v1.1 | 2025-07 | ADR-6 EKF 升级 + 降级策略 + 看门狗 |
 | v2.0 | 2026-07 | DDD 四层架构 + M7 可观测 + M8 HAL + DBSCAN+Tracker+TF2 + spdlog |
 
-> 本文档描述系统级设计——数据如何流动、控制如何传递、状态如何变迁。各模块内部细节见 [subsystems/](subsystems/)。
+> 本文档从两个视角描述系统：**软件分层概览** 和 **数据流 / 控制流 / 状态流统一视图**。各模块内部细节见 [subsystems/](subsystems/)。
 
 ---
 
-## 一、数据流（感知→执行链路）
+## 一、软件分层与模块构成
 
 ```mermaid
-flowchart LR
-    subgraph sensors["传感器层 (独立进程)"]
-        L["SICK TiM781 (10Hz)"]
-        I["BMI088 IMU (100Hz)"]
-        C["RealSense D435 (5Hz)"]
+flowchart TB
+    subgraph drivers["外部系统"] 
+        direction LR
+        SICK["LiDAR 驱动<br/>sick_scan2"]
+        BMI["IMU 驱动<br/>realsense-ros"]
+        REAL["Camera 驱动<br/>librealsense"]
+        PROM["Prometheus<br/>指标采集"]
+        GRAF["Grafana<br/>可视化"]
     end
 
-    subgraph compute["计算层 (单进程)"]
+    subgraph infra["基础设施服务 (独立进程)"]
+        direction LR
+        HEALTH["HealthMonitor<br/>看门狗 · 降级管理"]
+        FLEET["FleetManager<br/>多 AMR 编排 (骨架)"]
+    end
+
+    subgraph compute["计算容器 (单进程 · SHM 传输)"]
+        direction LR
+        subgraph app["Application"]
+            direction LR
+            PS["PerceptionService<br/>融合 · EKF · Tracker"]
+            PLS["PlanningService<br/>目标选择 · 抢占"]
+            EXS["ExecutionService<br/>轨迹插值"]
+        end
+        subgraph adapters["HAL (内嵌)"]
+            direction LR
+            HAL_L["LidarAdapter"]
+            HAL_I["ImuAdapter"]
+            HAL_C["CameraAdapter"]
+        end
         FUSION["FusionNode"]
         DECISION["DecisionNode"]
         MOTOR["MotorCtrlNode"]
     end
 
-    subgraph infra["基础设施 (独立进程)"]
-        HEALTH["HealthMonitor"]
-        FLEET["FleetManager"]
+    subgraph cross["横切关注点"]
+        direction LR
+        OBS["Observability<br/>Traces · Metrics · Logs"]
+        CFG["Configuration<br/>sensors.yaml · DDS XML"]
     end
 
-    L -->|"LaserScan"| FUSION
-    I -->|"Imu"| FUSION
-    C -->|"Image"| FUSION
-    FUSION -->|"PerceptionObjects"| DECISION
-    DECISION -->|"MoveToPose Action"| MOTOR
-    MOTOR -->|"cmd_vel"| ROBOT["Robot"]
+    SICK -->|"LaserScan"| FUSION
+    BMI  -->|"Imu"| FUSION
+    REAL -->|"Image"| FUSION
+    PROM -->|"pull /metrics"| HEALTH
+    HEALTH -->|"dashboard"| GRAF
 
     FUSION -.->|heartbeat| HEALTH
     DECISION -.->|heartbeat| HEALTH
-    L -.->|heartbeat| HEALTH
-    I -.->|heartbeat| HEALTH
-    C -.->|heartbeat| HEALTH
     MOTOR -.->|status| HEALTH
-
     HEALTH -.->|"HealthReport"| FLEET
 
-    style FUSION fill:#e1f5fe
-    style DECISION fill:#fff3e0
-    style MOTOR fill:#e8f5e9
+    OBS -.-> FUSION
+    OBS -.-> DECISION
+    OBS -.-> MOTOR
+    OBS -.-> HEALTH
+
+    style compute fill:#f5f5f5,stroke:#333
+    style infra fill:#e3f2fd,stroke:#1565c0
+    style drivers fill:#fff3e0,stroke:#e65100
+    style cross fill:#f3e5f5,stroke:#7b1fa2
+    style app fill:#e8f5e9,stroke:#2e7d32
+    style adapters fill:#fce4ec,stroke:#c62828
 ```
+
+| 层 | 说明 | 物理边界 |
+|----|------|---------|
+| **外部系统** | 传感器驱动、监控采集、可视化 | 独立 ROS2 节点 / 独立容器 |
+| **基础设施服务** | 健康监控、集群编排 | 独立进程 (PID 5/6) |
+| **计算容器** | 融合→决策→执行管线 | 单进程 (PID 4)，SHM 零拷贝 |
+| ⊳ **Application** | 领域业务逻辑 (DDD: domain + application) | 编译期禁止依赖 ROS2 |
+| ⊳ **HAL** | 硬件抽象层 (ISensor<T> + SensorFactory) | 内嵌于 FusionNode |
+| **横切关注点** | 可观测性、配置管理 | 库形式链接到所有节点 |
+
+---
+
+## 二、数据流 / 控制流 / 状态流
+
+```mermaid
+flowchart LR
+    subgraph sensors["传感器"]
+        L["LiDAR (10Hz)"]
+        I["IMU (100Hz)"]
+        C["Camera (5Hz)"]
+    end
+
+    FUSION["FusionNode<br/>DBSCAN · EKF · Tracker"]
+    DECISION["DecisionNode<br/>目标分发 · 抢占"]
+    MOTOR["MotorCtrlNode<br/>插值 · Action Server"]
+    HEALTH["HealthMonitor<br/>心跳检测 · 看门狗"]
+    ROBOT["Robot<br/>底盘"]
+
+    L -->|"数据流 (LaserScan)"| FUSION
+    I -->|"数据流 (Imu)"| FUSION
+    C -->|"数据流 (Image)"| FUSION
+    FUSION -->|"数据流 (PerceptionObjects)"| DECISION
+    DECISION -->|"数据流 (MoveToPose Action)"| MOTOR
+    MOTOR -->|"数据流 (cmd_vel)"| ROBOT
+
+    HEALTH -.->|"控制流 (lifecycle 重启)"| L
+    HEALTH -.->|"控制流 (lifecycle 重启)"| I
+    HEALTH -.->|"控制流 (lifecycle 重启)"| C
+
+    FUSION -.->|"控制流 (heartbeat 1Hz)"| HEALTH
+    DECISION -.->|"控制流 (heartbeat 1Hz)"| HEALTH
+    MOTOR -.->|"控制流 (status 1Hz)"| HEALTH
+
+    FUSION ==="状态流 (FULL→NO_IMU→CRITICAL)"===> DECISION
+
+    linkStyle 0 stroke:#d32f2f,stroke-width:2px
+    linkStyle 1 stroke:#d32f2f,stroke-width:2px
+    linkStyle 2 stroke:#d32f2f,stroke-width:2px
+    linkStyle 3 stroke:#d32f2f,stroke-width:2px
+    linkStyle 4 stroke:#d32f2f,stroke-width:2px
+    linkStyle 5 stroke:#d32f2f,stroke-width:2px
+    linkStyle 6 stroke:#1976d2,stroke-width:2px,stroke-dasharray:6
+    linkStyle 7 stroke:#1976d2,stroke-width:2px,stroke-dasharray:6
+    linkStyle 8 stroke:#1976d2,stroke-width:2px,stroke-dasharray:6
+    linkStyle 9 stroke:#1976d2,stroke-width:2px,stroke-dasharray:6
+    linkStyle 10 stroke:#1976d2,stroke-width:2px,stroke-dasharray:6
+    linkStyle 11 stroke:#388e3c,stroke-width:2px
+
+    style FUSION fill:#e1f5fe,stroke:#0288d1
+    style DECISION fill:#fff3e0,stroke:#f57c00
+    style MOTOR fill:#e8f5e9,stroke:#388e3c
+    style HEALTH fill:#fce4ec,stroke:#c62828
+```
+
+| 颜色 | 图例 | 承载内容 |
+|:---:|---|------|
+| **红色实线** | 数据流 | 传感器 → Fusion → Decision → Motor → Robot |
+| **蓝色虚线** | 控制流 | Lifecycle 启动/重启、心跳、Action Goal/Feedback/Result |
+| **绿色粗线** | 状态流 | 5 级降级 (FULL→NO_IMU→NO_LIDAR→CRITICAL→FATAL) |
+
+> 详细降级状态变迁见 [融合管线](subsystems/fusion-pipeline.md) 的状态流章节。Action 生命周期见 [执行管线](subsystems/actuation-pipeline.md)。
+
+### 数据流（感知→执行链路明细）
 
 | 边 | 类型 | Topic / 接口 | QoS |
 |---|------|-------------|-----|
@@ -87,56 +186,16 @@ flowchart LR
 | Health → Fleet | DDS | `/health/report` | reliable |
 | Motor → Robot | (planned) | `/cmd_vel` | — |
 
-> 传感器到 Fusion 的内部适配（HAL）详见 [传感器管线](subsystems/sensor-pipeline.md) 和 [融合管线](subsystems/fusion-pipeline.md)。
+### 控制流（关键场景）
 
----
+| 场景 | 触发方式 | 涉及节点 |
+|------|---------|---------|
+| 系统启动 | `ros2 launch` → LifecycleNode configure→activate | 全部 6 节点 |
+| 传感器故障恢复 | HealthMonitor 检测 heartbeat timeout → ChangeState(deactivate→activate) | Health + 故障传感器 |
+| Action 生命周期 | Goal → (Feedback × N) → Result / Cancel | Decision → Motor |
+| 抢占 | 新目标到达时旧目标未完成 → cancel + send new goal | Decision |
 
-## 二、控制流（生命周期 + 故障恢复）
-
-```mermaid
-sequenceDiagram
-    participant Launch as ros2 launch
-    participant Lidar as LidarNode
-    participant Fusion as FusionNode
-    participant Decision as DecisionNode
-    participant Motor as MotorCtrlNode
-    participant Health as HealthMonitor
-
-    Note over Launch,Health: ── 启动 ──
-
-    Launch->>Lidar: configure() → activate()
-    Launch->>Fusion: configure() → activate()
-    Launch->>Decision: configure() → activate()
-    Launch->>Motor: configure() → activate()
-    Launch->>Health: configure() → activate()
-
-    Note over Launch,Health: ── 稳态运行 ──
-
-    loop 200ms
-        Fusion->>Fusion: tick() → DBSCAN → Tracker → publish
-    end
-    loop event-driven
-        Decision->>Decision: on_perception → send_goal
-    end
-    loop 10Hz
-        Motor->>Motor: execute() → interpolate → feedback
-    end
-    loop 1Hz
-        Health->>Health: check_health() → publish report
-    end
-
-    Note over Launch,Health: ── 故障恢复 ──
-
-    Health->>Health: IMU timeout → evaluate(ERROR)
-    Health->>Health: should_recover(imu) → true
-    Health->>Lidar: lifecycle ChangeState(imu, deactivate)
-    Health->>Lidar: lifecycle ChangeState(imu, activate)
-    Note right of Health: 看门狗重启<br/>最多重试 3 次
-```
-
----
-
-## 三、状态流（传感器降级）
+### 状态流（传感器降级）
 
 ```mermaid
 stateDiagram-v2
@@ -157,18 +216,18 @@ stateDiagram-v2
     CRITICAL --> FATAL : max retries exceeded
 ```
 
-| 等级 | 含义 | 融合行为 |
-|------|------|---------|
-| FULL | 全部传感器正常 | DBSCAN 聚类 + KF 更新 + Tracker 关联 |
-| NO_IMU | IMU 缺失 | KF predict 用加速度=0，其余正常 |
-| NO_LIDAR | LiDAR 缺失 | 无聚类输出，Tracker 仅 predict |
-| NO_CAMERA | Camera 缺失 | 不影响（LiDAR 为主传感器） |
-| CRITICAL | ≥2 个传感器缺失 | 无融合，输出空 |
-| FATAL | 看门狗重试耗尽 | 系统进入 inactive |
+| 等级 | 融合行为 |
+|------|---------|
+| FULL | DBSCAN 聚类 + KF 更新 + Tracker 关联 |
+| NO_IMU | KF predict 用加速度=0，其余正常 |
+| NO_LIDAR | 无聚类输出，Tracker 仅 predict |
+| NO_CAMERA | 不影响（LiDAR 为主传感器） |
+| CRITICAL | ≥2 传感器缺失，无融合输出 |
+| FATAL | 看门狗重试耗尽，系统 inactive |
 
 ---
 
-## 四、系统边界
+## 三、系统边界
 
 ```mermaid
 flowchart LR
@@ -240,7 +299,7 @@ flowchart LR
 
 ---
 
-## 五、模块索引
+## 四、模块索引
 
 | 模块 | 数据流 | 控制流 | 状态流 | 子系统文档 |
 |------|:---:|:---:|:---:|------|
@@ -287,7 +346,7 @@ flowchart LR
 
 ---
 
-## 六、DDD 分层视图
+## 五、DDD 分层视图
 
 ```
 ┌──────────────────────────────────────────────────────┐
@@ -406,7 +465,7 @@ classDiagram
 
 ---
 
-## 七、进程模型
+## 六、进程模型
 
 ```
 PID 1: lidar_node         — 独立 (传感器驱动故障隔离)
