@@ -43,8 +43,9 @@ jobs:
             ros-jazzy-action-msgs \
             ros-jazzy-ament-cmake-gtest \
             ros-jazzy-rosidl-default-generators \
+            ros-jazzy-diagnostic-msgs \
             python3-colcon-common-extensions \
-            lcov \
+            cppcheck lcov \
             && rm -rf /var/lib/apt/lists/*
 
       - uses: actions/checkout@v4
@@ -57,3 +58,10 @@ jobs:
           . /opt/ros/jazzy/setup.sh
           cd src/ros2_robot_middleware
           ./quality/quality.sh
+
+      - name: Static Analysis (non-blocking)
+        shell: bash
+        run: |
+          . /opt/ros/jazzy/setup.sh
+          cd src/ros2_robot_middleware
+          ./quality/scripts/static_analysis.sh || true
