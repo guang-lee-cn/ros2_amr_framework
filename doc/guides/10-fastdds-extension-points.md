@@ -1,7 +1,69 @@
 # Fast-DDS 二次开发接口速查
 
-> 列出 Fast-DDS 通信框架中预留的可定制化开发接口，按定制深度排列。
-> 配置级 = 不改 C++ 代码（XML/YAML/环境变量），代码级 = 实现抽象接口注入。
+> 列出 Fast-DDS 通信框架中预留的可定制化开发接口，标注**在哪个层配置**、**配置流向**。
+> ROS2 软件栈：`rclcpp → rmw → rmw_fastrtps → Fast-DDS → Transport(UDP/SHM/TCP)`
+
+## 〇、配置流向总图
+
+```mermaid
+flowchart TB
+    subgraph app["用户代码层"]
+        QOS["rclcpp::QoS() API"]
+        ENV["ROS_SECURITY_* 环境变量"]
+        LAUNCH["launch 参数 / YAML"]
+    end
+
+    subgraph rmw["rmw 抽象层"]
+        RMW["RMW_IMPLEMENTATION<br/>=rmw_fastrtps_cpp"]
+        SROS["SROS2 keystore<br/>+ governance.p7s"]
+    end
+
+    subgraph fastdds["Fast-DDS 层"]
+        XML["fastdds_profiles.xml"]
+        DDSENV["FASTRTPS_DEFAULT_PROFILES_FILE<br/>FASTRTPS_LOG_LEVEL"]
+        API["C++ API<br/>TransportInterface<br/>LogConsumer<br/>FlowController"]
+    end
+
+    subgraph transport["传输层"]
+        SHM["Shared Memory<br/>(同机零拷贝)"]
+        UDP["UDPv4 (跨设备)"]
+        TCP["TCPv4 (可靠跨设备)"]
+    end
+
+    QOS -->|"转译为 rmw QoS"| RMW
+    ENV --> SROS
+    LAUNCH -->|"注入"| DDSENV
+
+    RMW --> XML
+    SROS -->|"permissions.xml"| XML
+    DDSENV --> XML
+    DDSENV --> API
+
+    XML --> SHM
+    XML --> UDP
+    XML --> TCP
+
+    style app fill:#e8f5e9,stroke:#2e7d32
+    style rmw fill:#fff3e0,stroke:#f57c00
+    style fastdds fill:#e1f5fe,stroke:#0288d1
+    style transport fill:#fce4ec,stroke:#c62828
+```
+
+**配置来源分层归类**：
+
+| 9 个定制点 | 在哪配置 | 配置方式 |
+|-----------|---------|---------|
+| ① SHM↔UDP↔TCP 切换 | Fast-DDS XML | `<builtinTransports>` + `FASTRTPS_DEFAULT_PROFILES_FILE` 环境变量 |
+| ② QoS Profile | **ROS2 rclcpp API** | `rclcpp::QoS(10).reliable()` → rmw → Fast-DDS XML 转译 |
+| ③ Log 级别 | Fast-DDS 环境变量 | `FASTRTPS_LOG_LEVEL=WARNING`（与 `rcl_logging_spdlog` 独立） |
+| ④ Discovery 配置 | Fast-DDS XML | `<discoveryProtocol>SIMPLE\|STATIC</discoveryProtocol>` |
+| ⑤ 自定义 Log Consumer | Fast-DDS C++ API | `Log::RegisterConsumer()` |
+| ⑥ 自定义 Transport | Fast-DDS C++ API | 实现 `TransportInterface` → 注入 `participant_attr` |
+| ⑦ 自定义 TypeSupport | Fast-DDS C++ API 或 fastddsgen | 继承 `TypeSupport` 基类 |
+| ⑧ 自定义 Security Plugin | **ROS2 SROS2** + Fast-DDS XML | `ROS_SECURITY_*` 环境变量 + keystore + governance.p7s |
+| ⑨ WLP 层修改 | Fast-DDS C++ API | RTPS Submessage 级别控制 |
+
+**关键结论**：只有 **② QoS** 和 **⑧ Security** 两个定制点走 ROS2 层。其余 7 个都是直接在 Fast-DDS 层配置——ROS2 的 rmw 层只是透传，不参与定制。这意味着要做 Fast-DDS 深度定制，**必须理解 Fast-DDS 的 XML 和 C++ API，不能只靠 ROS2 rclcpp 文档**。
 
 ---
 
