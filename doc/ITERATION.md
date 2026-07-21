@@ -166,7 +166,12 @@ ROS2 软件栈：
 
 #### 短期（P0：传感器标准接入层 + HealthMonitor 自愈，2-4 周）
 
-- [x] HealthMonitor 自身故障恢复 — launch `respawn=True, delay=2.0s`（ADR-12）
+- [x] 6 业务节点 launch respawn（`respawn=True`，进程崩溃恢复）
+- [ ] HealthMonitor 重构 Gen 1.5→Gen 3（ADR-12）：
+  - [ ] 删除 `try_restart_sequence()` 中的 lifecycle reset（有害：DDS 抖动 → 假阳 → 500ms 盲区）
+  - [ ] 新增 `collect_evidence()` — 降级事件时自动抓 Prometheus 快照 + 最近日志
+  - [ ] 新增 `suggest_root_cause()` — 基于规则的根因候选排序
+  - [ ] 参考：[Intel Labs Behaviour Tree 自愈框架 (arXiv:2410.18825, 2024)](https://arxiv.org/abs/2410.18825)
 - [ ] SensorRegistry 插件注册机制，替代 `SensorFactory` 的 if-else
 - [ ] 3 个真实传感器适配器（LiDAR/IMU/Camera）生产级实现
 - [ ] `ISensor<T>` 接口规范文档 + 线程安全合约

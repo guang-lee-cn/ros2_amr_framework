@@ -552,7 +552,42 @@ HealthMonitor 挂了 →
 - IMU 0.5s timeout → 2s 盲区期间 IMU 可能触发一次 ERROR → HealthMonitor 盲区过后看门狗尝试重启 IMU → IMU 实际未故障 → 重启成功（额外一次不必要的重启）
 - 缓解：IMU timeout 从 0.5s 放宽到 1.0s，或 `respawn_delay` 从 2.0s 降到 0.5s
 
-### 实施计划
+### 修正（2026-07-19）
 
-- [ ] `system.launch.py` 中 health_monitor 节点添加 `respawn=True, respawn_delay=2.0`
-- [ ] 同样的配置应用于 `fleet_multi.launch.py` 和 `system_secure.launch.py`
+以上分析完成后，进一步调研了行业方案，发现当前设计存在重大缺陷。HealthMonitor 需要从 Gen 1.5（heartbeat + 状态机重置）演进到 Gen 3（运行时治理）。
+
+### 行业参考
+
+[Mirus et al. (Intel Labs, 2024)](https://arxiv.org/abs/2410.18825) 提出了基于 K8s + ROS2 + Behaviour Tree 的通用机器人故障自愈框架。核心发现：
+
+**四层恢复策略**（按成本递增）：
+1. Restart from scratch — 最慢，无额外资源
+2. Fallback instance (uninitialized) — 冷备
+3. Fallback instance (initialized) — 温备（收数据，不发指令）
+4. Fallback instance (in execution) — 热备（最快切换）
+
+**状态化恢复**（关键创新）：故障前的健康状态被保留并传递给新实例。使用 task proxy 模式保持高层任务请求在组件重建期间存活。
+
+**证据自动采集**：每次告警自动抓取 metrics + logs + traces + replay bundle（含地图/配置/策略/软件版本上下文）。
+
+**预防闭环**：Replay → 场景库 → 仿真回归 → CI 门禁 → 金丝雀发布 + 自动指标回滚。
+
+### 我们的定位
+
+Gen 3 是目标，但不是一步到位。当前优先做两件事：
+
+1. **删除有害功能**：移除 `try_restart_sequence()` 中的 lifecycle reset——它产生的副作用（DDS 抖动 → 误判 → 500ms 盲区）超过收益。进程崩溃恢复交给 launch respawn。
+2. **强化独有能力**：HealthMonitor 做 launch 做不到的事——传感器降级管理 + 任务级 SLA 监控 + 证据采集 + 根因排序。
+
+### 受影响的代码
+
+- [x] 6 个业务节点添加 launch `respawn=True`
+- [ ] 移除 `HealthMonitorNode::try_restart_sequence()` 中的 lifecycle reset 逻辑
+- [ ] 新增 `collect_evidence()` — 降级事件时自动抓 Prometheus 快照 + 最近 50 条日志
+- [ ] 新增 `suggest_root_cause()` — 基于规则的根因候选排序
+
+### 后续调研计划
+
+- [ ] 搜寻更多工业 AMR（MiR/Seegrid/Fetch）的公开故障处理方案
+- [ ] 评估 Behaviour Tree（BehaviorTree.CPP）在 ROS2 中做分层恢复的可行性
+- [ ] 评估 K8s + ROS2 的 fallback instance 模式在嵌入式 ARM 平台上的资源开销
