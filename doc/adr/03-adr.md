@@ -510,3 +510,49 @@ PerceptionService perception_{lidar_, imu_, camera_};
 3. **代码量膨胀**：~80 行类型擦除层（`std::any` 或手写 `void*` 包装）
 
 如果未来传感器超过 5 个再评估升级。
+
+---
+
+## ADR-12: HealthMonitor 自身故障恢复 —— launch respawn vs systemd vs 互监控
+
+**Date:** 2026-07-19
+**Status:** Accepted
+
+### 上下文
+
+HealthMonitor 是独立进程（PID 5），监控 6 个业务节点的健康状态。但它自身不是被监控的——"谁来监控监控者"。
+
+### 决策：launch 层自动重启（respawn）
+
+在 `system.launch.py` 中为 `health_monitor` 节点添加 `respawn=True, respawn_delay=2.0`。进程异常退出时，ROS2 launch 系统自动重启。
+
+```
+HealthMonitor 挂了 →
+  监控盲区 <2s（respawn_delay）
+  期间 Fusion/Decision/Motor 正常运行（独立进程）
+  Prometheus :9090 不可用（<2s）
+  /diagnostics 停止发布（<2s）
+```
+
+### 评估过的方案
+
+| 方案 | 复杂度 | 盲区 | 适用场景 |
+|------|:---:|:---:|------|
+| **A: launch respawn（选中）** | 低（一行 YAML） | <2s | 当前仓库 AMR |
+| B: systemd / Docker restart | 中 | <5s | 容器化部署 |
+| C: 双实例互监控 + SO_REUSEPORT | 高 | 0 | 高可用系统（飞机 FCS） |
+
+**选择 A 的理由**：
+- ROS2 launch 原生支持，不需要额外依赖
+- 2s 盲区对仓库 AMR 可接受（传感器降级 + 看门狗在 HealthMonitor 盲区内不执行——但 2s 远小于传感器的 timeout（IMU 0.5s 除外，所以 IMU 可能在盲区后触发一次不必要的 ERROR））
+- 方案 C 在传感器超过 10 个或需要 99.99% 可用性时再评估
+
+### 代价
+
+- IMU 0.5s timeout → 2s 盲区期间 IMU 可能触发一次 ERROR → HealthMonitor 盲区过后看门狗尝试重启 IMU → IMU 实际未故障 → 重启成功（额外一次不必要的重启）
+- 缓解：IMU timeout 从 0.5s 放宽到 1.0s，或 `respawn_delay` 从 2.0s 降到 0.5s
+
+### 实施计划
+
+- [ ] `system.launch.py` 中 health_monitor 节点添加 `respawn=True, respawn_delay=2.0`
+- [ ] 同样的配置应用于 `fleet_multi.launch.py` 和 `system_secure.launch.py`

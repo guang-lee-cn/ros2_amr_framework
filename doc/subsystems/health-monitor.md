@@ -116,8 +116,10 @@ sequenceDiagram
 | 故障 | 行为 |
 |------|------|
 | 节点重启 3 次仍 ERROR | 标记 FATAL，停止重试 |
-| HealthMonitor 自身崩溃 | 独立进程——不影响计算管线 |
+| HealthMonitor 自身崩溃 | launch `respawn=True, delay=2.0s` 自动重启。盲区 <2s。计算管线不受影响 |
 | Prometheus socket 创建失败 | `RCLCPP_WARN`，指标不可用，业务不中断 |
+
+> HealthMonitor 故障恢复方案详见 [ADR-12](../adr/03-adr.md#adr-12-healthmonitor-自身故障恢复--launch-respawn-vs-systemd-vs-互监控)。
 
 ### 性能
 

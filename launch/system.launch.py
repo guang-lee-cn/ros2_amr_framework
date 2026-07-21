@@ -66,5 +66,7 @@ def generate_launch_description():
             name='health_monitor',
             namespace='',
             output='screen',
+            respawn=True,
+            respawn_delay=2.0,
         ),
     ])

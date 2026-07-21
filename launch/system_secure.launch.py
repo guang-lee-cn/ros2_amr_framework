@@ -76,7 +76,9 @@ def generate_launch_description():
         LifecycleNode(
             package="ros2_robot_middleware",
             executable="health_monitor_node",
-            name="health_monitor",
+            name="health_monitor"
+            respawn=True,
+            respawn_delay=2.0,,
             namespace="",
             additional_env=env,
             output="screen",

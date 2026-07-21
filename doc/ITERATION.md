@@ -164,8 +164,9 @@ ROS2 软件栈：
 
 ### 迭代路线
 
-#### 短期（P0：传感器标准接入层，2-4 周）
+#### 短期（P0：传感器标准接入层 + HealthMonitor 自愈，2-4 周）
 
+- [x] HealthMonitor 自身故障恢复 — launch `respawn=True, delay=2.0s`（ADR-12）
 - [ ] SensorRegistry 插件注册机制，替代 `SensorFactory` 的 if-else
 - [ ] 3 个真实传感器适配器（LiDAR/IMU/Camera）生产级实现
 - [ ] `ISensor<T>` 接口规范文档 + 线程安全合约
