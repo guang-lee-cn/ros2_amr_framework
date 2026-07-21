@@ -2,16 +2,26 @@
 
 ## 项目定位
 
-**AMR 感知-执行管线参考架构**。本项目不是替代 ROS2 的中间件（ROS2 + Fast-DDS 已经提供了 DDS 传输、Lifecycle、QoS 等中间件能力），而是展示一个**生产级 ROS2 应用应该怎么组织、怎么测试、怎么观测**的参考实现。
+**ROS2 应用层框架 —— 解决 ROS2 裸写项目的 7 个核心痛点**。
 
-目标读者：ROS2 开发者、机器人软件架构师。他们可以从中理解：
-- ROS2 项目的 DDD 分层实践
-- 传感器抽象层（HAL）的接口设计和依赖注入
-- 实时系统的日志/metrics/traces 三支柱落地
-- 传感器降级、故障恢复、健康监控的工程化方案
+ROS2 + Fast-DDS 已经提供了中间件能力（DDS 传输、Lifecycle、QoS、Action）。我们做的是中间件之上的**应用层**：
+- 传感器统一接入（ISensor HAL）—— 解决 ROS2 生态 8+ 项目各自做 HAL、互不兼容的问题
+- 故障降级框架（DegradationPolicy）—— 替代手写 if-else
+- 可观测 SDK（spdlog + Prometheus + TracerContext）—— 填补 ROS2 OTel 空白
+- 测试夹具（TestNode + mock sensor）—— 降低 ROS2 单测门槛
 
-**本项目不提供**：可安装的 deb 包、插件市场、开箱即用的 SLAM/导航集成。
-**本项目提供**：一个完整的、可以编译运行、可以单测验证、可以监控观测的 ROS2 参考架构。
+在 ROS2 软件栈中的位置：
+```
+  NAV2（导航） / ros2_control（执行器）
+  ────────────────────────────────────
+  ★ 本项目（应用层框架）
+    ISensor HAL + Degradation + Observability + Test
+  ────────────────────────────────────
+  ROS2 中间件（rclcpp + Fast-DDS DDS/Lifecycle/QoS/Action）
+```
+
+**本项目提供**：感知传感器的标准接入规范 + 可观测方案 + 降级框架 + 测试工具。
+**不替代**：NAV2（导航）、ros2_control（执行器）、ROS2 中间件本身。
 
 ## 核心业务目标
 
