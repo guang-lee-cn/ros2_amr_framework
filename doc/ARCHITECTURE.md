@@ -6,7 +6,7 @@
 | 最后更新 | 2026-07-19 |
 | 作者 | guang |
 | 读者 | 技术团队 / 开源社区 |
-| 适用范围 | ros2_amr_framework 感知→决策→执行链路。不含 SLAM、路径规划、真实电机驱动。 |
+| 适用范围 | AMR 感知-执行管线参考架构。本项目是 ROS2 应用架构的 reference implementation，不是替代 ROS2 的通用中间件。不含 SLAM、路径规划、真实电机驱动。 |
 | 参考 | [ITERATION.md](ITERATION.md) · [adr/](adr/) · [subsystems/](subsystems/) · [guides/](guides/) |
 
 ### 术语表

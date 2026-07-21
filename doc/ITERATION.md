@@ -79,6 +79,46 @@
 
 ---
 
+## 技术远景：从参考架构到可集成框架
+
+> 2026-07-19 新增。项目当前定位已调整：**AMR 感知-执行管线参考架构** —— 不是通用中间件，而是生产级 ROS2 应用的架构示范。
+> 本节规划如何从"参考架构"演进到"可被其他项目集成的通用组件"。
+
+### 核心挑战
+
+| 挑战 | 当前状态 | 目标状态 |
+|------|---------|---------|
+| **传感器接入** | SensorFactory if-else，3 种传感器 | 插件注册机制，不修改框架代码 |
+| **感知算法替换** | DBSCAN 硬编码在 `PerceptionService::fuse()` | 策略模式，`IClusterAlgorithm` 可插拔 |
+| **底盘接口** | 不存在——`cmd_vel` 只是 planned | 标准 `ICmdVel` 接口 + mock + real 实现 |
+| **配置系统** | YAML 参数手动 declare_parameter | Schema 验证 + 热加载 |
+| **可分发性** | `git clone` + `colcon build` | deb/RPM 包 + Docker 镜像 |
+| **文档完备度** | 架构设计文档 | + API 参考 + 集成指南 + 迁移文档 |
+
+### 迭代路线
+
+#### P3.1：框架化核心（3d）
+
+- [ ] `IClusterAlgorithm` 接口 → DBSCAN / Euclidean / scan-line 可插拔
+- [ ] 传感器插件注册机制 → `REGISTER_SENSOR` 宏 + 静态注册表，替代 if-else
+- [ ] `ICmdVel` 底盘接口 → mock（Gazebo）/ real（CAN/串口）双实现
+- [ ] `config/sensors.yaml` Schema 定义 + 启动时校验
+
+#### P3.2：集成与分发（2d）
+
+- [ ] CMake install 规则 → `ros2_amr_framework` 可被其他 ROS2 包 `find_package`
+- [ ] Docker 镜像推送到 ghcr.io
+- [ ] API 参考文档（Doxygen / Sphinx）
+- [ ] 集成指南：如何接入新传感器 / 新底盘 / 新算法
+
+#### P3.3：生产加固（2d）
+
+- [ ] ARM64 交叉编译验证（RK3588 开发板）
+- [ ] 长时间稳定性测试（24h 连续运行 + Prometheus 监控）
+- [ ] 故障注入测试（进程 kill、DDS 断连、传感器数据注入异常值）
+
+---
+
 ## 已完成（不需要再动）
 
 | 文档 | 对应章节 |

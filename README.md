@@ -6,7 +6,7 @@
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=c%2B%2B)](https://en.cppreference.com/w/cpp/17)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
-A production-grade autonomous mobile robot application framework built on ROS 2 Jazzy — lifecycle management, fault tolerance, QoS tuning, multi-robot coordination, SROS2 security, and Gazebo simulation.
+AMR 感知-执行管线参考架构。基于 ROS 2 Jazzy，展示生产级 ROS2 应用的 DDD 分层、HAL 抽象、可观测性、降级管理与工程化实践。不是一个可安装的通用中间件，而是一个可学习、可复制的架构模板。
 
 ## Architecture
 
