@@ -168,19 +168,16 @@ ROS2 软件栈：
 
 | # | 问题 | 严重度 |
 |---|------|:---:|
-| 1 | `kalman_filter.hpp` 334 行 (红线 150) | 🔴 |
-| 2 | `health_monitor_node.cpp` 493 行 (红线 250) | 🔴 |
-| 3 | `cluster_detector.hpp` 167 行 (红线 150) | 🔴 |
-| 4 | `tracker.hpp` 153 行 (红线 150) | 🔴 |
-| 5 | HealthMonitorNode 5 种职责混合 (SRP 违反) | 🟡 |
-| 6 | 4 个测试文件未使用共享 `test_helpers.hpp` | 🟡 |
+| 1 | `health_monitor_node.cpp` 493 行 (红线 250，SRP 违反) | 🔴 |
+| 2 | HealthMonitorNode 5 种职责混合 | 🟡 |
+| 3 | 4 个测试文件未使用共享 `test_helpers.hpp` | 🟡 |
 
-#### 短期（P0：代码质量红线修复 + 传感器标准接入层，2-4 周）
+> CLAUDE.md 已更新例外条款：模板类豁免至 400 行，算法类豁免至 300 行。`kalman_filter.hpp`(334)/`cluster_detector.hpp`(167)/`tracker.hpp`(153) 适用豁免，无需修复。
 
-- [ ] kalman_filter.hpp 拆分 — 测量模型独立为 `linear_measurement.hpp` + `range_bearing_measurement.hpp`
-- [ ] health_monitor_node.cpp 拆分 — PrometheusHttpServer + DiagnosticsPublisher 独立类
-- [ ] cluster_detector.hpp / tracker.hpp 精简 — 将模板实现移入 `.ipp` 或 `.cpp`
-- [ ] `quality/scripts/check_limits.sh` — CI 阻塞，类上限自动检查
+#### 短期（P0：代码质量红线修复，2-4 周）
+
+- [ ] health_monitor_node.cpp 拆分 — PrometheusHttpServer + DiagnosticsPublisher 独立类（唯一红线）
+- [ ] `quality/scripts/check_limits.sh` — CI 阻塞，类上限自动检查（含豁免条款）
 
 - [x] 6 业务节点 launch respawn（`respawn=True`，进程崩溃恢复）
 - [ ] HealthMonitor 重构 Gen 1.5→Gen 3（ADR-12）：

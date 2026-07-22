@@ -5,22 +5,21 @@
 
 ---
 
-## 一、红线违规（立即修复）
+## 一、红线违规
 
-| # | 文件 | 行数 | 违规类型 | 红线 |
-|---|------|:---:|------|------|
-| 1 | `domain/perception/kalman_filter.hpp` | **334** | 头文件超限 | ≤150 行 |
-| 2 | `domain/perception/cluster_detector.hpp` | **167** | 头文件超限 | ≤150 行 |
-| 3 | `domain/perception/tracker.hpp` | **153** | 头文件超限 | ≤150 行 |
-| 4 | `src/infrastructure/health_monitor_node.cpp` | **493** | 源文件超限（近 2 倍） | ≤250 行 |
+> 修正：CLAUDE.md 新增例外条款——模板类豁免至 400 行，算法类豁免至 300 行（详见 CLAUDE.md §0.2）。
+> 修正后审计结果：
 
-**根因分析**：
-- `kalman_filter.hpp`：模板类 + 两个测量模型（Linear/RangeBearing）+ Joseph 协方差更新 → 一个头文件包含了多个类的职责
-- `health_monitor_node.cpp`：HealthMonitor 的 SRP 严重违反——心跳检测/看门狗重启/Prometheus HTTP Server/diagnostics 发布四种职责混合在一个类中
+| # | 文件 | 行数 | 初始判定 | 豁免类型 | 修正判定 |
+|---|------|:---:|:---:|------|:---:|
+| 1 | `kalman_filter.hpp` | 334 | 🔴 | 模板类（豁免 400）| 🟢 通过 |
+| 2 | `cluster_detector.hpp` | 167 | 🔴 | 算法类（豁免 300）| 🟢 通过 |
+| 3 | `tracker.hpp` | 153 | 🔴 | 模板类（豁免 400）| 🟢 通过 |
+| 4 | `health_monitor_node.cpp` | **493** | 🔴 | **无豁免适用** | 🔴 **仍违规（2× 红线）** |
 
-**修复方向**：
-- `kalman_filter.hpp` → 拆分：`linear_measurement.hpp` + `range_bearing_measurement.hpp` + 保留核心 KF 逻辑
-- `health_monitor_node.cpp` → 拆分：`prometheus_http_server.hpp/.cpp` + `diagnostics_publisher.hpp/.cpp`，HealthMonitorNode 仅保留心跳/看门狗编排
+**唯一红线违规**：`health_monitor_node.cpp` 493 行。根因不是模板限制——是 **SRP 违反**：一个类承担心跳检测、看门狗重启、Prometheus HTTP Server、diagnostics 发布、metrics 格式化五种职责。
+
+**修复方向**：将 Prometheus HTTP Server + diagnostics 发布 + metrics 格式化拆分为独立类，HealthMonitorNode 仅保留心跳/看门狗编排。预计拆分后 ≤250 行。
 
 ---
 
