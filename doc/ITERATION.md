@@ -174,29 +174,39 @@ ROS2 软件栈：
 
 > CLAUDE.md 已更新例外条款：模板类豁免至 400 行，算法类豁免至 300 行。`kalman_filter.hpp`(334)/`cluster_detector.hpp`(167)/`tracker.hpp`(153) 适用豁免，无需修复。
 
-#### 短期（P0：代码质量红线修复，2-4 周）
+#### P0：商用能力闭环（最高优先级）
 
-- [ ] health_monitor_node.cpp 拆分 — PrometheusHttpServer + DiagnosticsPublisher 独立类（唯一红线）
-- [ ] `quality/scripts/check_limits.sh` — CI 阻塞，类上限自动检查（含豁免条款）
+> 对标 Paxini JD 三大核心：运动控制+路径规划+感知。当前只覆盖了感知，路径规划和运动控制（路径跟踪层）是空白。
+> 行业参考：感知用 PCL（[Sick-Perception, 2024](https://github.com/Cardinal-Space-Mining/Sick-Perception)），路径规划可独立用 [sbpl](https://github.com/sbpl/sbpl)（CMU/BSD），运动控制可独立用 [mpc_local_planner](https://github.com/rst-tu-dortmund/mpc_local_planner)（BSD）。
+> 详见 [mdDoc/interview/paxini/commercial-viability.md](../mdDoc/interview/paxini/commercial-viability.md)
+
+| 模块 | 当前 | 短期（自研，零依赖） | 中期（商用开源） |
+|------|:---:|------|------|
+| **感知** | 自研 DBSCAN | + PCL 地面点去除 + `OccupancyGrid` adapter | PCL 可选后端（策略模式） |
+| **路径规划** | ❌ 空白 | 自研 A*（200 行） | sbpl（CMU，BSD，ARA*） |
+| **运动控制** | 步进 Interpolator | + Pure Pursuit（100 行） | mpc_local_planner（BSD，MPC） |
+
+- [ ] **感知**：PCL 地面点去除（`SACSegmentation`）+ `nav_msgs/OccupancyGrid` 输出 adapter（0.5d）
+- [ ] **路径规划**：自研 A*（`domain/planning/astar_planner.hpp`，200 行，零依赖）（1d）
+- [ ] **运动控制**：自研 Pure Pursuit（`domain/execution/pure_pursuit.hpp`，100 行）+ 路径跟踪层接入（0.5d）
+- [ ] 端到端验证：点云 → 地面点去除 → 聚类 → A* 路径 → Pure Pursuit → cmd_vel（0.5d）
+
+#### P1：传感器标准接入层 + 代码质量（2-4 周）
 
 - [x] 6 业务节点 launch respawn（`respawn=True`，进程崩溃恢复）
-- [ ] HealthMonitor 重构 Gen 1.5→Gen 3（ADR-12）：
-  - [ ] 删除 `try_restart_sequence()` 中的 lifecycle reset（有害：DDS 抖动 → 假阳 → 500ms 盲区）
-  - [ ] 新增 `collect_evidence()` — 降级事件时自动抓 Prometheus 快照 + 最近日志
-  - [ ] 新增 `suggest_root_cause()` — 基于规则的根因候选排序
-  - [ ] 参考：[Intel Labs Behaviour Tree 自愈框架 (arXiv:2410.18825, 2024)](https://arxiv.org/abs/2410.18825)
 - [ ] SensorRegistry 插件注册机制，替代 `SensorFactory` 的 if-else
 - [ ] 3 个真实传感器适配器（LiDAR/IMU/Camera）生产级实现
-- [ ] `ISensor<T>` 接口规范文档 + 线程安全合约
-- [ ] 适配器开发模板 + `REGISTER_SENSOR` 宏
+- [ ] health_monitor_node.cpp 拆分 — PrometheusHttpServer + DiagnosticsPublisher 独立类
+- [ ] `quality/scripts/check_limits.sh` — CI 阻塞，类上限自动检查
 
-#### 中期（P1：观测 SDK + 测试框架，4-8 周）
+#### P2：HealthMonitor + 观测 SDK（4-8 周）
 
+- [ ] HealthMonitor 重构 Gen 1.5→Gen 3（ADR-12）：删除 lifecycle reset，新增 evidence collection + root cause ranking
 - [ ] 观测 SDK 独立 ROS2 package（`amr_observability`）
 - [ ] 标准化 Degradation Framework（从 Fusion 内部提取为独立库）
 - [ ] ROS2 Test Fixture 库（`TestNode<T>` + mock sensor + mock publisher）
 
-#### 长期（P2：脚手架 + 集群，8-16 周）
+#### P3：脚手架 + 集群（8-16 周）
 
 - [ ] AMR 项目生成器（`ros2 pkg create --template amr`）
 - [ ] 配置层统一（YAML Schema + 启动校验 + 热加载）
