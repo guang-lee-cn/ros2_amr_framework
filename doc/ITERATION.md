@@ -178,18 +178,20 @@ ROS2 软件栈：
 
 > 对标 Paxini JD 三大核心：运动控制+路径规划+感知。当前只覆盖了感知，路径规划和运动控制（路径跟踪层）是空白。
 > 行业参考：感知用 PCL（[Sick-Perception, 2024](https://github.com/Cardinal-Space-Mining/Sick-Perception)），路径规划可独立用 [sbpl](https://github.com/sbpl/sbpl)（CMU/BSD），运动控制可独立用 [mpc_local_planner](https://github.com/rst-tu-dortmund/mpc_local_planner)（BSD）。
-> 详见 [mdDoc/interview/paxini/commercial-viability.md](../mdDoc/interview/paxini/commercial-viability.md)
+> 详见 [COMPONENT-GAP.md](COMPONENT-GAP.md) — 完整代码审计 + 6 组件并行开发计划
 
-| 模块 | 当前 | 短期（自研，零依赖） | 中期（商用开源） |
-|------|:---:|------|------|
-| **感知** | 自研 DBSCAN | + PCL 地面点去除 + `OccupancyGrid` adapter | PCL 可选后端（策略模式） |
-| **路径规划** | ❌ 空白 | 自研 A*（200 行） | sbpl（CMU，BSD，ARA*） |
-| **运动控制** | 步进 Interpolator | + Pure Pursuit（100 行） | mpc_local_planner（BSD，MPC） |
+| 组件 | 代码位置 | 当前 | 目标 | 工作量 | 外部依赖 |
+|------|---------|:---:|------|:---:|------|
+| **A: 路径规划** | `domain/planning/astar_planner.hpp` | ❌ 0% | A* 搜索，200 行 | 1d | 零 |
+| **B: 运动控制** | `domain/execution/pure_pursuit.hpp` | ❌ 0% | Pure Pursuit，100 行 | 0.5d | 零 |
+| **C: 感知增强** | `domain/perception/ground_removal.hpp` | 自研 DBSCAN | + PCL 地面去除 + OccupancyGrid + PCL 后端 | 0.5d | PCL |
+| **D: 传感器接入** | `infrastructure/sensors/` | Simulated+Sick | + IMU/Camera 适配器 + SensorRegistry | 1d | ROS2 |
+| **E: HealthMonitor** | `infrastructure/` | 493 行单文件 | 拆分为 3 类 | 1d | 零 |
+| **F: 端到端** | 集成 PerceptionService | — | A+B+C 接入 Pipeline | 0.5d | — |
 
-- [ ] **感知**：PCL 地面点去除（`SACSegmentation`）+ `nav_msgs/OccupancyGrid` 输出 adapter（0.5d）
-- [ ] **路径规划**：自研 A*（`domain/planning/astar_planner.hpp`，200 行，零依赖）（1d）
-- [ ] **运动控制**：自研 Pure Pursuit（`domain/execution/pure_pursuit.hpp`，100 行）+ 路径跟踪层接入（0.5d）
-- [ ] 端到端验证：点云 → 地面点去除 → 聚类 → A* 路径 → Pure Pursuit → cmd_vel（0.5d）
+- [ ] 组件 A + B + C 并行启动（无相互依赖，Day 1）
+- [ ] 组件 D 并行（Day 2）
+- [ ] 组件 E + F 收尾（Day 3）
 
 #### P1：传感器标准接入层 + 代码质量（2-4 周）
 
