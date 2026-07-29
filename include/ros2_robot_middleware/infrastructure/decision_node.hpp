@@ -2,9 +2,12 @@
 #define ROS2_ROBOT_MIDDLEWARE_DECISION_NODE_HPP_
 
 #include "ros2_robot_middleware/action/move_to_pose.hpp"
-#include "ros2_robot_middleware/application/planning_service.hpp"
+#include "ros2_robot_middleware/domain/planning/astar_planner.hpp"
+#include "ros2_robot_middleware/domain/planning/preempt_policy.hpp"
+#include "ros2_robot_middleware/domain/planning/target_selector.hpp"
 #include "ros2_robot_middleware/msg/perception_objects.hpp"
 #include "std_msgs/msg/string.hpp"
+#include "geometry_msgs/msg/pose_array.hpp"
 
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
@@ -35,13 +38,18 @@ private:
 
   void send_goal(float target_x, float target_y);
   void cancel_active_goal();
+  void publish_path(const std::vector<amr::domain::planning::Waypoint> &path);
 
-  // Domain layer
-  amr::application::PlanningService planning_;
+  // Domain layer — direct domain classes (application/ removed)
+  amr::domain::planning::TargetSelector selector_;
+  amr::domain::planning::PreemptPolicy preempt_;
+  amr::domain::planning::AStarPlanner astar_;
+  amr::domain::planning::OccupancyGrid demo_grid_;
 
   // ROS2 infrastructure
   rclcpp::Subscription<ros2_robot_middleware::msg::PerceptionObjects>::SharedPtr decision_sub_;
   rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::String>::SharedPtr heartbeat_pub_;
+  rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseArray>::SharedPtr path_pub_;
   rclcpp::TimerBase::SharedPtr heartbeat_timer_;
   rclcpp_action::Client<ros2_robot_middleware::action::MoveToPose>::SharedPtr client_;
 

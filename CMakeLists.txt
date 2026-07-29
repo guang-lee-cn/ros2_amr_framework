@@ -40,6 +40,7 @@ add_library(robot_middleware_lib STATIC
   src/infrastructure/decision_node.cpp
   src/infrastructure/motor_ctrl_node.cpp
   src/infrastructure/health_monitor_node.cpp
+  src/infrastructure/prometheus_http_server.cpp
   src/infrastructure/fleet_manager_node.cpp
 )
 
@@ -90,6 +91,72 @@ endforeach()
 install(DIRECTORY config launch
   DESTINATION share/${PROJECT_NAME})
 
+# ── Performance instrumentation option ──────────────────────────────
+# cmake -DAMR_PERF_INSTRUMENTATION=ON .. → AMR_PERF_PHASE() real timers
+# cmake -DAMR_PERF_INSTRUMENTATION=OFF .. (default) → 3 no-op macros, zero overhead
+#
+# Uses configure_file() to generate the header:
+#   ON:  #include <atomic> + PerfRegistry class + ScopedPerfTimer class
+#   OFF: #define AMR_PERF_PHASE(name) ((void)0)  (3 lines, no includes)
+option(AMR_PERF_INSTRUMENTATION "Enable compile-time performance instrumentation" OFF)
+
+if(AMR_PERF_INSTRUMENTATION)
+  set(AMR_PERF_MACROS
+"#include <atomic>
+#include <chrono>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+#define AMR_PERF_CONCAT2(a, b) a##b
+#define AMR_PERF_CONCAT(a, b)  AMR_PERF_CONCAT2(a, b)
+
+#define AMR_PERF_PHASE(name) \\
+  ::amr::observability::ScopedPerfTimer AMR_PERF_CONCAT(_amr_perf_, __LINE__)(name)
+
+#define AMR_PERF_POINT(name) \\
+  ::amr::observability::PerfRegistry::instance().count(name)
+
+#define AMR_PERF_RECORD(name, elapsed_us) \\
+  ::amr::observability::PerfRegistry::instance().record(name, elapsed_us)
+
+// ── Generated implementation ─────────────────────────────────────
+// See observability/perf_instrumentation_impl.hpp for full class definitions.
+#include \"ros2_robot_middleware/observability/perf_instrumentation_impl.hpp\"")
+else()
+  set(AMR_PERF_MACROS
+"#define AMR_PERF_PHASE(name)              ((void)0)
+#define AMR_PERF_POINT(name)              ((void)0)
+#define AMR_PERF_RECORD(name, elapsed_us) ((void)0)")
+endif()
+
+# ── Performance instrumentation header ─────────────────────────────
+# Generates include/generated/perf_instrumentation.hpp:
+#   AMR_PERF_INSTRUMENTATION=OFF → 3 no-op macros (4 lines, zero overhead)
+#   AMR_PERF_INSTRUMENTATION=ON  → PerfRegistry + ScopedPerfTimer (self-contained)
+#
+# Product code: #include "generated/perf_instrumentation.hpp"
+set(PERF_TEMPLATE_DIR
+  "${CMAKE_CURRENT_SOURCE_DIR}/include/ros2_robot_middleware/generated")
+set(PERF_OUTPUT
+  "${CMAKE_CURRENT_SOURCE_DIR}/include/generated/perf_instrumentation.hpp")
+
+if(AMR_PERF_INSTRUMENTATION)
+  configure_file("${PERF_TEMPLATE_DIR}/perf_on.hpp" "${PERF_OUTPUT}" COPYONLY)
+else()
+  configure_file("${PERF_TEMPLATE_DIR}/perf_noop.hpp" "${PERF_OUTPUT}" COPYONLY)
+endif()
+
+
+# ── DDS micro-benchmark tools (always built, instrumented when AMR_PERF_INSTRUMENTATION=ON) ──
+add_executable(bench_ping quality/src/bench_ping.cpp)
+target_link_libraries(bench_ping robot_middleware_lib)
+install(TARGETS bench_ping DESTINATION lib/${PROJECT_NAME})
+
+add_executable(bench_pong quality/src/bench_pong.cpp)
+target_link_libraries(bench_pong robot_middleware_lib)
+install(TARGETS bench_pong DESTINATION lib/${PROJECT_NAME})
+
 if(BUILD_TESTING)
   # Enable AMR_TEST_ONLY() macro in library code for test-only method implementations
   target_compile_definitions(robot_middleware_lib PUBLIC AMR_TEST_HOOKS)
@@ -121,6 +188,8 @@ if(BUILD_TESTING)
   add_amr_test(test_sensor_hal    quality/src/test_sensor_hal.cpp)
   add_amr_test(test_dbscan        quality/src/test_dbscan.cpp)
   add_amr_test(test_tracker       quality/src/test_tracker.cpp)
+  add_amr_test(test_astar         quality/src/test_astar.cpp)
+  add_amr_test(test_pure_pursuit  quality/src/test_pure_pursuit.cpp)
 endif()
 
 ament_package()

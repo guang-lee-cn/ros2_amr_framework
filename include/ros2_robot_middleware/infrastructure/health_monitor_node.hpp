@@ -4,23 +4,25 @@
 #include <array>
 #include <memory>
 #include <string>
-#include <thread>
 #include <unordered_map>
 
-#include "diagnostic_msgs/msg/diagnostic_array.hpp"
-#include "diagnostic_msgs/msg/diagnostic_status.hpp"
 #include "lifecycle_msgs/srv/change_state.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/string.hpp"
 
-#include "ros2_robot_middleware/application/monitoring_service.hpp"
+#include "ros2_robot_middleware/domain/monitoring/monitoring_service.hpp"
+#include "ros2_robot_middleware/infrastructure/diagnostics_publisher.hpp"
+#include "ros2_robot_middleware/infrastructure/prometheus_http_server.hpp"
 #include "ros2_robot_middleware/msg/health_report.hpp"
 #include "ros2_robot_middleware/msg/health_status.hpp"
 #include "ros2_robot_middleware/srv/set_param.hpp"
 
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
 
-// Thin ROS2 adapter — delegates heartbeat analysis + recovery to MonitoringService.
+// HealthMonitorNode — heartbeat-based liveness monitor for 6 business nodes.
+// Post-split: Prometheus HTTP server and diagnostics publishing extracted
+// to standalone classes (PrometheusHttpServer, DiagnosticsPublisher).
+// HealthMonitorNode keeps heartbeat orchestration + watchdog lifecycle restart.
 class HealthMonitorNode : public rclcpp_lifecycle::LifecycleNode {
 public:
   HealthMonitorNode();
@@ -45,15 +47,10 @@ private:
   void create_restart_clients();
   bool try_restart_sequence(const std::string &node_name);
 
-  void setup_prometheus();
-  void prometheus_accept();
   std::string prometheus_metrics() const;
 
-  void publish_diagnostics();
-  uint8_t to_diag_level(amr::domain::monitoring::NodeStatus status) const;
-
   // Domain layer
-  amr::application::MonitoringService monitor_;
+  amr::domain::monitoring::MonitoringService monitor_;
 
   static constexpr int kNumNodes       = 6;
   static constexpr int kPrometheusPort = 9090;
@@ -81,12 +78,13 @@ private:
   std::unordered_map<std::string, double> timeouts_;
   double check_interval_s_ = 1.0;
 
-  // Watchdog + diagnostics
+  // Watchdog
   std::unordered_map<std::string, rclcpp::Client<lifecycle_msgs::srv::ChangeState>::SharedPtr> restart_clients_;
-  rclcpp_lifecycle::LifecyclePublisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr diagnostic_pub_;
 
-  int prom_socket_ = -1;
-  std::thread prom_thread_;
+  // Extracted components (SRP split from HealthMonitorNode)
+  std::unique_ptr<PrometheusHttpServer> prometheus_;
+  std::unique_ptr<DiagnosticsPublisher> diagnostics_;
+
   rclcpp::Time last_tick_;
 };
 

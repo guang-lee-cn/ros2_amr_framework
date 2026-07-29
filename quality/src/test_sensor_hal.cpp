@@ -1,7 +1,7 @@
 /// @file test_sensor_hal.cpp — Sensor interface + SimulatedSensors unit tests (no ROS2)
 #include "ros2_robot_middleware/infrastructure/sensors/sick_tim781_adapter.hpp"
 #include "ros2_robot_middleware/infrastructure/sensors/simulated_sensors.hpp"
-#include "ros2_robot_middleware/application/perception_service.hpp"
+#include "ros2_robot_middleware/domain/perception/perception_service.hpp"
 
 #include <gtest/gtest.h>
 #include <rclcpp/rclcpp.hpp>
@@ -95,21 +95,21 @@ protected:
 };
 
 TEST_F(PerceptionServiceTest, Tick_AllSensorsOk_DegradationFull) {
-  amr::application::PerceptionService ps(lidar_, imu_, camera_);
+  amr::domain::perception::PerceptionService ps(lidar_, imu_, camera_);
   ps.tick(0.2);
-  EXPECT_EQ(ps.evaluate_degradation(), amr::application::PerceptionService::Level::FULL);
+  EXPECT_EQ(ps.evaluate_degradation(), amr::domain::perception::PerceptionService::Level::FULL);
 }
 
 TEST_F(PerceptionServiceTest, Tick_StaysFullAcrossMultipleCycles) {
-  amr::application::PerceptionService ps(lidar_, imu_, camera_);
+  amr::domain::perception::PerceptionService ps(lidar_, imu_, camera_);
   for (int i = 0; i < 5; ++i) ps.tick(0.1);
-  EXPECT_EQ(ps.evaluate_degradation(), amr::application::PerceptionService::Level::FULL);
+  EXPECT_EQ(ps.evaluate_degradation(), amr::domain::perception::PerceptionService::Level::FULL);
 }
 
 TEST_F(PerceptionServiceTest, Fuse_ProducesClusters) {
-  amr::application::PerceptionService ps(lidar_, imu_, camera_);
+  amr::domain::perception::PerceptionService ps(lidar_, imu_, camera_);
   ps.tick(0.2);
-  auto clusters = ps.fuse(amr::application::PerceptionService::Level::FULL);
+  auto clusters = ps.fuse(amr::domain::perception::PerceptionService::Level::FULL);
   EXPECT_GE(clusters.size(), 0u);
 }
 

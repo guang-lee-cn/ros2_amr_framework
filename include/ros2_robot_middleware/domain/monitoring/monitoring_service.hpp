@@ -1,5 +1,5 @@
-#ifndef ROS2_ROBOT_MIDDLEWARE_APPLICATION_MONITORING_SERVICE_HPP_
-#define ROS2_ROBOT_MIDDLEWARE_APPLICATION_MONITORING_SERVICE_HPP_
+#ifndef ROS2_ROBOT_MIDDLEWARE_DOMAIN_MONITORING_SERVICE_HPP_
+#define ROS2_ROBOT_MIDDLEWARE_DOMAIN_MONITORING_SERVICE_HPP_
 
 #include "ros2_robot_middleware/domain/monitoring/heartbeat_analyzer.hpp"
 #include "ros2_robot_middleware/domain/monitoring/recovery_policy.hpp"
@@ -9,19 +9,17 @@
 #include <vector>
 
 namespace amr {
-namespace application {
+namespace domain {
+namespace monitoring {
 
 // MonitoringService — orchestrates heartbeat analysis + recovery policy.
 // Pure C++, zero ROS2 dependency.
+// Moved from application/ → domain/monitoring/ (application/ was too thin).
 class MonitoringService {
 public:
-  using NodeStatus    = amr::domain::monitoring::NodeStatus;
-  using NodeHeartbeat = amr::domain::monitoring::NodeHeartbeat;
-  using Analyzer      = amr::domain::monitoring::HeartbeatAnalyzer;
-  using Recovery      = amr::domain::monitoring::RecoveryPolicy;
-  using FleetSummary  = amr::domain::monitoring::FleetSummary;
+  using Analyzer     = HeartbeatAnalyzer;
+  using Recovery     = RecoveryPolicy;
 
-  // Register a node to monitor.
   void register_node(const std::string &name, double timeout_s) {
     NodeHeartbeat hb;
     hb.node_name = name;
@@ -30,27 +28,23 @@ public:
     heartbeats_[name] = hb;
   }
 
-  // Update heartbeat timestamp for a node.
   void heartbeat_received(const std::string &name, double age_s = 0.0) {
     auto it = heartbeats_.find(name);
     if (it != heartbeats_.end()) it->second.last_seen_s = age_s;
   }
 
-  // Age all heartbeats by dt seconds.
   void tick(double dt) {
     for (auto &[name, hb] : heartbeats_) {
       if (hb.last_seen_s >= 0) hb.last_seen_s += dt;
     }
   }
 
-  // Evaluate status for a single node.
   NodeStatus evaluate(const std::string &name) const {
     auto it = heartbeats_.find(name);
     if (it == heartbeats_.end()) return NodeStatus::STALE;
     return analyzer_.evaluate(it->second);
   }
 
-  // Recovery decision for a node.
   bool should_recover(const std::string &name) {
     auto status = evaluate(name);
     auto &rec = recovery_[name];
@@ -59,7 +53,6 @@ public:
     return ok;
   }
 
-  // Reset recovery counter when node recovers.
   void on_recovered(const std::string &name) {
     recovery_[name].attempts = 0;
   }
@@ -69,7 +62,6 @@ public:
     return recovery_policy_.escalate(status, recovery_[name]);
   }
 
-  // Get all heartbeat snapshots.
   std::vector<NodeHeartbeat> snapshot() const {
     std::vector<NodeHeartbeat> result;
     result.reserve(heartbeats_.size());
@@ -83,10 +75,9 @@ public:
 
   const auto &heartbeats() const { return heartbeats_; }
 
-  // Fleet-level aggregation.
   static FleetSummary fleet_summary(
     const std::vector<Analyzer::Summary> &per_amr) {
-    return amr::domain::monitoring::fleet_summarize(per_amr);
+    return fleet_summarize(per_amr);
   }
 
 private:
@@ -96,7 +87,8 @@ private:
   std::unordered_map<std::string, Recovery::RecoveryState> recovery_;
 };
 
-}  // namespace application
+}  // namespace monitoring
+}  // namespace domain
 }  // namespace amr
 
 #endif

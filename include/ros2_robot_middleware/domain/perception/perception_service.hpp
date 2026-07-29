@@ -1,5 +1,5 @@
-#ifndef ROS2_ROBOT_MIDDLEWARE_APPLICATION_PERCEPTION_SERVICE_HPP_
-#define ROS2_ROBOT_MIDDLEWARE_APPLICATION_PERCEPTION_SERVICE_HPP_
+#ifndef ROS2_ROBOT_MIDDLEWARE_DOMAIN_PERCEPTION_SERVICE_HPP_
+#define ROS2_ROBOT_MIDDLEWARE_DOMAIN_PERCEPTION_SERVICE_HPP_
 
 #include "ros2_robot_middleware/domain/perception/cluster_detector.hpp"
 #include "ros2_robot_middleware/domain/perception/degradation_policy.hpp"
@@ -11,7 +11,8 @@
 #include <vector>
 
 namespace amr {
-namespace application {
+namespace domain {
+namespace perception {
 
 // PerceptionService — dependency injection via ISensor<DataType> interfaces.
 // Sensors + Transform injected at construction time — no templates, easily testable.
@@ -133,6 +134,7 @@ private:
   double camera_age_s_ = -1.0;
 };
 
-}  // namespace application
+}  // namespace perception
+}  // namespace domain
 }  // namespace amr
 #endif

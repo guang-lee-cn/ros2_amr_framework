@@ -1,4 +1,5 @@
 #include "ros2_robot_middleware/infrastructure/fusion_node.hpp"
+#include "generated/perf_instrumentation.hpp"
 #include "ros2_robot_middleware/observability/logging.hpp"
 #include "ros2_robot_middleware/observability/metrics_registry.hpp"
 #include "ros2_robot_middleware/observability/trace_points.hpp"
@@ -124,6 +125,7 @@ FusionNode::CallbackReturn FusionNode::on_shutdown(const rclcpp_lifecycle::State
 // ── Timer callback — delegates to domain layer ───────────────────────
 
 void FusionNode::timer_callback() {
+  AMR_PERF_PHASE("fusion:tick");
   TRACE_SCOPE(amr::trace::FUSION_TIMER);
 
   auto t_start = std::chrono::steady_clock::now();
@@ -182,7 +184,7 @@ void FusionNode::timer_callback() {
 void FusionNode::update_heartbeat_status() {
   auto msg = std_msgs::msg::String{};
   if (perception_) {
-    msg.data = amr::application::PerceptionService::heartbeat_for(current_level_);
+    msg.data = amr::domain::perception::DegradationPolicy::to_heartbeat_string(current_level_);
   } else {
     msg.data = "inactive";
   }

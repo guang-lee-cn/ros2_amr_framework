@@ -1,15 +1,8 @@
 #include "ros2_robot_middleware/infrastructure/health_monitor_node.hpp"
 #include "ros2_robot_middleware/observability/metrics_registry.hpp"
 
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <unistd.h>
-
 #include <chrono>
-#include <cstring>
 #include <sstream>
-#include <thread>
 
 static constexpr double kWarnRatio = 0.8;
 
@@ -33,6 +26,16 @@ HealthMonitorNode::on_configure(const rclcpp_lifecycle::State &)
     monitor_.register_node(cfg.node, timeouts_[cfg.node]);
   }
 
+  // Create DiagnosticsPublisher (extracted from HealthMonitorNode — SRP)
+  diagnostics_ = std::make_unique<DiagnosticsPublisher>(this,
+    [this]() -> std::vector<std::pair<std::string, amr::domain::monitoring::NodeStatus>> {
+      std::vector<std::pair<std::string, amr::domain::monitoring::NodeStatus>> result;
+      for (const auto &cfg : kNdes) {
+        result.emplace_back(std::string(cfg.node), monitor_.escalated_status(cfg.node));
+      }
+      return result;
+    });
+
   RCLCPP_INFO(this->get_logger(),
               "HealthMonitor configured: %d nodes, %.1fs interval",
               kNumNodes, check_interval_s_);
@@ -44,9 +47,14 @@ HealthMonitorNode::CallbackReturn
 HealthMonitorNode::on_activate(const rclcpp_lifecycle::State &)
 {
   create_health_timer();
-  setup_prometheus();
+
+  // Start Prometheus HTTP server (extracted — standalone POSIX socket server)
+  prometheus_ = std::make_unique<PrometheusHttpServer>(kPrometheusPort,
+    [this]() { return prometheus_metrics(); });
+  prometheus_->start();
 
   pub_->on_activate();
+  diagnostics_->on_activate();
 
   RCLCPP_INFO(this->get_logger(),
               "HealthMonitor activated: Prometheus on :%d/metrics",
@@ -61,15 +69,9 @@ HealthMonitorNode::on_deactivate(const rclcpp_lifecycle::State &)
   timer_.reset();
 
   pub_->on_deactivate();
+  diagnostics_->on_deactivate();
 
-  if (prom_socket_ >= 0) {
-    ::shutdown(prom_socket_, SHUT_RDWR);
-    close(prom_socket_);
-    prom_socket_ = -1;
-  }
-  if (prom_thread_.joinable()) {
-    prom_thread_.join();
-  }
+  prometheus_.reset();
 
   return CallbackReturn::SUCCESS;
 }
@@ -82,6 +84,7 @@ HealthMonitorNode::on_cleanup(const rclcpp_lifecycle::State &)
   }
   pub_.reset();
   health_srv_.reset();
+  diagnostics_.reset();
 
   timeouts_.clear();
 
@@ -93,20 +96,14 @@ HealthMonitorNode::on_shutdown(const rclcpp_lifecycle::State &)
 {
   timer_.reset();
 
-  if (prom_socket_ >= 0) {
-    ::shutdown(prom_socket_, SHUT_RDWR);
-    close(prom_socket_);
-    prom_socket_ = -1;
-  }
-  if (prom_thread_.joinable()) {
-    prom_thread_.join();
-  }
+  prometheus_.reset();
 
   for (int i = 0; i < kNumNodes; ++i) {
     subs_[i].reset();
   }
   pub_.reset();
   health_srv_.reset();
+  diagnostics_.reset();
 
   return CallbackReturn::SUCCESS;
 }
@@ -169,7 +166,6 @@ void HealthMonitorNode::check_health()
     status.timeout_s = timeouts_[cfg.node];
     status.status = amr::domain::monitoring::to_string(node_status);
 
-    // Get last_seen from domain heartbeat state
     for (const auto &[name, hb] : monitor_.heartbeats()) {
       if (name == cfg.node) status.last_seen_s = hb.last_seen_s;
     }
@@ -197,8 +193,8 @@ void HealthMonitorNode::check_health()
 
   pub_->publish(report);
 
-  // Publish ROS2 standard diagnostics (for rqt_runtime_monitor compatibility)
-  publish_diagnostics();
+  // Delegated to DiagnosticsPublisher (extracted class)
+  diagnostics_->publish(now);
 }
 
 void HealthMonitorNode::create_service_server()
@@ -234,9 +230,6 @@ void HealthMonitorNode::create_report_publisher()
 {
   pub_ = this->create_publisher<ros2_robot_middleware::msg::HealthReport>(
     "/health/report", rclcpp::QoS(10).reliable());
-
-  diagnostic_pub_ = this->create_publisher<diagnostic_msgs::msg::DiagnosticArray>(
-    "/diagnostics", rclcpp::QoS(10).reliable());
 }
 
 void HealthMonitorNode::create_restart_clients()
@@ -256,14 +249,11 @@ bool HealthMonitorNode::try_restart_sequence(const std::string &node_name)
   auto &client = it->second;
   using Transition = lifecycle_msgs::msg::Transition;
 
-  // 如果 service 不可达（节点进程已死），直接返回失败
   if (!client->wait_for_service(std::chrono::seconds(1))) {
     RCLCPP_WARN(this->get_logger(), "[%s] lifecycle service unreachable", node_name.c_str());
     return false;
   }
 
-  // 重启序列: deactivate(4) → cleanup(2) → configure(1) → activate(3)
-  // 和 5G 基站板卡重启流程同构：先停止 → 清理 → 重配 → 激活
   const std::array<std::pair<uint8_t, const char *>, 4> sequence = {{
     {Transition::TRANSITION_DEACTIVATE, "deactivate"},
     {Transition::TRANSITION_CLEANUP,    "cleanup"},
@@ -297,78 +287,12 @@ bool HealthMonitorNode::try_restart_sequence(const std::string &node_name)
   return true;
 }
 
-void HealthMonitorNode::setup_prometheus()
-{
-  int fd = socket(AF_INET, SOCK_STREAM, 0);
-  if (fd < 0) {
-    RCLCPP_WARN(this->get_logger(), "Prometheus socket creation failed");
-    return;
-  }
-
-  int opt = 1;
-  setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
-  sockaddr_in addr{};
-  addr.sin_family = AF_INET;
-  addr.sin_addr.s_addr = INADDR_ANY;
-  addr.sin_port = htons(kPrometheusPort);
-
-  if (bind(fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0) {
-    RCLCPP_WARN(this->get_logger(), "Prometheus bind :%d failed", kPrometheusPort);
-    close(fd);
-    return;
-  }
-
-  if (listen(fd, 5) < 0) {
-    RCLCPP_WARN(this->get_logger(), "Prometheus listen failed");
-    close(fd);
-    return;
-  }
-
-  prom_socket_ = fd;
-
-  prom_thread_ = std::thread([this]() {
-    while (prom_socket_ >= 0) {
-      prometheus_accept();
-    }
-  });
-}
-
-void HealthMonitorNode::prometheus_accept()
-{
-  sockaddr_in client{};
-  socklen_t len = sizeof(client);
-  int conn = accept(prom_socket_, reinterpret_cast<sockaddr *>(&client), &len);
-  if (conn < 0) return;
-
-  char buf[1024]{};
-  ssize_t n = recv(conn, buf, sizeof(buf) - 1, 0);
-  std::string body;
-
-  if (n > 0) {
-    std::string request(buf, n);
-    if (request.find("GET /metrics") != std::string::npos) {
-      std::string metrics = prometheus_metrics();
-      body = "HTTP/1.1 200 OK\r\n"
-             "Content-Type: text/plain; version=0.0.4\r\n"
-             "Content-Length: " + std::to_string(metrics.size()) + "\r\n"
-             "Connection: close\r\n"
-             "\r\n" + metrics;
-    } else {
-      body = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-    }
-  }
-
-  send(conn, body.data(), body.size(), MSG_NOSIGNAL);
-  close(conn);
-}
-
 std::string HealthMonitorNode::prometheus_metrics() const
 {
   auto &m = amr::observability::shared_metrics();
   std::ostringstream out;
 
-  // ── Health (existing) ──────────────────────────────────────────────
+  // Node health gauges
   out << "# HELP ros2_node_health_seconds Seconds since last data from node\n";
   out << "# TYPE ros2_node_health_seconds gauge\n";
   for (const auto &cfg : kNdes) {
@@ -385,7 +309,7 @@ std::string HealthMonitorNode::prometheus_metrics() const
         << timeouts_.at(cfg.node) << "\n";
   }
 
-  // ── Sensor Rates (M7) ──────────────────────────────────────────────
+  // Sensor rates
   out << "# HELP amr_sensor_rate_hz Sensor publication rate (Hz)\n";
   out << "# TYPE amr_sensor_rate_hz gauge\n";
   out << "amr_sensor_rate_hz{sensor=\"lidar\"} "
@@ -395,7 +319,7 @@ std::string HealthMonitorNode::prometheus_metrics() const
   out << "amr_sensor_rate_hz{sensor=\"camera\"} "
       << (m.camera_rate_ds.load(std::memory_order_relaxed) / 10.0) << "\n";
 
-  // ── Latency Histograms (M7) ────────────────────────────────────────
+  // Latency histograms
   auto write_histogram = [&](const char *name, const char *help,
                               const amr::observability::Histogram &h) {
     out << "# HELP " << name << " " << help << "\n";
@@ -403,8 +327,7 @@ std::string HealthMonitorNode::prometheus_metrics() const
     auto total = h.total_count.load(std::memory_order_relaxed);
     auto sum   = h.total_sum_us.load(std::memory_order_relaxed);
     out << name << "_count " << total << "\n";
-    out << name << "_sum " << (sum / 1'000'000.0) << "\n"; // μs → seconds
-    // Bucket boundaries (log scale: 2^0, 2^1, ... 2^63 μs)
+    out << name << "_sum " << (sum / 1'000'000.0) << "\n";
     int64_t cumulative = 0;
     int64_t bound_us = amr::observability::Histogram::kBaseUs;
     for (int i = 0; i < amr::observability::Histogram::kBucketCount; ++i) {
@@ -413,7 +336,6 @@ std::string HealthMonitorNode::prometheus_metrics() const
           << cumulative << "\n";
       bound_us *= amr::observability::Histogram::kBaseUs;
     }
-    // +Inf bucket
     out << name << "_bucket{le=\"+Inf\"} " << total << "\n";
   };
 
@@ -426,7 +348,7 @@ std::string HealthMonitorNode::prometheus_metrics() const
   write_histogram("amr_e2e_latency_seconds",
                   "End-to-end latency sensor→cmd", m.e2e_latency);
 
-  // ── State Gauges (M7) ──────────────────────────────────────────────
+  // State gauges
   out << "# HELP amr_degradation_level Current degradation level (0-4)\n";
   out << "# TYPE amr_degradation_level gauge\n";
   out << "amr_degradation_level "
@@ -437,7 +359,7 @@ std::string HealthMonitorNode::prometheus_metrics() const
   out << "amr_object_count "
       << m.object_count.load(std::memory_order_relaxed) << "\n";
 
-  // ── Event Counters (M7) ────────────────────────────────────────────
+  // Event counters
   out << "# HELP amr_degradation_events_total Degradation events (monotonic)\n";
   out << "# TYPE amr_degradation_events_total counter\n";
   out << "amr_degradation_events_total "
@@ -454,40 +376,4 @@ std::string HealthMonitorNode::prometheus_metrics() const
       << m.fusion_cycle_count.load(std::memory_order_relaxed) << "\n";
 
   return out.str();
-}
-
-// ── ROS2 standard diagnostics (rqt_runtime_monitor compatible) ──────
-
-void HealthMonitorNode::publish_diagnostics()
-{
-  auto msg = diagnostic_msgs::msg::DiagnosticArray{};
-  msg.header.stamp = this->now();
-  msg.header.frame_id = "health_monitor";
-
-  for (const auto &cfg : kNdes) {
-    auto status = monitor_.escalated_status(cfg.node);
-
-    auto diag = diagnostic_msgs::msg::DiagnosticStatus{};
-    diag.name    = cfg.node;
-    diag.level   = to_diag_level(status);
-    diag.message = amr::domain::monitoring::to_string(status);
-
-    msg.status.push_back(diag);
-  }
-
-  diagnostic_pub_->publish(msg);
-}
-
-uint8_t HealthMonitorNode::to_diag_level(
-    amr::domain::monitoring::NodeStatus status) const
-{
-  using amr::domain::monitoring::NodeStatus;
-  switch (status) {
-    case NodeStatus::OK:    return diagnostic_msgs::msg::DiagnosticStatus::OK;
-    case NodeStatus::WARN:  return diagnostic_msgs::msg::DiagnosticStatus::WARN;
-    case NodeStatus::ERROR: return diagnostic_msgs::msg::DiagnosticStatus::ERROR;
-    case NodeStatus::STALE: return diagnostic_msgs::msg::DiagnosticStatus::STALE;
-    case NodeStatus::FATAL: return diagnostic_msgs::msg::DiagnosticStatus::ERROR;
-    default:                return diagnostic_msgs::msg::DiagnosticStatus::ERROR;
-  }
 }

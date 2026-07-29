@@ -1,11 +1,11 @@
 /// @file test_monitoring.cpp — HealthMonitor + MonitoringService tests
-#include "ros2_robot_middleware/application/monitoring_service.hpp"
+#include "ros2_robot_middleware/domain/monitoring/monitoring_service.hpp"
 #include "ros2_robot_middleware/domain/monitoring/heartbeat_analyzer.hpp"
 #include "ros2_robot_middleware/domain/monitoring/recovery_policy.hpp"
 
 #include <gtest/gtest.h>
 
-using amr::application::MonitoringService;
+using amr::domain::monitoring::MonitoringService;
 using amr::domain::monitoring::HeartbeatAnalyzer;
 using amr::domain::monitoring::NodeHeartbeat;
 using amr::domain::monitoring::NodeStatus;

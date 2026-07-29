@@ -2,7 +2,9 @@
 #define ROS2_ROBOT_MIDDLEWARE_MOTOR_CTRL_NODE_HPP_
 
 #include "ros2_robot_middleware/action/move_to_pose.hpp"
-#include "ros2_robot_middleware/application/execution_service.hpp"
+#include "ros2_robot_middleware/domain/execution/pure_pursuit.hpp"
+
+#include <vector>
 #include "ros2_robot_middleware/srv/set_param.hpp"
 #include "std_msgs/msg/string.hpp"
 
@@ -39,8 +41,8 @@ private:
   void handle_set_param(const std::shared_ptr<ros2_robot_middleware::srv::SetParam::Request> request,
                         std::shared_ptr<ros2_robot_middleware::srv::SetParam::Response> response);
 
-  // Domain layer — pure math
-  amr::application::ExecutionService execution_;
+  // Domain layer — Pure Pursuit path tracking
+  amr::domain::execution::PurePursuit tracker_;
 
   // ROS2 infrastructure
   rclcpp_action::Server<ros2_robot_middleware::action::MoveToPose>::SharedPtr action_server_;

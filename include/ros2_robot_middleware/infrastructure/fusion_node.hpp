@@ -5,7 +5,7 @@
 #include <memory>
 #include <optional>
 
-#include "ros2_robot_middleware/application/perception_service.hpp"
+#include "ros2_robot_middleware/domain/perception/perception_service.hpp"
 #include "ros2_robot_middleware/domain/perception/degradation_policy.hpp"
 #include "ros2_robot_middleware/domain/perception/sensor_interface.hpp"
 #include "ros2_robot_middleware/infrastructure/sensors/sensor_factory.hpp"
@@ -65,7 +65,7 @@ private:
   std::unique_ptr<amr::infrastructure::Tf2TransformProvider> tf2_;
 
   // Domain layer — created after sensors + tf2 are initialized
-  std::optional<amr::application::PerceptionService> perception_;
+  std::optional<amr::domain::perception::PerceptionService> perception_;
 
   amr::domain::perception::DegradationLevel current_level_{};
 

@@ -1,5 +1,6 @@
 #include "ros2_robot_middleware/infrastructure/aliases.hpp"
 #include "ros2_robot_middleware/infrastructure/decision_node.hpp"
+#include "generated/perf_instrumentation.hpp"
 #include "ros2_robot_middleware/observability/metrics_registry.hpp"
 #include "ros2_robot_middleware/observability/trace_points.hpp"
 #include "ros2_robot_middleware/observability/tracer.hpp"
@@ -32,6 +33,16 @@ DecisionNode::on_configure(const rclcpp_lifecycle::State &)
   heartbeat_pub_ = this->create_publisher<std_msgs::msg::String>(
     "/decision/heartbeat", rclcpp::QoS(10).reliable());
 
+  path_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>(
+    "/planning/path", rclcpp::QoS(10).reliable());
+
+  // Initialize demo OccupancyGrid (empty 200×200 grid, 5cm resolution, 10m×10m)
+  demo_grid_.width = 200;
+  demo_grid_.height = 200;
+  demo_grid_.resolution = 0.05F;
+  demo_grid_.origin = {0.0F, 0.0F};
+  demo_grid_.cells.assign(200 * 200, false);
+
   return CallbackReturn::SUCCESS;
 }
 
@@ -45,6 +56,7 @@ DecisionNode::on_activate(const rclcpp_lifecycle::State &)
     heartbeat_pub_->publish(msg);
   });
   heartbeat_pub_->on_activate();
+  path_pub_->on_activate();
   return CallbackReturn::SUCCESS;
 }
 
@@ -53,6 +65,7 @@ DecisionNode::on_deactivate(const rclcpp_lifecycle::State &)
 {
   heartbeat_timer_.reset();
   heartbeat_pub_->on_deactivate();
+  path_pub_->on_deactivate();
   return CallbackReturn::SUCCESS;
 }
 
@@ -62,6 +75,7 @@ DecisionNode::on_cleanup(const rclcpp_lifecycle::State &)
   decision_sub_.reset();
   client_.reset();
   heartbeat_pub_.reset();
+  path_pub_.reset();
   return CallbackReturn::SUCCESS;
 }
 
@@ -72,6 +86,7 @@ DecisionNode::on_shutdown(const rclcpp_lifecycle::State &)
   decision_sub_.reset();
   client_.reset();
   heartbeat_pub_.reset();
+  path_pub_.reset();
   return CallbackReturn::SUCCESS;
 }
 
@@ -79,6 +94,7 @@ DecisionNode::on_shutdown(const rclcpp_lifecycle::State &)
 
 void DecisionNode::on_perception(const PerceptionObjects::SharedPtr& objs)
 {
+  AMR_PERF_PHASE("decision:on_perception");
   TRACE_SCOPE(amr::trace::DECISION_ON_PERCEPTION);
   auto t_start = std::chrono::steady_clock::now();
 
@@ -88,7 +104,7 @@ void DecisionNode::on_perception(const PerceptionObjects::SharedPtr& objs)
   m.object_count.store(static_cast<int32_t>(objs->objects.size()),
                        std::memory_order_relaxed);
 
-  if (planning_.should_preempt(active_goal_ != nullptr)) {
+  if (preempt_.should_preempt(active_goal_ != nullptr, 0.0F, 0.0F)) {
     cancel_active_goal();
   }
 
@@ -96,8 +112,17 @@ void DecisionNode::on_perception(const PerceptionObjects::SharedPtr& objs)
                                               objs->objects[0].y,
                                                objs->objects[0].id.c_str()};
   amr::domain::planning::Goal goal;
-  if (planning_.select_goal(&obj, 1, goal)) {
-    send_goal(goal.x, goal.y);
+  if (selector_.select(&obj, 1, goal)) {
+    { AMR_PERF_PHASE("decision:astar");
+      amr::domain::planning::Pose start{0.0F, 0.0F};
+      amr::domain::planning::Pose goal_pose{goal.x, goal.y};
+      auto path = astar_.plan(demo_grid_, start, goal_pose);
+      if (!path.empty()) {
+        publish_path(path);
+      }
+    }
+    { AMR_PERF_PHASE("decision:send_goal");
+      send_goal(goal.x, goal.y); }
   }
 
   auto lat_us = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -145,7 +170,7 @@ void DecisionNode::cancel_active_goal()
 void DecisionNode::on_goal_response(const ClientGoalHandle::SharedPtr& goal_handle)
 {
   if (!goal_handle) {
-    if (planning_.should_retry(retry_count_)) {
+    if (selector_.should_retry(retry_count_)) {
       retry_count_++;
       RCLCPP_WARN(this->get_logger(), "Goal rejected, retrying %d/%d (%.2f, %.2f)",
                    retry_count_, amr::domain::planning::TargetSelector::kMaxRetries,
@@ -177,6 +202,21 @@ void DecisionNode::on_result(const ClientGoalHandle::WrappedResult& result)
       RCLCPP_ERROR(this->get_logger(), "MoveToPose failed");
       break;
   }
+}
+
+void DecisionNode::publish_path(const std::vector<amr::domain::planning::Waypoint> &path) {
+  auto msg = geometry_msgs::msg::PoseArray{};
+  msg.header.stamp = this->now();
+  msg.header.frame_id = "map";
+  for (const auto &wp : path) {
+    auto pose = geometry_msgs::msg::Pose{};
+    pose.position.x = wp.x;
+    pose.position.y = wp.y;
+    pose.position.z = 0.0;
+    pose.orientation.w = 1.0;
+    msg.poses.push_back(pose);
+  }
+  path_pub_->publish(msg);
 }
 
 RCLCPP_COMPONENTS_REGISTER_NODE(DecisionNode)
