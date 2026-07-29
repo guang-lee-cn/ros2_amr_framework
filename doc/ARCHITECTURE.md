@@ -90,21 +90,19 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    subgraph sensors["&nbsp;&nbsp;&nbsp;&nbsp; 传感器层 (独立进程) &nbsp;&nbsp;&nbsp;&nbsp;"]
-        direction LR
+    subgraph sensors["传感器层 (独立进程)"]
         L["LiDAR<br/>10Hz"]
         I["IMU<br/>100Hz"]
         C["Camera<br/>5Hz"]
     end
 
-    subgraph compute["&nbsp;&nbsp;&nbsp;&nbsp; 计算层 (compute_container 单进程) &nbsp;&nbsp;&nbsp;&nbsp;"]
-        direction LR
+    subgraph compute["计算层 (compute_container 单进程)"]
         FUSION["FusionNode<br/>DBSCAN · EKF · Tracker"]
         DECISION["DecisionNode<br/>目标分发 · 抢占"]
         MOTOR["MotorCtrlNode<br/>插值 · Action"]
     end
 
-    subgraph infra["&nbsp;&nbsp;&nbsp;&nbsp; 基础设施 (独立进程) &nbsp;&nbsp;&nbsp;&nbsp;"]
+    subgraph infra["基础设施 (独立进程)"]
         HEALTH["HealthMonitor<br/>心跳 · 看门狗 · Prometheus"]
     end
 
@@ -146,10 +144,7 @@ flowchart TB
     linkStyle 12 stroke:#1976d2,stroke-width:1.5px,stroke-dasharray:5
     linkStyle 13 stroke:#1976d2,stroke-width:1.5px,stroke-dasharray:5
     linkStyle 14 stroke:#1976d2,stroke-width:1.5px,stroke-dasharray:5
-    linkStyle 11 stroke:#1976d2,stroke-width:1.5px,stroke-dasharray:5
-    linkStyle 12 stroke:#1976d2,stroke-width:1.5px,stroke-dasharray:5
-    linkStyle 13 stroke:#1976d2,stroke-width:1.5px,stroke-dasharray:5
-    linkStyle 14 stroke:#1976d2,stroke-width:1.5px,stroke-dasharray:5
+    linkStyle 15 stroke:#1976d2,stroke-width:1.5px,stroke-dasharray:5
 ```
 
 > 红色实线 = 数据流 &nbsp;|&nbsp; 蓝色虚线 = 控制流 &nbsp;|&nbsp; 状态流见下方状态图
@@ -235,7 +230,7 @@ flowchart LR
     MOTOR -->|cmd_vel| SLAM
     HEALTH -->|/metrics| PROM
     PROM --> GRAF
-    internal -->|colcon test| CI
+    OBS -->|colcon test| CI
 
     style internal fill:#f5f5f5,stroke:#333
 ```
