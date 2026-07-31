@@ -2,11 +2,11 @@
 
 | 属性 | 值 |
 |------|-----|
-| 版本 | v2.0.0 |
-| 最后更新 | 2026-07-19 |
+| 版本 | v2.1.0 |
+| 最后更新 | 2026-07-31 |
 | 作者 | guang |
 | 读者 | 技术团队 / 开源社区 |
-| 适用范围 | AMR 感知-执行管线参考架构。本项目是 ROS2 应用架构的 reference implementation，不是替代 ROS2 的通用中间件。不含 SLAM、路径规划、真实电机驱动。 |
+| 适用范围 | AMR 感知-决策-执行全链路自研参考架构。本项目是 ROS2 应用架构的 reference implementation，不是替代 ROS2 的通用中间件。不含 SLAM、真实电机驱动（含路径规划/避障/平滑自研）。 |
 | 参考 | [ITERATION.md](ITERATION.md) · [adr/](adr/) · [subsystems/](subsystems/) · [guides/](guides/) |
 
 ### 术语表
@@ -14,8 +14,8 @@
 | 缩写 | 全称 | 说明 |
 |------|------|------|
 | DDS | Data Distribution Service | OMG 标准发布-订阅通信协议 |
-| HAL | Hardware Abstraction Layer | 硬件抽象层，本项目指 `ISensor<DataType>` 接口 |
-| DDD | Domain-Driven Design | 领域驱动设计，本项目四层：domain/application/infrastructure/observability |
+| HAL | Hardware Abstraction Layer | 硬件抽象层，本项目 `hal/`：`ISensor<T>` + `IActuator<Cmd,Fb>` |
+| DDD | Domain-Driven Design | 领域驱动设计，本项目四层：hal/domain/infrastructure/observability（application 已删） |
 | ADR | Architecture Decision Record | 架构决策记录 |
 | SHM | Shared Memory | 共享内存，POSIX `shm_open` |
 | QoS | Quality of Service | DDS 消息质量策略（reliable/best_effort） |
@@ -80,8 +80,8 @@ flowchart TB
 | **外部系统** | 传感器驱动、监控采集、可视化 | 独立 ROS2 节点 / 独立容器 |
 | **基础设施服务** | 健康监控、集群编排 | 独立进程 (PID 5/6) |
 | **计算容器** | 融合→决策→执行管线 | 单进程 (PID 4)，SHM 零拷贝 |
-| ⊳ **Application** | 领域业务逻辑 (DDD: domain + application) | 编译期禁止依赖 ROS2 |
-| ⊳ **HAL** | 硬件抽象层 (ISensor<T> + SensorFactory) | 内嵌于 FusionNode |
+| ⊳ **Domain** | 领域业务逻辑（感知/规划/执行/监控算法） | 编译期禁止依赖 ROS2 |
+| ⊳ **HAL** | 硬件抽象层 (ISensor<T> + IActuator + Registry) | 插件注册，加传感器零改框架 |
 | **横切关注点** | 可观测性、配置管理 | 库形式链接到所有节点 |
 
 ---
@@ -322,27 +322,33 @@ flowchart LR
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│ domain/        纯业务逻辑，零 ROS2 依赖               │
-│  perception/   KF, DBSCAN, Tracker, Degradation      │
-│  planning/     TargetSelector, PreemptPolicy          │
-│  execution/    Interpolator                           │
-│  monitoring/   HeartbeatAnalyzer, RecoveryPolicy      │
+│ hal/           硬件抽象层，零 ROS2 依赖                │
+│  sensor/       ISensor<T> + Simulated + Sick 适配器   │
+│  actuator/     IActuator<Cmd,Fb> (双向)               │
+│  common/       SensorRegistry 插件注册表              │
 ├──────────────────────────────────────────────────────┤
-│ application/   用例编排，依赖 domain                    │
-│  PerceptionService, PlanningService                   │
-│  ExecutionService, MonitoringService                  │
+│ domain/        纯业务逻辑，零 ROS2 依赖               │
+│  perception/   KF, DBSCAN/PCL, Tracker, Degradation   │
+│  planning/     A*, PathSmoother, GridUpdater,         │
+│                TrackErrorMonitor, TargetSelector      │
+│  execution/    PurePursuit (梯形速度), Interpolator    │
+│  monitoring/   HeartbeatAnalyzer, RecoveryPolicy,     │
+│                MonitoringService (原 application/)    │
 ├──────────────────────────────────────────────────────┤
 │ infrastructure/  ROS2 适配器 (唯一可依赖 rclcpp)        │
 │  FusionNode, DecisionNode, MotorCtrlNode              │
 │  HealthMonitorNode, FleetManagerNode                  │
-│  sensors/ SimulatedLidar, SickTiM781Adapter, Factory  │
+│  compute_container (含 :9091 perf 端点)               │
+│  PrometheusHttpServer, DiagnosticsPublisher           │
 ├──────────────────────────────────────────────────────┤
 │ observability/  横切关注点                             │
 │  RingBuffer, MetricsRegistry, Tracer, LogWorker       │
 └──────────────────────────────────────────────────────┘
 ```
 
-编译期强制：`domain/` 不 `#include` 任何 ROS2 头文件。违反此规则 → `colcon build` 失败。
+> 注：原 `application/` 层已删除（DDD-REVIEW 结论：形同虚设）。`PerceptionService` 下沉至 `domain/perception/`，`MonitoringService` 下沉至 `domain/monitoring/`，编排逻辑内联至 Node。
+
+编译期强制：`hal/` + `domain/` 不 `#include` 任何 ROS2 头文件。违反此规则 → `colcon build` 失败。
 
 ### 类关系图
 

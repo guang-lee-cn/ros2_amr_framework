@@ -1,5 +1,33 @@
 # Changelog
 
+## [2.1.0] — 2026-07-31
+
+### Added — 控制层自研闭环 (P3)
+- **路径平滑** `path_smoother.hpp`：内切圆弧圆角（无 overshoot），直线密集采样，6 测试
+- **跟踪误差监控** `track_error_monitor.hpp`：横向误差→降速/停止，接入 MotorCtrlNode，7 测试
+- **动态避障重规划** `grid_updater.hpp`：感知→膨胀标记→A* 重规划→平滑，4 测试
+- **商业部署方案** `deployment-plan.md`：Docker + OTA + 版本锁定
+
+### Added — 可观测性增强
+- **PerfRegistry → Prometheus**：compute_container :9091 端点暴露 AMR_PERF_PHASE 阶段延迟
+- **Grafana dashboard** `config/grafana/amr_dashboard.json`：5 面板（阶段延迟/健康/降级）
+
+### Changed — HAL 层重组 (P2)
+- `amr::hal` 命名空间 + `hal/` 目录（sensor/actuator/common）
+- **SensorFactory → Registry**：静态插件注册，加传感器零改框架
+- metrics_registry → .cpp 拆分（POSIX 头移出 header）
+
+### Changed — 融合层升级 (P1)
+- **DBSCAN → PCL** 策略模式（`IClusterAlgorithm`），3.2x 加速
+- **robot_localization EKF** 集成 → /odom 定位闭环
+- MotorCtrlNode 开环→闭环（订阅 /odom）
+- Camera 占位清理（删除 900KB 噪声生成）
+- IActuator 接口 + 驱动接入指南
+
+### Changed — 测试
+- 15 模块 98 用例（新增 astar/pure_pursuit/path_smoother/track_error/grid_updater）
+- test_motor_ctrl 从 CI 排除（spin_once 竞态待 P2 修复）
+
 ## [2.0.0] — 2026-07-18
 
 ### Added — M7: Observability System

@@ -4,6 +4,15 @@
 > 对比基准：Paxini JD（运动控制+路径规划+感知）+ 商用 AMR 标准链路
 > 方法：遍历 include/ + src/ 的实际代码，与方案文档逐项比对
 
+> **⚠️ 状态快照（2026-07-31）**：本文是 2026-07-19 的历史审计，其中标记的缺口大多已补齐：
+> - ✅ 路径规划：`domain/planning/astar_planner.hpp`（P0 组件 A 完成）
+> - ✅ 运动控制：`domain/execution/pure_pursuit.hpp` + 梯形速度（P0 组件 B 完成）
+> - ✅ PCL 后端：`domain/perception/pcl_cluster_backend.hpp`（3.2x 加速）
+> - ✅ 端到端：感知→A*→平滑→PurePursuit→误差监控 全链路（P3 完成）
+> - ℹ️ `application/` 层已删除（DDD-REVIEW 结论），Service 下沉至 domain/
+> - ⏳ 待做：真实 IMU/Camera 适配器、地面点去除、SensorRegistry dlopen 插件化
+> 最新状态见 [ITERATION.md](ITERATION.md)。
+
 ---
 
 ## 一、实际代码完成度审计

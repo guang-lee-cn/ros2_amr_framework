@@ -6,40 +6,48 @@
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=c%2B%2B)](https://en.cppreference.com/w/cpp/17)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
-AMR 感知-执行管线参考架构。基于 ROS 2 Jazzy，展示生产级 ROS2 应用的 DDD 分层、HAL 抽象、可观测性、降级管理与工程化实践。不是一个可安装的通用中间件，而是一个可学习、可复制的架构模板。
+AMR **感知-决策-执行全链路自研**参考架构。基于 ROS 2 Jazzy，展示生产级 ROS2 应用的 DDD 分层、HAL 抽象、可观测性、降级管理与工程化实践。不是一个可安装的通用中间件，而是一个可学习、可复制的架构模板。
+
+> **定位**：感知、决策、控制全链路自研（对标 MiR/OTTO 等成熟 AMR 厂商路线），开源用于：① ROS2 传感器标准接入层 ② 工程规范演示 ③ 可扩展架构模板。
 
 ## Architecture
 
 ```
-                    ┌──────────────────────────────────────────────┐
-                    │          Fleet Manager                       │
-                    │   /fleet/status   /fleet/health              │
-                    └────┬──────────────────────────┬──────────────┘
-                         │ /amr1/health/report      │ /amr2/health/report
-    ┌────────────────────┼──────────────────────────┼──────────────────────┐
-    │  AMR-1 (domain=1)  │                          │                      │
-    │                    ▼                          ▼                      │
-    │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐            │
-    │  │  Lidar   │  │   IMU    │  │  Camera  │  │ Health   │            │
-    │  │  10Hz    │  │  100Hz   │  │  5Hz     │  │ Monitor  │            │
-    │  └────┬─────┘  └────┬─────┘  └────┬─────┘  │ watchdog │            │
-    │       │   LaserScan │    Imu      │  Image  └──────────┘            │
-    │       ▼             ▼             ▼                                 │
-    │  ┌───────────────────────────────────────────┐                      │
-    │  │      compute_container (single process)   │                      │
-    │  │  ┌──────────┐  ┌──────────┐  ┌─────────┐ │  zero-copy via       │
-    │  │  │  Fusion   │  │ Decision │  │MotorCtrl│ │  shared_ptr          │
-    │  │  │  + EKF +  │──│preemption│──│ Action  │ │                      │
-    │  │  │degradation│  │ + retry  │  │ Server  │ │                      │
-    │  │  └──────────┘  └──────────┘  └─────────┘ │                      │
-    │  │       MultiThreadedExecutor              │                      │
-    │  └───────────────────────────────────────────┘                      │
-    └────────────────────────────────────────────────────────────────────┘
-
-    8 nodes → 5 processes (3 sensors + compute + health) — production layout.
-    Fusion + decision + motor_ctrl share a process for zero-copy.
-    Sensors use standard sensor_msgs — interoperable with sick_scan2, realsense-ros.
+┌──────────────────────────────────────────────────────────────┐
+│  HAL 层 (amr::hal)  — 硬件抽象，插件注册                        │
+│  ├─ sensor/isensor.hpp        ISensor<T> (LidarScan/ImuData/...)│
+│  ├─ sensor/simulated_*.hpp    模拟传感器                        │
+│  ├─ sensor/sick_tim781.hpp    真实 LiDAR 适配器                 │
+│  ├─ sensor/sensor_factory.hpp Registry 驱动（插件化，零 if-else）│
+│  ├─ actuator/iactuator.hpp    IActuator<Cmd,Fb> (双向)          │
+│  └─ common/registry.hpp       静态插件注册表                    │
+└──────────────────────────────────────────────────────────────┘
+                    │ ISensor / IActuator
+┌──────────────────────────────────────────────────────────────┐
+│  Domain 层 (amr::domain)  — 纯 C++ 算法，零 ROS2               │
+│  ├─ perception/   DBSCAN/PCL 聚类 · KF · Tracker · 降级策略     │
+│  ├─ planning/     A* 路径规划 · 路径平滑 · 障碍标记 · 误差监控   │
+│  ├─ execution/    PurePursuit + 梯形速度                        │
+│  └─ monitoring/   心跳分析 · 恢复策略                           │
+└──────────────────────────────────────────────────────────────┘
+                    │ 注入
+┌──────────────────────────────────────────────────────────────┐
+│  Infrastructure 层 — ROS2 Node + DDS                          │
+│                                                              │
+│  传感器进程 (独立)         计算容器 (单进程)   基础设施 (独立)  │
+│  lidar_node  ──/scan──▶  ┌─────────────────────┐  health_monitor│
+│  imu_node    ──/imu───▶  │ fusion → decision   │  :9090 metrics │
+│  camera_node ─/image─▶   │  → motor (零拷贝)   │                │
+│                          └─────────────────────┘  compute_container│
+│  定位: ekf_node (robot_localization EKF) → /odom   :9091 perf   │
+└──────────────────────────────────────────────────────────────┘
 ```
+
+**关键设计**：
+- **进程隔离**：传感器驱动独立进程（故障隔离），compute 单进程（零拷贝），health_monitor 独立
+- **控制闭环**：odom 反馈（robot_localization EKF）→ PurePursuit → 误差监控自纠
+- **动态避障**：感知物体 → 网格标记 → A* 重规划 → 路径平滑
+- **降级**：传感器超时 → 5 级降级，看门狗重启，Prometheus 告警
 
 ## Quick Start
 
@@ -48,17 +56,30 @@ cd ros2_ws
 colcon build --packages-select ros2_robot_middleware
 source install/setup.bash
 
-# Single AMR
+# 单 AMR（含 EKF 定位）
 ros2 launch ros2_robot_middleware system.launch.py
 
-# Multi-AMR fleet
+# 多 AMR 集群
 ros2 launch ros2_robot_middleware fleet_multi.launch.py
 
-# Gazebo simulation
+# Gazebo 仿真
 ros2 launch ros2_robot_middleware simulation.launch.py
 
-# Run tests
+# 单元测试
 ./quality/quality.sh
+
+# 性能插桩模式（启用 AMR_PERF_PHASE 打点 + :9091 端点）
+colcon build --packages-select ros2_robot_middleware \
+  --cmake-args -DAMR_PERF_INSTRUMENTATION=ON
+```
+
+### 观测
+
+```bash
+# 运行后：
+curl localhost:9090/metrics   # 健康/速率/降级/延迟
+curl localhost:9091/metrics   # AMR_PERF_PHASE 阶段延迟 (ON 构建)
+# Grafana: 导入 config/grafana/amr_dashboard.json
 ```
 
 ## Tech Stack
@@ -66,29 +87,33 @@ ros2 launch ros2_robot_middleware simulation.launch.py
 | Component | Choice |
 |-----------|--------|
 | ROS 2 | Jazzy Jalisco (LTS, EOL 2029) |
-| RMW | Fast-DDS with XML QoS profile |
-| Messages | sensor_msgs (standard) + 5 custom (msg/srv/action) |
+| RMW | Fast-DDS / CycloneDDS 可切换（`RMW_IMPLEMENTATION`） |
+| 定位 | robot_localization EKF（IMU + odom） |
+| 规划 | 自研 A* + 圆弧路径平滑 + 动态避障 |
+| 控制 | 自研 PurePursuit + 梯形速度 + 误差监控 |
+| 感知 | 自研 KF + Tracker + 降级；PCL/DBSCAN 聚类（策略模式） |
+| HAL | `amr::hal` 插件注册（ISensor + IActuator） |
+| 观测 | Prometheus (:9090 + :9091) + AMR_PERF_PHASE + Grafana |
 | Build | colcon + ament_cmake |
-| Test | GoogleTest, 65 cases in 9 modules |
-| CI | GitHub Actions |
+| Test | GoogleTest, 98 cases, 15 modules |
+| CI | GitHub Actions (静态分析 → 构建 → 测试 → 覆盖率) |
 | Simulation | Gazebo Harmonic + ros_gz_bridge |
-| Security | SROS2 + DDS-Security |
-| Observability | Traces (TracerContext) + Metrics (Prometheus + shm) + Logs (ring buffer) |
-| Filter | EKF with pluggable measurement models |
 | Language | C++17 |
 
 ## Docs
 
 | Document | Description |
 |----------|-------------|
-| [Architecture Overview](doc/ARCHITECTURE.md) | 三张 Mermaid 图（数据流/控制流/状态流）+ 模块索引 |
-| [Subsystem Docs](doc/subsystems/) | 传感器 / 融合 / 决策 / 执行 / 健康监控 / 可观测性 — 每模块一页 |
-| [ADR](doc/adr/03-adr.md) | 11 个架构决策及备选方案 |
-| [DDS Customization](doc/guides/06-dds-customization.md) | Fast-DDS XML QoS profiles |
-| [Observability Design](doc/guides/07-observability-design.md) | Traces/Metrics/Logs 完整设计 |
-| [Observability Usage](doc/guides/08-observability-usage.md) | API、踩坑、选型对比 |
-| [HAL Design](doc/guides/09-hal-design.md) | 硬件抽象层 + 移植指南 + 行业方案 |
-| [Quality Guide](quality/README.md) | 质量门禁、测试模块、覆盖率、命名规范 |
+| [Architecture Overview](doc/ARCHITECTURE.md) | 数据流/控制流/状态流 + 分层图 |
+| [Iteration Plan](doc/ITERATION.md) | P0-P3 迭代路线与完成状态 |
+| [DDS Selection](doc/dds-selection-guide.md) | Fast-DDS vs CycloneDDS 选型 + benchmark |
+| [Benchmark Lessons](doc/benchmark-lessons-learned.md) | DDS 测试踩坑与手把手流程 |
+| [Driver Integration](doc/guides/11-driver-integration.md) | 硬件驱动接入 4 阶段指南 |
+| [Deployment Plan](doc/deployment-plan.md) | 商业部署：Docker + OTA + 版本锁定 |
+| [Subsystem Docs](doc/subsystems/) | 传感器/融合/决策/执行/健康监控/可观测性 |
+| [ADR](doc/adr/03-adr.md) | 架构决策记录 |
+| [HAL Design](doc/guides/09-hal-design.md) | 硬件抽象层设计 |
+| [Quality Guide](quality/README.md) | 质量门禁、测试规范 |
 
 ## Status
 
@@ -96,8 +121,9 @@ ros2 launch ros2_robot_middleware simulation.launch.py
 |--------|-------|
 | Build | [![CI](https://github.com/guang-lee-cn/ros2_amr_framework/actions/workflows/ci.yml/badge.svg)](https://github.com/guang-lee-cn/ros2_amr_framework/actions) |
 | Coverage | 78.8% — [quality/data/](quality/data/coverage.txt) |
-| Tests | 65 cases, 9 modules |
-| Lines | ~3,800 (include + src) |
+| Tests | 98 cases, 15 modules |
+| 控制层 | 自研闭环：规划/避障/执行/自感知 |
+| HAL | 插件注册，加传感器零改框架 |
 | ROS 2 | Jazzy Jalisco (LTS, EOL 2029) |
 
 ## License
