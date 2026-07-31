@@ -1,7 +1,7 @@
 # 迭代计划
 
-> 更新：2026-07-29
-> 本次更新：W1-W2 完成，架构方向讨论定稿，ISO 战略调整
+> 更新：2026-07-31
+> 本次更新：P1-P3 全部完成，控制层自研闭环收官，文档与代码同步
 
 ---
 
@@ -14,12 +14,12 @@
 | W1 Day 3 | Pure Pursuit + 5 测试 | ✅ |
 | W1 Day 4 | 集成 DecisionNode / MotorCtrlNode | ✅ |
 | W1 Day 5 | 端到端验证（system.launch） | ✅ |
-| W2 Day 1-2 | 系统级 DDS benchmark（AMR 管线） | ✅ |
-| W2 Day 3-4 | DDS micro-benchmark（ddsperf 社区工具） | ✅ |
-| W2 Day 5 | DDS 选型文档 + 踩坑记录 | ✅ |
+| W2 | DDS benchmark + 选型文档 + 踩坑记录 | ✅ |
 | — | 性能插桩框架（AMR_PERF_PHASE） | ✅ |
-| — | CI 修复：test_motor_ctrl 排除（spin_once 竞态） | ✅ |
-| — | Mermaid 图渲染修复（direction in subgraph / linkStyle 越界） | ✅ |
+| P1a-P1g | 融合层升级 + EKF 闭环 + HAL 接口 | ✅ |
+| P2 | HAL 重组 + observability 拆分 | ✅ |
+| P3 | 控制层自研闭环 + 部署方案 | ✅ |
+| — | 文档同步（README/CHANGELOG/ARCHITECTURE） | ✅ |
 
 ---
 
@@ -95,8 +95,8 @@ sensor 和 actuator 在数据语义上没有公共抽象。强行统一 IHardwar
 |------|:---:|------|
 | **A: 路径规划** | ✅ | `domain/planning/astar_planner.hpp` + 6 测试 |
 | **B: 运动控制** | ✅ | `domain/execution/pure_pursuit.hpp` + 5 测试 |
-| **C: 感知增强** | ⏳ 待做 | PCL 地面去除 + OccupancyGrid + PCL 后端 |
-| **D: 传感器接入** | ⏳ 待做 | IMU/Camera 适配器 + SensorRegistry |
+| **C: 感知增强** | 🟡 部分 | ✅ PCL 后端（3.2x 加速）· ⏳ 地面去除 |
+| **D: 传感器接入** | 🟡 部分 | ✅ Registry 插件化 · ⏳ 真实 IMU/Camera 适配器 |
 | **E: HealthMonitor** | ✅ | PrometheusHttpServer + DiagnosticsPublisher 拆出，493→379 行 |
 | **F: 端到端** | ✅ | system.launch 启动，全链路验证通过 |
 
@@ -107,38 +107,38 @@ sensor 和 actuator 在数据语义上没有公共抽象。强行统一 IHardwar
 | 任务 | 预计 | 状态 | 说明 |
 |:---:|:---:|:---:|------|
 | **P1a: DBSCAN → PCL 策略模式** | 1d | ✅ 完成 | `IClusterAlgorithm` 接口 + `PclClusterBackend`。PCL 比 DBSCAN 快 3.2x（bench_cluster 实测 630μs → 199μs） |
-| **P1b: 新增 robot_localization EKF** | 1d | ⏳ 待 sudo 安装 | IMU + 轮编码器 → 机器人位姿估计（`ekf_node`）。与自研 KF 并存——一个做物体跟踪，一个做机器人定位。`sudo apt install ros-jazzy-robot-localization`，然后 MotorCtrlNode.current ← /odom 订阅闭环 |
+| **P1b: 新增 robot_localization EKF** | 1d | ✅ 完成 | `ekf.yaml` + launch 集成，/odom 输出验证通过。MotorCtrlNode 订阅闭环。与自研 KF 并存（物体跟踪 vs 机器人定位） |
 | **P1c: Camera 占位清理** | 0.5d | ✅ 完成 | 删除 SimulatedCamera 900KB 无用数据产生，保留 camera_timeout 降级逻辑 |
 | **P1d: 融合层 benchmark** | 0.5d | ✅ 完成 | `bench_cluster` — DBSCAN vs PCL 多簇对比，PCL 全面胜出 |
 
-### P1e：计算容器进程模型评审
+### P1e：计算容器进程模型评审 — ✅ 完成
 
 **背景**：compute_container 同进程部署 fusion/decision/motor（零拷贝），sensor 独立进程（故障隔离），health_monitor 独立进程。该结构已对齐 MiR/OTTO 单机 AMR 部署方式。
 
-| 任务 | 预计 | 说明 |
+| 任务 | 状态 | 说明 |
 |:---:|:---:|------|
-| HealthMonitor ↔ compute 心跳/看门狗交互流梳理 | 0.5d | 心跳发布→超时检测→ChangeState 重启序列的完整业务流总结 |
-| 进程模型 ADR 补充 | 0.5d | 记录"compute 同进程 + sensor 独立进程"的决策理由（零拷贝 vs 故障隔离） |
+| HealthMonitor ↔ compute 心跳/看门狗交互流梳理 | ✅ | 心跳→超时→ChangeState 重启序列已确认 |
+| 进程模型决策记录 | ✅ | compute 同进程（零拷贝）+ sensor 独立（故障隔离） |
 
-### P1f：商业化定位闭环（MotorCtrlNode 开环 → 闭环）
+### P1f：商业化定位闭环 — ✅ 完成
 
 **背景**：当前 `current = (0,0,0)` 是代码假设位姿（开环模拟），接真实硬件必须换真实定位。
 
-| 任务 | 预计 | 说明 |
+| 任务 | 状态 | 说明 |
 |:---:|:---:|------|
-| 底盘适配器（actuator/） | 1d | 轮编码器 → odom 发布，模拟底盘先跑通 |
-| MotorCtrlNode.current ← /odom | 0.5d | 订阅 robot_localization 输出的 odom，替换自推位姿 |
-| 多路点路径支持 | 0.5d | `track()` 支持 A*/NAV2 输出的多路点路径，而非当前两点直线 |
-| 速度平滑 | 0.5d | 加减速限制（梯形速度曲线） |
+| MotorCtrlNode.current ← /odom | ✅ | 订阅 robot_localization EKF 输出，无 odom 时 fallback 运动学积分 |
+| 多路点路径支持 | ✅ | PurePursuit 重写——路径顺序累积选点 |
+| 速度平滑 | ✅ | 梯形加减速 + 曲率限速 + 近目标减速 |
+| 底盘适配器（actuator/） | ⏳ P3e | 真实底盘就绪后实现 IActuator |
 
-### P1g：真实硬件接入流程 — 标准驱动开发文档
+### P1g：真实硬件接入流程 — ✅ 完成
 
 **背景**：已定义完整驱动接入流程（阶段 0-4），固化为开发文档供后续接入任何传感器/执行器复用。
 
-| 任务 | 预计 | 说明 |
+| 任务 | 状态 | 说明 |
 |:---:|:---:|------|
-| 驱动接入开发指南文档 | 0.5d | 阶段 0-4 全流程：硬件准备→ISensor/IActuator 适配→单元测试→YAML 切换→集成验证。写入 `docs/guides/11-driver-integration.md` |
-| IActuator 接口先行定义 | 0.5d | `read(feedback) + write(cmd)`，为底盘/执行器接入铺路 |
+| 驱动接入开发指南文档 | ✅ | `guides/11-driver-integration.md` — 阶段 0-4 全流程 |
+| IActuator 接口先行定义 | ✅ | `hal/actuator/iactuator.hpp` — read(feedback) + write(cmd) |
 
 ### P2：amr_hal 独立 + 代码质量 — ✅ 完成（方案 B：包内重组）
 
@@ -204,11 +204,15 @@ P2：Fast-DDS 源码深读
 
 ---
 
-## Commit 清单（当前分支）
+## Commit 清单（最新到 main）
 
 ```
-04e7cc8  fix(ci): exclude test_motor_ctrl — PurePursuit spin_once race
-a98f2c6  feat: W1-W2 — AMR end-to-end + DDS benchmark + perf instrumentation
+686ec21  docs: reflect final architecture
+07baf91  docs: ITERATION — P3 complete, P3e scoped
+390eddf  docs(P3d): commercial deployment plan
+5fe2e5b  feat(P3c): dynamic obstacle avoidance
+6f5e0da  feat(P3b): lateral tracking error monitor
+5cde9cc  feat(P3a): corner-rounding path smoother
 ```
 
 ---
@@ -218,16 +222,16 @@ a98f2c6  feat: W1-W2 — AMR end-to-end + DDS benchmark + perf instrumentation
 | 门禁 | 当前 | 目标 |
 |------|:---:|:---:|
 | 编译 | ✅ 零 error | — |
-| 测试通过率 | 11/12（test_motor_ctrl 已知超时） | 12/12 |
+| 测试通过率 | 14/14（test_motor_ctrl 本地超时，CI 排除待修复） | 15/15 |
 | CI | ✅ 全绿 | — |
-| class 上限（.h <= 150 / .cc <= 250） | ✅ 仅 health_monitor_node.cpp 379 行（已拆分） | — |
-| clang-tidy + ASan | 待集成 | P3 |
-| 覆盖率 | ~60%（上次 CI） | >= 80% |
+| class 上限（.h <= 150 / .cc <= 250） | ✅ 已拆分 | — |
+| clang-tidy + ASan | 待集成 | P3e |
+| 覆盖率 | 78.8% | >= 80% |
 
 ---
 
 ## 未决事项/待讨论
 
-- [ ] amr_hal 独立包：路径规划 A* 和 PurePursuit 是否也移入？（它们不依赖硬件，当前在 domain/ 合理）
-- [ ] amr_observability 独立包时间线：P2 源码博客后还是并行？
-- [ ] Fast-DDS 源码深读 W3 是否启动，还是先继续 amr_hal 拆分？
+- [ ] test_motor_ctrl 修复（timer-based stepping 替代 spin_once 阻塞）
+- [ ] P3e：真实底盘适配器 + slam 建图 + Docker 落地（依赖硬件环境）
+- [ ] Fast-DDS 源码深读 + 博客（P2b）是否启动
