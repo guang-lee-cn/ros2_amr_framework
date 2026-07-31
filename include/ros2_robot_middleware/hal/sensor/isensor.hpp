@@ -1,5 +1,5 @@
 #pragma once
-/// @file   sensor_interface.hpp
+/// @file   isensor.hpp
 /// @brief  Runtime-polymorphic sensor abstraction for dependency injection.
 ///
 /// ISensor<DataType>  — abstract interface (one virtual call per read())
@@ -16,9 +16,9 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace amr::domain::sensor {
+namespace amr::hal::sensor {
 
-// ── Data types (ROS2-free) ──────────────────────────────────────────
+/// ── Data types (ROS2-free) ──────────────────────────────────────────
 
 struct LidarScan {
     static constexpr int kMaxRanges = 2048;
@@ -48,7 +48,7 @@ struct CameraFrame {
 #endif
 };
 
-// ── Abstract interface (runtime polymorphism) ────────────────────────
+/// ── Abstract interface (runtime polymorphism) ────────────────────────
 
 template <typename DataType> class ISensor {
 public:
@@ -65,7 +65,7 @@ protected:
     int health_ = 0;
 };
 
-// ── CRTP helper (compile-time dispatch for concrete implementations) ─
+/// ── CRTP helper (compile-time dispatch for concrete implementations) ─
 
 template <typename Derived, typename DataType> class SensorBase : public ISensor<DataType> {
 public:
@@ -87,4 +87,4 @@ public:
     }
 };
 
-} // namespace amr::domain::sensor
+} // namespace amr::hal::sensor

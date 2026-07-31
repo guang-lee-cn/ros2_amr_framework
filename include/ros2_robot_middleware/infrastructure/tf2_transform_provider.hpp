@@ -6,7 +6,7 @@
 /// Static TF frames (lidar→base_link, etc.) are published to /tf_static
 /// by the sensor launch files.
 
-#include "ros2_robot_middleware/domain/perception/sensor_interface.hpp"
+#include "ros2_robot_middleware/hal/sensor/isensor.hpp"
 #include "ros2_robot_middleware/domain/transform_provider.hpp"
 
 #include <tf2_ros/buffer.h>
@@ -25,8 +25,8 @@ public:
     : buffer_(std::make_shared<tf2_ros::Buffer>(clock)),
       listener_(std::make_shared<tf2_ros::TransformListener>(*buffer_)) {}
 
-  bool transform_scan(const amr::domain::sensor::LidarScan &in,
-                       amr::domain::sensor::LidarScan &out,
+  bool transform_scan(const amr::hal::sensor::LidarScan &in,
+                       amr::hal::sensor::LidarScan &out,
                        const std::string &target_frame) override
   {
     // Look up static transform: source → target

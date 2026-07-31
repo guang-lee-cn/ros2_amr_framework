@@ -1,17 +1,17 @@
 /// @file test_sensor_hal.cpp — Sensor interface + SimulatedSensors unit tests (no ROS2)
-#include "ros2_robot_middleware/infrastructure/sensors/sick_tim781_adapter.hpp"
-#include "ros2_robot_middleware/infrastructure/sensors/simulated_sensors.hpp"
+#include "ros2_robot_middleware/hal/sensor/sick_tim781_adapter.hpp"
+#include "ros2_robot_middleware/hal/sensor/simulated_sensors.hpp"
 #include "ros2_robot_middleware/domain/perception/perception_service.hpp"
 
 #include <gtest/gtest.h>
 #include <rclcpp/rclcpp.hpp>
 
-using amr::infrastructure::sensors::SimulatedLidar;
-using amr::infrastructure::sensors::SimulatedImu;
-using amr::infrastructure::sensors::SimulatedCamera;
-using amr::domain::sensor::LidarScan;
-using amr::domain::sensor::ImuData;
-using amr::domain::sensor::CameraFrame;
+using amr::hal::sensor::SimulatedLidar;
+using amr::hal::sensor::SimulatedImu;
+using amr::hal::sensor::SimulatedCamera;
+using amr::hal::sensor::LidarScan;
+using amr::hal::sensor::ImuData;
+using amr::hal::sensor::CameraFrame;
 
 // ── SimulatedLidar ───────────────────────────────────────────────────
 
@@ -119,7 +119,7 @@ protected:
 
 TEST_F(SickTiM781Test, SubscribeAndRead_ReturnsValidScan) {
   auto node = std::make_shared<rclcpp::Node>("test_lidar_bridge");
-  amr::infrastructure::sensors::SickTiM781Adapter adapter("/test_scan");
+  amr::hal::sensor::SickTiM781Adapter adapter("/test_scan");
   adapter.connect(*node);
 
   // Publish a scan on /test_scan
@@ -141,7 +141,7 @@ TEST_F(SickTiM781Test, SubscribeAndRead_ReturnsValidScan) {
   exec.add_node(node->get_node_base_interface());
   exec.spin_once(std::chrono::milliseconds(100));
 
-  amr::domain::sensor::LidarScan out;
+  amr::hal::sensor::LidarScan out;
   ASSERT_TRUE(adapter.read(out));
 
   EXPECT_EQ(out.range_count, 5u);

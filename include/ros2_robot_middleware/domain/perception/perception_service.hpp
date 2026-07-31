@@ -5,7 +5,7 @@
 #include "ros2_robot_middleware/domain/perception/degradation_policy.hpp"
 #include "ros2_robot_middleware/domain/perception/icluster_algorithm.hpp"
 #include "ros2_robot_middleware/domain/perception/kalman_filter.hpp"
-#include "ros2_robot_middleware/domain/perception/sensor_interface.hpp"
+#include "ros2_robot_middleware/hal/sensor/isensor.hpp"
 #include "ros2_robot_middleware/domain/perception/tracker.hpp"
 #include "ros2_robot_middleware/domain/transform_provider.hpp"
 
@@ -22,9 +22,9 @@ class PerceptionService {
 public:
   using Level    = DegradationLevel;
   using Cluster  = Cluster;
-  using LidarSensor   = amr::domain::sensor::ISensor<amr::domain::sensor::LidarScan>;
-  using ImuSensor     = amr::domain::sensor::ISensor<amr::domain::sensor::ImuData>;
-  using CameraSensor  = amr::domain::sensor::ISensor<amr::domain::sensor::CameraFrame>;
+  using LidarSensor   = amr::hal::sensor::ISensor<amr::hal::sensor::LidarScan>;
+  using ImuSensor     = amr::hal::sensor::ISensor<amr::hal::sensor::ImuData>;
+  using CameraSensor  = amr::hal::sensor::ISensor<amr::hal::sensor::CameraFrame>;
 
   void set_transform(amr::domain::ITransformProvider *tf) { tf_ = tf; }
 
@@ -42,16 +42,16 @@ public:
       lidar_(lidar), imu_(imu), camera_(camera) {}
 
   void tick(double dt) {
-    amr::domain::sensor::LidarScan   lidar_scan;
-    amr::domain::sensor::ImuData     imu_data;
-    amr::domain::sensor::CameraFrame cam_frame;
+    amr::hal::sensor::LidarScan   lidar_scan;
+    amr::hal::sensor::ImuData     imu_data;
+    amr::hal::sensor::CameraFrame cam_frame;
 
     bool lidar_ok  = lidar_.read(lidar_scan);
     bool imu_ok    = imu_.read(imu_data);
     bool camera_ok = camera_.read(cam_frame);
 
     if (lidar_ok && tf_) {
-      amr::domain::sensor::LidarScan transformed;
+      amr::hal::sensor::LidarScan transformed;
       if (tf_->transform_scan(lidar_scan, transformed, "base_link")) {
         lidar_scan = transformed;
       }

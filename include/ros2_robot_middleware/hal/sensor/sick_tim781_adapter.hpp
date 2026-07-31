@@ -20,17 +20,17 @@
 ///   - Simulated: timer-generated sine wave, no ROS2 dependency
 ///   - Adapter:   subscribes to real sensor topic, bridges to HAL
 
-#include "ros2_robot_middleware/domain/perception/sensor_interface.hpp"
+#include "ros2_robot_middleware/hal/sensor/isensor.hpp"
 
 #include <mutex>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/laser_scan.hpp>
 
-namespace amr::infrastructure::sensors {
+namespace amr::hal::sensor {
 
 class SickTiM781Adapter
-    : public amr::domain::sensor::SensorBase<SickTiM781Adapter,
-                                             amr::domain::sensor::LidarScan> {
+    : public amr::hal::sensor::SensorBase<SickTiM781Adapter,
+                                             amr::hal::sensor::LidarScan> {
 public:
     /// @param topic  LiDAR topic (default: /scan for sick_scan2)
     explicit SickTiM781Adapter(const std::string &topic = "/scan")
@@ -47,14 +47,14 @@ public:
 
     // ── CRTP contract ────────────────────────────────────────────────
 
-    bool read_impl(amr::domain::sensor::LidarScan &out) {
+    bool read_impl(amr::hal::sensor::LidarScan &out) {
         std::lock_guard<std::mutex> lock(mutex_);
 
         if (!latest_msg_) return false;
 
         // Copy into caller-owned buffer (value semantics → thread-safe)
         size_t n = std::min(latest_msg_->ranges.size(),
-                            static_cast<size_t>(amr::domain::sensor::LidarScan::kMaxRanges));
+                            static_cast<size_t>(amr::hal::sensor::LidarScan::kMaxRanges));
         out.range_count     = n;
         out.angle_min       = latest_msg_->angle_min;
         out.angle_increment = latest_msg_->angle_increment;
@@ -63,7 +63,7 @@ public:
             out.ranges[i] = latest_msg_->ranges[i];
         }
         // Clamp any remaining slots to max range
-        for (size_t i = n; i < amr::domain::sensor::LidarScan::kMaxRanges; ++i) {
+        for (size_t i = n; i < amr::hal::sensor::LidarScan::kMaxRanges; ++i) {
             out.ranges[i] = latest_msg_->range_max;
         }
 
@@ -91,4 +91,4 @@ private:
     std::mutex mutex_;
 };
 
-} // namespace amr::infrastructure::sensors
+} // namespace amr::hal::sensor

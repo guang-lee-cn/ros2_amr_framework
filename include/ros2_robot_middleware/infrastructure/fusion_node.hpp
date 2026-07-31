@@ -7,8 +7,8 @@
 
 #include "ros2_robot_middleware/domain/perception/perception_service.hpp"
 #include "ros2_robot_middleware/domain/perception/degradation_policy.hpp"
-#include "ros2_robot_middleware/domain/perception/sensor_interface.hpp"
-#include "ros2_robot_middleware/infrastructure/sensors/sensor_factory.hpp"
+#include "ros2_robot_middleware/hal/sensor/isensor.hpp"
+#include "ros2_robot_middleware/hal/sensor/sensor_factory.hpp"
 #include "ros2_robot_middleware/infrastructure/tf2_transform_provider.hpp"
 #include "ros2_robot_middleware/msg/perception_objects.hpp"
 #include <std_msgs/msg/string.hpp>
@@ -52,14 +52,14 @@ private:
   void update_heartbeat_status();
 
   // Sensor parameters (from config/sensors.yaml via ROS2 params)
-  amr::infrastructure::sensors::SensorConfig lidar_cfg_;
-  amr::infrastructure::sensors::SensorConfig imu_cfg_;
-  amr::infrastructure::sensors::SensorConfig camera_cfg_;
+  amr::hal::sensor::SensorConfig lidar_cfg_;
+  amr::hal::sensor::SensorConfig imu_cfg_;
+  amr::hal::sensor::SensorConfig camera_cfg_;
 
   // HAL sensors — created by SensorFactory in on_configure()
-  std::unique_ptr<amr::domain::sensor::ISensor<amr::domain::sensor::LidarScan>>   lidar_;
-  std::unique_ptr<amr::domain::sensor::ISensor<amr::domain::sensor::ImuData>>     imu_;
-  std::unique_ptr<amr::domain::sensor::ISensor<amr::domain::sensor::CameraFrame>> camera_;
+  std::unique_ptr<amr::hal::sensor::ISensor<amr::hal::sensor::LidarScan>>   lidar_;
+  std::unique_ptr<amr::hal::sensor::ISensor<amr::hal::sensor::ImuData>>     imu_;
+  std::unique_ptr<amr::hal::sensor::ISensor<amr::hal::sensor::CameraFrame>> camera_;
 
   // Coordinate transform (needs ROS2 node → created in on_configure)
   std::unique_ptr<amr::infrastructure::Tf2TransformProvider> tf2_;

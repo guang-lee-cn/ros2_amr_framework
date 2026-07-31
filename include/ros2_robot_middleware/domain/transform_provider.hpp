@@ -5,7 +5,7 @@
 /// Pure C++ — zero ROS2 dependency. Infrastructure layer provides
 /// tf2-based implementation (Tf2TransformProvider).
 
-#include "ros2_robot_middleware/domain/perception/sensor_interface.hpp"
+#include "ros2_robot_middleware/hal/sensor/isensor.hpp"
 
 #include <string>
 
@@ -20,8 +20,8 @@ public:
   /// rigid-body transform obtained from the TF tree.
   ///
   /// Returns true on success, false if transform is unavailable.
-  virtual bool transform_scan(const sensor::LidarScan &in,
-                               sensor::LidarScan &out,
+  virtual bool transform_scan(const amr::hal::sensor::LidarScan &in,
+                               amr::hal::sensor::LidarScan &out,
                                const std::string &target_frame) = 0;
 };
 

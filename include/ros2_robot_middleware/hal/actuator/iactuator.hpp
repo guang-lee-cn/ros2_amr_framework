@@ -25,8 +25,8 @@
 #include <cstdint>
 
 namespace amr {
-namespace domain {
-namespace execution {
+namespace hal {
+namespace actuator {
 
 template <typename Cmd, typename Fb>
 class IActuator {
@@ -60,8 +60,8 @@ public:
   void shutdown_impl() {}
 };
 
-}  // namespace execution
-}  // namespace domain
+}  // namespace actuator
+}  // namespace hal
 }  // namespace amr
 
 #endif

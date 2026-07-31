@@ -44,7 +44,7 @@ void FusionNode::declare_sensor_parameters() {
 }
 
 void FusionNode::create_sensors() {
-  using amr::infrastructure::sensors::SensorFactory;
+  using amr::hal::sensor::SensorFactory;
 
   lidar_cfg_.type  = this->get_parameter("sensors.lidar.type").as_string();
   lidar_cfg_.topic = this->get_parameter("sensors.lidar.topic").as_string();

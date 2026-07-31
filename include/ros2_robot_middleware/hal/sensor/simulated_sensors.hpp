@@ -13,14 +13,14 @@
 ///   sensor.init()     → bool   (default no-op for simulated)
 ///   sensor.shutdown()         (default no-op for simulated)
 
-#include "ros2_robot_middleware/domain/perception/sensor_interface.hpp"
+#include "ros2_robot_middleware/hal/sensor/isensor.hpp"
 
 #include <cmath>
 #include <cstring>
 #include <mutex>
 #include <random>
 
-namespace amr::infrastructure::sensors {
+namespace amr::hal::sensor {
 
 // ══════════════════════════════════════════════════════════════════════
 // SimulatedLidar — value type, thread-safe by construction
@@ -29,10 +29,10 @@ namespace amr::infrastructure::sensors {
 // caller's stack frame — no shared buffer, no mutex needed.
 // ══════════════════════════════════════════════════════════════════════
 
-class SimulatedLidar : public amr::domain::sensor::SensorBase<SimulatedLidar,
-                        amr::domain::sensor::LidarScan> {
+class SimulatedLidar : public amr::hal::sensor::SensorBase<SimulatedLidar,
+                        amr::hal::sensor::LidarScan> {
 public:
-    bool read_impl(amr::domain::sensor::LidarScan &out) {
+    bool read_impl(amr::hal::sensor::LidarScan &out) {
         // Write directly into caller-owned stack buffer. No lock needed —
         // this is the only thread that touches `out`.
         out.range_count     = 360;
@@ -53,10 +53,10 @@ public:
 // Same pattern as Lidar but trivially small. Zero concern.
 // ══════════════════════════════════════════════════════════════════════
 
-class SimulatedImu : public amr::domain::sensor::SensorBase<SimulatedImu,
-                       amr::domain::sensor::ImuData> {
+class SimulatedImu : public amr::hal::sensor::SensorBase<SimulatedImu,
+                       amr::hal::sensor::ImuData> {
 public:
-    bool read_impl(amr::domain::sensor::ImuData &out) {
+    bool read_impl(amr::hal::sensor::ImuData &out) {
         out.linear_accel_x = 0.0F;
         out.linear_accel_y = 0.0F;
         out.angular_vel_z  = 0.0F;
@@ -80,13 +80,13 @@ public:
 //   process(frame.data, ...);   // caller uses data immediately
 // ══════════════════════════════════════════════════════════════════════
 
-class SimulatedCamera : public amr::domain::sensor::SensorBase<SimulatedCamera,
-                          amr::domain::sensor::CameraFrame> {
+class SimulatedCamera : public amr::hal::sensor::SensorBase<SimulatedCamera,
+                          amr::hal::sensor::CameraFrame> {
 public:
     // Camera image data is unused in current pipeline — only the read() success/fail
     // (camera_ok) feeds into degradation policy. Return minimal frame with no payload.
     // See ITERATION.md P1c for rationale.
-    bool read_impl(amr::domain::sensor::CameraFrame &out) {
+    bool read_impl(amr::hal::sensor::CameraFrame &out) {
         out.data     = nullptr;
         out.size     = 0;
         out.width    = 1;
@@ -121,4 +121,4 @@ public:
 //           Both use identical read() call — zero API surface difference.
 // ══════════════════════════════════════════════════════════════════════
 
-} // namespace amr::infrastructure::sensors
+} // namespace amr::hal::sensor
