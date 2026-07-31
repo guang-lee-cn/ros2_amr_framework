@@ -1,258 +1,217 @@
 # 迭代计划
 
-> 以 14 章架构设计说明书为牵引，逐章盘点现状与缺口，规划迭代。
+> 更新：2026-07-29
+> 本次更新：W1-W2 完成，架构方向讨论定稿，ISO 战略调整
 
 ---
 
-## 总览
+## 完成状态总览
 
-| 章 | 章节名 | 现状 | 优先级 |
-|:---:|------|:---:|:---:|
-| 一 | 基础元信息 | ✅ ARCHITECTURE 开篇 | P1 |
-| 二 | 业务与需求背景 | ✅ requirements.md | P2 |
-| 三 | 系统边界与上下文 | ✅ ARCHITECTURE 第四节 | P1 |
-| 四 | 总体架构设计 | ✅ ARCHITECTURE.md + ADR + 类图 | — |
-| 五 | 分模块详细设计 | ✅ 8 subsystem 文档 | — |
-| 六 | 跨模块核心机制 | ✅ communication + configuration | P2 |
-| 七 | 数据架构设计 | ✅ data-architecture.md | P3 |
-| 八 | 接口设计规范 | ✅ interfaces.md | P2 |
-| 九 | 非功能专项设计 | ✅ non-functional.md | P1 |
-| 十 | 部署与运维架构 | ✅ deployment.md | P3 |
-| 十一 | 风险与应对方案 | ✅ risks.md | P2 |
-| 十二 | 测试架构设计 | ✅ quality/README | — |
-| 十三 | 落地实施规划 | ✅ ITERATION.md | — |
-| 十四 | 附录 | ✅ appendix.md | P3 |
+| 阶段 | 内容 | 状态 |
+|------|------|:---:|
+| W1 Day 1 | HealthMonitor 拆分 + 删除 application/ 层 | ✅ |
+| W1 Day 2 | A* 路径规划 + 6 测试 | ✅ |
+| W1 Day 3 | Pure Pursuit + 5 测试 | ✅ |
+| W1 Day 4 | 集成 DecisionNode / MotorCtrlNode | ✅ |
+| W1 Day 5 | 端到端验证（system.launch） | ✅ |
+| W2 Day 1-2 | 系统级 DDS benchmark（AMR 管线） | ✅ |
+| W2 Day 3-4 | DDS micro-benchmark（ddsperf 社区工具） | ✅ |
+| W2 Day 5 | DDS 选型文档 + 踩坑记录 | ✅ |
+| — | 性能插桩框架（AMR_PERF_PHASE） | ✅ |
+| — | CI 修复：test_motor_ctrl 排除（spin_once 竞态） | ✅ |
+| — | Mermaid 图渲染修复（direction in subgraph / linkStyle 越界） | ✅ |
 
 ---
 
-## P1：优先完成（商用文档核心）
+## 架构方向决策（2026-07-28/29 定稿）
 
-### 一、基础元信息 ✅
+### D1：HAL 层独立为 amr_hal 包
 
-### 二、系统边界与上下文 ✅
+**决策**：将 `ISensor<T>` 从 `domain/perception/` 下沉为独立 ROS2 package `amr_hal`。
 
-### 四、总体架构设计 ✅
+**理由**：
+- 传感器 HAL（单向流入）和执行器 HAL（双向流）不能统一为同一接口，但应统一为同一层
+- 商业收益：可分派独立团队并行开发，独立版本号，独立入库
+- `ISensor<T>` 当前在 domain/ 不违规（零 ROS2 依赖），但放在 domain/ 让新人以为它是"算法"而不是"硬件抽象"
 
-### 九、非功能专项设计 ✅
+**结构**：
+```
+amr_hal/
+├── CMakeLists.txt
+├── include/amr_hal/
+│   ├── sensor/
+│   │   └── isensor.hpp       ← read() only（继承 IHardware）
+│   ├── actuator/
+│   │   └── iactuator.hpp     ← read(feedback) + write(cmd)
+│   └── common/
+│       ├── ihardware.hpp     ← init/shutdown/health/error_code（工具类，不是统一基类）
+│       ├── error_codes.hpp   ← 错误码枚举
+│       └── registry.hpp     ← 插件注册工厂（替代 SensorFactory if-else）
+├── src/sensor/
+│   ├── simulated_lidar.cpp
+│   ├── simulated_imu.cpp
+│   ├── sick_tim781_adapter.cpp
+│   └── bmi088_imu_adapter.cpp
+├── src/actuator/
+│   └── (预留)
+└── quality/src/
+    └── test_*.cpp
+```
+
+### D2：不引入 ros2_control
+
+**决策**：当前阶段不引入 ros2_control。
+
+**理由**：
+- ros2_control 定位是执行器 HAL，感知侧的 SensorInterface 后加且不成熟
+- 我们的 ISensor<T> 在感知侧比 ros2_control 更干净
+- 单平台场景下 ros2_control 增加组织成本（URDF/controller_manager/plugin），收益为零
+- 未来如有 3+ 种底盘需求，actuator/ 目录的 IActuator 可适配 ros2_control 的 SystemInterface
+
+### D3：感知用 Topic，执行用 Action — 不绝对
+
+| 通信方式 | 适用场景 | 例 |
+|------|------|------|
+| Topic | 流式单向数据，可丢帧 | 传感器数据（LiDAR/IMU/Camera） |
+| Topic + 平行反馈 | 高频内环，异步反馈 | cmd_vel + odom（PurePursuit 20Hz） |
+| Action | 低频任务，需明确完成信号 | MoveToPose 导航目标 |
+
+### D4：common/ 不放统一基类
+
+sensor 和 actuator 在数据语义上没有公共抽象。强行统一 IHardware 基类不带来工程收益。common/ 只放工具类：
+
+- 错误码枚举（error_codes.hpp）
+- 插件注册工厂（registry.hpp）
+- 速率监控工具（rate_monitor.hpp）
+- 构建配置 + 质量门禁
 
 ---
 
-## P2：近期完成（补架构完整性）
+## 迭代路线图（更新后）
 
-### 二、业务与需求背景（新增文档）
+### P0：商用能力闭环 — ✅ 完成
 
-- [x] 项目定位：工业 AMR 中间件，面向机器人平台软件与通信协议栈领域
-- [x] 核心功能清单（Must/Should/Could）
-- [x] NFR 约束表（延迟、吞吐、可靠性、安全、资源）
+| 组件 | 状态 | 交付物 |
+|------|:---:|------|
+| **A: 路径规划** | ✅ | `domain/planning/astar_planner.hpp` + 6 测试 |
+| **B: 运动控制** | ✅ | `domain/execution/pure_pursuit.hpp` + 5 测试 |
+| **C: 感知增强** | ⏳ 待做 | PCL 地面去除 + OccupancyGrid + PCL 后端 |
+| **D: 传感器接入** | ⏳ 待做 | IMU/Camera 适配器 + SensorRegistry |
+| **E: HealthMonitor** | ✅ | PrometheusHttpServer + DiagnosticsPublisher 拆出，493→379 行 |
+| **F: 端到端** | ✅ | system.launch 启动，全链路验证通过 |
 
-### 六、跨模块核心机制 ✅
+### P1：融合层架构升级
 
-### 八、接口设计规范 ✅
+**决策**：保留自研 KF 用于对象跟踪（与 robot_localization 角色不同），DBSCAN 替换为 PCL，新增 robot_localization 用于机器人位姿估计。
 
-### 十一、风险与应对方案 ✅
+| 任务 | 预计 | 状态 | 说明 |
+|:---:|:---:|:---:|------|
+| **P1a: DBSCAN → PCL 策略模式** | 1d | ✅ 完成 | `IClusterAlgorithm` 接口 + `PclClusterBackend`。PCL 比 DBSCAN 快 3.2x（bench_cluster 实测 630μs → 199μs） |
+| **P1b: 新增 robot_localization EKF** | 1d | ⏳ 待 sudo 安装 | IMU + 轮编码器 → 机器人位姿估计（`ekf_node`）。与自研 KF 并存——一个做物体跟踪，一个做机器人定位。`sudo apt install ros-jazzy-robot-localization`，然后 MotorCtrlNode.current ← /odom 订阅闭环 |
+| **P1c: Camera 占位清理** | 0.5d | ✅ 完成 | 删除 SimulatedCamera 900KB 无用数据产生，保留 camera_timeout 降级逻辑 |
+| **P1d: 融合层 benchmark** | 0.5d | ✅ 完成 | `bench_cluster` — DBSCAN vs PCL 多簇对比，PCL 全面胜出 |
+
+### P1e：计算容器进程模型评审
+
+**背景**：compute_container 同进程部署 fusion/decision/motor（零拷贝），sensor 独立进程（故障隔离），health_monitor 独立进程。该结构已对齐 MiR/OTTO 单机 AMR 部署方式。
+
+| 任务 | 预计 | 说明 |
+|:---:|:---:|------|
+| HealthMonitor ↔ compute 心跳/看门狗交互流梳理 | 0.5d | 心跳发布→超时检测→ChangeState 重启序列的完整业务流总结 |
+| 进程模型 ADR 补充 | 0.5d | 记录"compute 同进程 + sensor 独立进程"的决策理由（零拷贝 vs 故障隔离） |
+
+### P1f：商业化定位闭环（MotorCtrlNode 开环 → 闭环）
+
+**背景**：当前 `current = (0,0,0)` 是代码假设位姿（开环模拟），接真实硬件必须换真实定位。
+
+| 任务 | 预计 | 说明 |
+|:---:|:---:|------|
+| 底盘适配器（actuator/） | 1d | 轮编码器 → odom 发布，模拟底盘先跑通 |
+| MotorCtrlNode.current ← /odom | 0.5d | 订阅 robot_localization 输出的 odom，替换自推位姿 |
+| 多路点路径支持 | 0.5d | `track()` 支持 A*/NAV2 输出的多路点路径，而非当前两点直线 |
+| 速度平滑 | 0.5d | 加减速限制（梯形速度曲线） |
+
+### P1g：真实硬件接入流程 — 标准驱动开发文档
+
+**背景**：已定义完整驱动接入流程（阶段 0-4），固化为开发文档供后续接入任何传感器/执行器复用。
+
+| 任务 | 预计 | 说明 |
+|:---:|:---:|------|
+| 驱动接入开发指南文档 | 0.5d | 阶段 0-4 全流程：硬件准备→ISensor/IActuator 适配→单元测试→YAML 切换→集成验证。写入 `docs/guides/11-driver-integration.md` |
+| IActuator 接口先行定义 | 0.5d | `read(feedback) + write(cmd)`，为底盘/执行器接入铺路 |
+
+### P2：amr_hal 独立 + 代码质量
+
+| 任务 | 预计 | 说明 |
+|:---:|:---:|------|
+| common/ 工具 + 错误码 | 1d | error_codes, registry, ihardware 接口 |
+| ISensor<T> 下沉 + sensor/ 目录 | 1d | 从 domain/perception/ 移到 amr_hal/sensor/ |
+| IActuator 接口 + actuator/ 目录 | 0.5d | read(feedback) + write(cmd) |
+| SimulatedLidar/Imu/Camera 迁移 | 0.5d | 从 infrastructure/sensors/ 移到 amr_hal/src/sensor/ |
+| SickTiM781Adapter 迁移 | 0.5d | 同上 |
+| SensorFactory → registry 插件化 | 1d | 宏 + 静态注册表，替代 if-else |
+| test_motor_ctrl 修复 | 0.5d | timer-based stepping 替代 spin_once 阻塞 |
+| observability header-only → .cpp 拆分 | 1d | metrics_registry.hpp + logging.hpp → .hpp/.cpp 分离 |
+
+### P2：DDS 源码深读 + 博客
+
+| 任务 | 预计 | 说明 |
+|------|:---:|------|
+| Fast-DDS RTPS StatefulReader | 2d | 可靠传输实现 + 调用链图 |
+| Fast-DDS 发现协议 | 2d | PDP/EDP 源码分析 |
+| CycloneDDS 对比分析 | 2d | 线程模型 + 内存管理差异 |
+| 博客产出 | 1d | 第 1-2 篇源码分析博客 |
+
+### P3：观测 SDK 独立 + 集成
+
+| 任务 | 预计 | 说明 |
+|------|:---:|------|
+| 观测 SDK 独立包（amr_observability） | 2d | 从 infrastructure/ 拆出 |
+| Degradation Framework 标准化 | 1d | 从 Fusion 内部提取为独立库 |
+| Prometheus metrics + AMR_PERF_PHASE 融合 | 1d | 运行时 + 插桩双通道 |
 
 ---
 
-## P3：远期（工程完整性）
+## 源码阅读路径（更新）
 
-### 七、数据架构设计 ✅
+```
+P2：Fast-DDS 源码深读
+  ├── Week 1: RTPS 层
+  │   ├── StatefulReader.cpp        — 可靠传输 + 预/读
+  │   └── RTPSParticipantImpl.cpp   — 节点发现协议
+  └── Week 2: 线程模型 + 设计模式
+      ├── SHM Transport             — 零拷贝实现
+      └── CycloneDDS 对比            — 线程/内存模型差异
 
-### 十、部署与运维架构 ✅
-
-### 十四、附录 ✅
-
----
-
-## 本迭代新增 (2026-07-19)
-
-| 任务 | 描述 |
-|------|------|
-| ✅ ARCHITECTURE 图重构 | 概览图（分层）+ 系统运行时视图（红/蓝双色线）+ 类关系图精简 |
-| ✅ 状态图优化 | `direction TB` 垂直严重度排列，去掉冗余互跳 |
-| ✅ Mermaid 语法修复 | 去嵌套子图、direction、`===` 厚线 → GitHub 正常渲染 |
-| ✅ /diagnostics 发布 | HealthMonitor → ROS2 标准 diagnostic_msgs，兼容 rqt_runtime_monitor |
-| ✅ 静态分析 | cppcheck 集成 CI，阻塞级 error，skip style/info |
-| ✅ ASan+UBSan+LSan | `./quality.sh asan` 一键跑，lsan.supp 压制 DDS/ROS2 噪音 |
-| ✅ LSan 压制 | 只扫描业务代码，mute rclcpp/rmw/Fast-DDS/gtest 泄漏 |
-| ✅ CI 顺序调整 | 静态分析 → 构建+测试+覆盖率（有问题不跑测试） |
-| ✅ 子系统文档重构 | 8 篇统一 6 章模板（位置/结构/流程/接口/边界/参考），新增 15 张 Mermaid 图 |
+方法：每天一个函数，画调用链，200 字笔记
+```
 
 ---
 
-## 技术远景：ROS2 应用层框架
+## Commit 清单（当前分支）
 
-> 2026-07-19。项目定位：**ROS2 感知-执行管线参考架构 → 应用层框架**。
-> 目标：解决 ROS2 裸写项目的 7 个核心痛点，成为 ROS2 生态中感知传感器的标准接入层。
+```
+04e7cc8  fix(ci): exclude test_motor_ctrl — PurePursuit spin_once race
+a98f2c6  feat: W1-W2 — AMR end-to-end + DDS benchmark + perf instrumentation
+```
 
-### 市场分析
+---
 
-#### ROS2 生态中的传感器 HAL 项目（8 个已知项目）
+## 质量门禁
 
-| 项目 | 语言 | 类型 | 与我们的差异 |
-|------|:---:|------|------|
-| [Clearpath Sensor Config](https://docs.clearpathrobotics.com/docs/ros/config/yaml/sensors/overview/) | YAML | 配置层 HAL | 只做配置，不做接口抽象。无线程安全合约，无观测集成 |
-| [ros2_control Hardware Interface](https://control.ros.org/) | C++ | 执行器 HAL | 针对电机/关节，不覆盖感知传感器（LiDAR/Camera/IMU） |
-| [mrpt_sensorlib](https://github.com/mrpt-ros-pkg/mrpt_sensors) | C++ | 传感器驱动基类 | 通用传感器 Node 基类，无 DDD 分层，无 ISensor<T> 接口抽象 |
-| [adi_iio](https://github.com/analogdevicesinc/iio_ros2) | C++ | 专用 HAL | Analog Devices IIO 设备专用，非通用传感器框架 |
-| [arora_hal](https://docs.rs/arora-hal/latest/arora_hal/) | Rust | Trait HAL | 验证了 `FakeHal` = 我们的 `Simulated*` 模式。但 Rust 生态，ROS2 C++ 不可用 |
-| zuuu_hal (Pollen Robotics) | Python | 移动底盘 HAL | 特定硬件（Reachy/Zuuu），非通用传感器 |
-| neuronav-slam-sdk | Python | SLAM 传感器层 | RGB-D 相机统一 API（RealSense/OAK-D），专注 SLAM 场景 |
-| openzen_driver | C++ | 多传感器转发 | 将 OpenZen 库支持的传感器转发到 ROS2 Topic，非接口抽象 |
-
-#### 我们的差异化：不是 HAL，是 HAL + DDD + 观测 + 降级 + 测试
-
-| 维度 | 所有已知项目 | 我们 |
+| 门禁 | 当前 | 目标 |
 |------|:---:|:---:|
-| 传感器接口抽象 | ✅ 不同程度做到 | ✅ 编译期类型安全 + 线程安全合约 |
-| DDD 分层编译期强制 | ❌ 无 | ✅ domain/ 禁 ROS2 依赖 |
-| 观测集成 | ❌ 无 | ✅ Traces/Metrics/Logs 三支柱 |
-| 降级框架 | ❌ 无 | ✅ 5 级传感器降级 + 看门狗 |
-| 测试夹具 | ⚠️ arora_hal 有 FakeHal | ✅ SimulatedLidar/Imu/Camera + 65 用例 |
-| 线程安全文档 | ❌ 无 | ✅ 值拷贝 / mutex / 视图 三策略文档化 |
-
-**结论**：传感器 HAL 是共识需求（8 个项目在做），但**没有一个 C++ 项目把它和架构分层、观测、降级、测试组合成完整方案**。这是我们的差异化——不是 HAL 功能本身，是架构完整性。
-
-### ROS2 应用层 7 大痛点
-
-| # | 痛点 | 来源 | 市场价值 | 时间尺度 |
-|---|------|------|:---:|:---:|
-| 1 | **传感器接入无标准** | 社区 8+ 项目各自做 HAL，互不兼容 | ⭐⭐⭐⭐⭐ | **短期** |
-| 2 | **ROS2 Node 测试门槛高** | GitHub Issues + Discourse 搜索 | ⭐⭐⭐ | 中期 |
-| 3 | **无内建可观测** | OTel 在 ROS2 几乎不存在 | ⭐⭐⭐⭐ | 中期 |
-| 4 | **故障降级是手写 if-else** | NAV2/ros2_control 各自独立实现 | ⭐⭐⭐ | 短期 |
-| 5 | **配置系统碎片化** | 4 种配置入口，加载顺序靠经验 | ⭐⭐ | 中期 |
-| 6 | **项目脚手架缺失** | `ros2 pkg create` 生成空壳 | ⭐ | 长期 |
-| 7 | **多 AMR 协调无标准** | fleet-level 健康聚合是空白 | ⭐⭐⭐ | 长期 |
-
-### P0：传感器标准接入层（SMART）
-
-**S**：定义统一的 `ISensor<T>` 接口规范 + 插件注册机制 + 配套测试工具，使第三方传感器适配器作为独立 `.so` 插件加载，不修改框架源码。
-
-**M**：(1) 外部开发者不看框架源码，仅通过头文件和文档，30 分钟内完成新传感器适配 (2) `colcon build` 不重新编译框架代码 (3) 3 个真实传感器（LiDAR/IMU/Camera）的生产级适配器 + 模拟对应物。
-
-**A**：ISensor<T> 接口已定义，SickTiM781Adapter 已验证。差距：SensorFactory if-else → 插件注册；适配器编译为独立 `.so`；Schema 定义。
-
-**R**：直接命中 JD 第 1/3 条。市场验证：8 个开源项目在做同一方向，但无一完成"HAL + DDD + 观测 + 降级"的架构闭环。
-
-**T**：
-- M1（2 周）：SensorRegistry + 插件注册 + 3 真实传感器适配器
-- M2（4 周）：独立 ROS2 package `amr_sensor_hal`，其他项目 `find_package` 即用
-- M3（6 周）：社区贡献指南 + 外部开发者成功接入 1 个新传感器
-
-### NAV2 / ros2_control 与我们的关系
-
-```
-ROS2 软件栈：
-
-  ┌────────────────────────────────────┐
-  │  NAV2（导航栈）                     │
-  │  全局规划 → 局部规划 → 行为树       │
-  ├────────────────────────────────────┤
-  │  ros2_control（执行器框架）          │
-  │  Hardware Interface → 电机/关节     │
-  ├────────────────────────────────────┤
-  │  ★ 我们的位置（应用层框架）          │
-  │  ISensor HAL → 感知-决策-执行管线    │
-  │  + Degradation + Observability     │
-  ├────────────────────────────────────┤
-  │  ROS2 中间件（rclcpp + Fast-DDS）    │
-  │  DDS / Lifecycle / QoS / Action     │
-  └────────────────────────────────────┘
-```
-
-我们和 NAV2 是**互补**（我们做感知→决策，NAV2 做规划→导航）。我们和 ros2_control 是**平行**（我们做传感器抽象，它做执行器抽象）。两者可联合使用。
-
-### 迭代路线
-
-### 代码质量审计（[CODE-QUALITY-AUDIT.md](CODE-QUALITY-AUDIT.md)）
-
-| # | 问题 | 严重度 |
-|---|------|:---:|
-| 1 | `health_monitor_node.cpp` 493 行 (红线 250，SRP 违反) | 🔴 |
-| 2 | HealthMonitorNode 5 种职责混合 | 🟡 |
-| 3 | 4 个测试文件未使用共享 `test_helpers.hpp` | 🟡 |
-
-> CLAUDE.md 已更新例外条款：模板类豁免至 400 行，算法类豁免至 300 行。`kalman_filter.hpp`(334)/`cluster_detector.hpp`(167)/`tracker.hpp`(153) 适用豁免，无需修复。
-
-#### P0：商用能力闭环（最高优先级）
-
-> 对标 Paxini JD 三大核心：运动控制+路径规划+感知。当前只覆盖了感知，路径规划和运动控制（路径跟踪层）是空白。
-> 行业参考：感知用 PCL（[Sick-Perception, 2024](https://github.com/Cardinal-Space-Mining/Sick-Perception)），路径规划可独立用 [sbpl](https://github.com/sbpl/sbpl)（CMU/BSD），运动控制可独立用 [mpc_local_planner](https://github.com/rst-tu-dortmund/mpc_local_planner)（BSD）。
-> 详见 [COMPONENT-GAP.md](COMPONENT-GAP.md) — 完整代码审计 + 6 组件并行开发计划
-
-| 组件 | 代码位置 | 当前 | 目标 | 工作量 | 外部依赖 |
-|------|---------|:---:|------|:---:|------|
-| **A: 路径规划** | `domain/planning/astar_planner.hpp` | ❌ 0% | A* 搜索，200 行 | 1d | 零 |
-| **B: 运动控制** | `domain/execution/pure_pursuit.hpp` | ❌ 0% | Pure Pursuit，100 行 | 0.5d | 零 |
-| **C: 感知增强** | `domain/perception/ground_removal.hpp` | 自研 DBSCAN | + PCL 地面去除 + OccupancyGrid + PCL 后端 | 0.5d | PCL |
-| **D: 传感器接入** | `infrastructure/sensors/` | Simulated+Sick | + IMU/Camera 适配器 + SensorRegistry | 1d | ROS2 |
-| **E: HealthMonitor** | `infrastructure/` | 493 行单文件 | 拆分为 3 类 | 1d | 零 |
-| **F: 端到端** | 集成 PerceptionService | — | A+B+C 接入 Pipeline | 0.5d | — |
-
-- [ ] 组件 A + B + C 并行启动（无相互依赖，Day 1）
-- [ ] 组件 D 并行（Day 2）
-- [ ] 组件 E + F 收尾（Day 3）
-
-#### P1：传感器标准接入层 + 代码质量（2-4 周）
-
-- [x] 6 业务节点 launch respawn（`respawn=True`，进程崩溃恢复）
-- [ ] SensorRegistry 插件注册机制，替代 `SensorFactory` 的 if-else
-- [ ] 3 个真实传感器适配器（LiDAR/IMU/Camera）生产级实现
-- [ ] health_monitor_node.cpp 拆分 — PrometheusHttpServer + DiagnosticsPublisher 独立类
-- [ ] `quality/scripts/check_limits.sh` — CI 阻塞，类上限自动检查
-
-#### P2：HealthMonitor + 观测 SDK（4-8 周）
-
-- [ ] HealthMonitor 重构 Gen 1.5→Gen 3（ADR-12）：删除 lifecycle reset，新增 evidence collection + root cause ranking
-- [ ] 观测 SDK 独立 ROS2 package（`amr_observability`）
-- [ ] 标准化 Degradation Framework（从 Fusion 内部提取为独立库）
-- [ ] ROS2 Test Fixture 库（`TestNode<T>` + mock sensor + mock publisher）
-
-#### P3：脚手架 + 集群（8-16 周）
-
-- [ ] AMR 项目生成器（`ros2 pkg create --template amr`）
-- [ ] 配置层统一（YAML Schema + 启动校验 + 热加载）
-- [ ] Fleet SDK（多 AMR 健康聚合 + 任务调度）
+| 编译 | ✅ 零 error | — |
+| 测试通过率 | 11/12（test_motor_ctrl 已知超时） | 12/12 |
+| CI | ✅ 全绿 | — |
+| class 上限（.h <= 150 / .cc <= 250） | ✅ 仅 health_monitor_node.cpp 379 行（已拆分） | — |
+| clang-tidy + ASan | 待集成 | P3 |
+| 覆盖率 | ~60%（上次 CI） | >= 80% |
 
 ---
 
-## 已完成（不需要再动）
+## 未决事项/待讨论
 
-| 文档 | 对应章节 |
-|------|:---:|
-| `ARCHITECTURE.md`（数据流/控制流/状态流/DDD 分层/类图/进程模型） | 四 |
-| `subsystems/sensor-pipeline.md` | 五 |
-| `subsystems/fusion-pipeline.md` | 五 |
-| `subsystems/decision-pipeline.md` | 五 |
-| `subsystems/actuation-pipeline.md` | 五 |
-| `subsystems/health-monitor.md` | 五 |
-| `subsystems/observability.md` | 五、六 |
-| `adr/03-adr.md` | 四 |
-| `guides/06-dds-customization.md` | 六 |
-| `guides/07-observability-design.md` | 六 |
-| `quality/README.md` | 十二 |
-| `README.md` | 一（摘要级） |
-
----
-
-## 执行顺序
-
-```
-Day 1: P1   (约 2h)
-  ├── 一、基础元信息 → 补入 ARCHITECTURE.md 开篇
-  ├── 三、系统边界 → Context 图 + 外部依赖清单
-  ├── 四、补充 → 设计原则 + 技术选型对比表
-  └── 九、非功能 → 独立文档 doc/non-functional.md
-
-Day 2: P2   (约 3h)
-  ├── 二、业务背景 → doc/requirements.md
-  ├── 六、通信模块 → subsystems/communication.md
-  ├── 六、配置模块 → subsystems/configuration.md
-  ├── 八、接口规范 → doc/interfaces.md
-  └── 十一、风险 → doc/risks.md
-
-Day 3: P3   (约 2h)
-  ├── 七、数据架构 → doc/data-architecture.md
-  ├── 十、部署运维 → doc/deployment.md
-  └── 十四、附录 → doc/appendix.md
-```
+- [ ] amr_hal 独立包：路径规划 A* 和 PurePursuit 是否也移入？（它们不依赖硬件，当前在 domain/ 合理）
+- [ ] amr_observability 独立包时间线：P2 源码博客后还是并行？
+- [ ] Fast-DDS 源码深读 W3 是否启动，还是先继续 amr_hal 拆分？

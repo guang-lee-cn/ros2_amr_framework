@@ -3,45 +3,44 @@
 
 #include "ros2_robot_middleware/domain/perception/cluster_detector.hpp"
 #include "ros2_robot_middleware/domain/perception/degradation_policy.hpp"
+#include "ros2_robot_middleware/domain/perception/icluster_algorithm.hpp"
 #include "ros2_robot_middleware/domain/perception/kalman_filter.hpp"
 #include "ros2_robot_middleware/domain/perception/sensor_interface.hpp"
 #include "ros2_robot_middleware/domain/perception/tracker.hpp"
 #include "ros2_robot_middleware/domain/transform_provider.hpp"
 
+#include <memory>
 #include <vector>
 
 namespace amr {
 namespace domain {
 namespace perception {
 
-// PerceptionService — dependency injection via ISensor<DataType> interfaces.
-// Sensors + Transform injected at construction time — no templates, easily testable.
-
+// PerceptionService — sensor fusion orchestration.
+// Clustering backend is swappable via IClusterAlgorithm (DBSCAN / PCL / custom).
 class PerceptionService {
 public:
-  using Level    = amr::domain::perception::DegradationLevel;
-  using Cluster  = amr::domain::perception::Cluster;
-  using DegradationPolicy = amr::domain::perception::DegradationPolicy;
-  using ClusterDetector   = amr::domain::perception::ClusterDetector;
+  using Level    = DegradationLevel;
+  using Cluster  = Cluster;
   using LidarSensor   = amr::domain::sensor::ISensor<amr::domain::sensor::LidarScan>;
   using ImuSensor     = amr::domain::sensor::ISensor<amr::domain::sensor::ImuData>;
   using CameraSensor  = amr::domain::sensor::ISensor<amr::domain::sensor::CameraFrame>;
 
-  /// @param tf — coordinate transform provider (non-owning)
   void set_transform(amr::domain::ITransformProvider *tf) { tf_ = tf; }
 
-  /// @param lidar, imu, camera — injected sensor interfaces (non-owning)
+  // Default: DBSCAN backend
   PerceptionService(LidarSensor &lidar, ImuSensor &imu, CameraSensor &camera)
-    : lidar_(lidar), imu_(imu), camera_(camera) {}
+    : lidar_(lidar), imu_(imu), camera_(camera) {
+    cluster_ = std::make_unique<ClusterDetector>();
+  }
 
-  /// With custom detector params + degradation timeouts (test hook)
+  // Custom cluster backend (e.g. PclClusterBackend)
   PerceptionService(LidarSensor &lidar, ImuSensor &imu, CameraSensor &camera,
-                    const ClusterDetector::Params &cluster_params,
-                    const DegradationPolicy::Config &deg_config)
-    : detector_(cluster_params), policy_(deg_config),
+                    std::unique_ptr<IClusterAlgorithm> cluster_backend,
+                    const DegradationPolicy::Config &deg_config = {})
+    : cluster_(std::move(cluster_backend)), policy_(deg_config),
       lidar_(lidar), imu_(imu), camera_(camera) {}
 
-  // ── Time tick (dt in seconds) — reads sensors, predicts KF ──────────
   void tick(double dt) {
     amr::domain::sensor::LidarScan   lidar_scan;
     amr::domain::sensor::ImuData     imu_data;
@@ -51,7 +50,6 @@ public:
     bool imu_ok    = imu_.read(imu_data);
     bool camera_ok = camera_.read(cam_frame);
 
-    // Transform LiDAR → base_link before downstream processing
     if (lidar_ok && tf_) {
       amr::domain::sensor::LidarScan transformed;
       if (tf_->transform_scan(lidar_scan, transformed, "base_link")) {
@@ -82,11 +80,12 @@ public:
   }
 
   std::vector<Cluster> fuse(Level degradation) {
+    if (!cluster_) return {};
     std::vector<Cluster> clusters;
     switch (degradation) {
       case Level::FULL: case Level::NO_CAMERA: case Level::NO_IMU:
         if (lidar_ranges_ && lidar_range_count_ > 0)
-          clusters = detector_.detect(lidar_ranges_, lidar_angle_min_, lidar_angle_inc_);
+          clusters = cluster_->detect(lidar_ranges_, lidar_angle_min_, lidar_angle_inc_);
         break;
       case Level::NO_LIDAR: break;
       case Level::CRITICAL: break;
@@ -95,8 +94,7 @@ public:
     return clusters;
   }
 
-  /// Tracked objects with persistent IDs (runs tracker after clustering)
-  std::vector<amr::domain::perception::TrackedObject> fuse_tracked(Level degradation) {
+  std::vector<TrackedObject> fuse_tracked(Level degradation) {
     auto clusters = fuse(degradation);
     return tracker_.update(clusters);
   }
@@ -112,16 +110,18 @@ public:
     return DegradationPolicy::to_heartbeat_string(level);
   }
 
+  IClusterAlgorithm *cluster_backend() const { return cluster_.get(); }
+
 private:
-  ClusterDetector   detector_;
+  std::unique_ptr<IClusterAlgorithm> cluster_;
   DegradationPolicy policy_;
   KalmanFilter2D<>  kf_;
-  amr::domain::perception::MultiObjectTracker tracker_;
+  MultiObjectTracker tracker_;
 
   LidarSensor  &lidar_;
   ImuSensor    &imu_;
   CameraSensor &camera_;
-  amr::domain::ITransformProvider *tf_ = nullptr;
+  ITransformProvider *tf_ = nullptr;
 
   const float *lidar_ranges_     = nullptr;
   size_t       lidar_range_count_ = 0;

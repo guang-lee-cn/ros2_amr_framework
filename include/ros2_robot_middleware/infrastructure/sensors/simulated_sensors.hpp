@@ -83,32 +83,17 @@ public:
 class SimulatedCamera : public amr::domain::sensor::SensorBase<SimulatedCamera,
                           amr::domain::sensor::CameraFrame> {
 public:
+    // Camera image data is unused in current pipeline — only the read() success/fail
+    // (camera_ok) feeds into degradation policy. Return minimal frame with no payload.
+    // See ITERATION.md P1c for rationale.
     bool read_impl(amr::domain::sensor::CameraFrame &out) {
-        std::lock_guard<std::mutex> lock(mutex_);
-
-        // Fill internal buffer under lock
-        for (size_t i = 0; i < amr::domain::sensor::CameraFrame::kMaxSize; ++i) {
-            buf_[i] = static_cast<uint8_t>(rand() % 256);
-        }
-
-        // Return view into sensor-owned buffer (stable until next read())
-        out.data     = buf_;
-        out.size     = amr::domain::sensor::CameraFrame::kMaxSize;
-        out.width    = 640;
-        out.height   = 480;
-        out.capacity = 0;  // unused — caller doesn't need to know
-#ifndef NDEBUG
-        out.generation = ++gen_;
-#endif
+        out.data     = nullptr;
+        out.size     = 0;
+        out.width    = 1;
+        out.height   = 1;
+        out.capacity = 0;
         return true;
     }
-
-private:
-    std::mutex mutex_;
-    uint8_t buf_[amr::domain::sensor::CameraFrame::kMaxSize]{};  // sensor owns this
-#ifndef NDEBUG
-    uint64_t gen_ = 0;  // incremented each read(), syncs with CameraFrame::generation
-#endif
 };
 
 // ══════════════════════════════════════════════════════════════════════

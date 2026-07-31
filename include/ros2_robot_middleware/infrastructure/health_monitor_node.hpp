@@ -62,7 +62,7 @@ private:
   };
   static constexpr std::array<NodeConfig, kNumNodes> kNdes{{
     {"lidar",      "/sensor/lidar/heartbeat",     1.5},
-    {"imu",        "/sensor/imu/heartbeat",       0.5},
+    {"imu",        "/sensor/imu/heartbeat",       2.0},  // heartbeat 1Hz → timeout ≥ 2×周期
     {"camera",     "/sensor/camera/heartbeat",    3.0},
     {"fusion",     "/sensor/fusion/heartbeat",    1.0},
     {"decision",   "/decision/heartbeat",         2.0},

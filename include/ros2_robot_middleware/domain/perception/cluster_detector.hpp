@@ -4,8 +4,11 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
+
+#include "ros2_robot_middleware/domain/perception/icluster_algorithm.hpp"
 
 namespace amr {
 namespace domain {
@@ -18,14 +21,7 @@ struct Point2D {
   int   source_idx = -1;  // original range array index
 };
 
-/// Cluster with centroid + bounding-box metadata
-struct Cluster {
-  float x = 0.0F;         // centroid x (m)
-  float y = 0.0F;         // centroid y (m)
-  float z = 0.0F;         // z = 0 (2D LiDAR assumption)
-  int   point_count = 0;  // number of points in cluster
-  std::string id;
-};
+// Cluster struct defined in icluster_algorithm.hpp
 
 // ── DBSCAN clustering (Ester et al., 1996) ──────────────────────────
 //
@@ -43,7 +39,7 @@ struct Cluster {
 //   - Works in Cartesian space → distance is metric, not angular
 //   - Separates nearby objects (gap > eps → distinct clusters)
 //   - Labels isolated reflections as noise (no phantom objects)
-class ClusterDetector {
+class ClusterDetector : public IClusterAlgorithm {
 public:
   struct Params {
     float max_range      = 6.5F;   // sensor max range (m)

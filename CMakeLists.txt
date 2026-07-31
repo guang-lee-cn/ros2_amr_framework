@@ -8,6 +8,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
+find_package(PCL QUIET)  # optional — for PCL cluster backend + benchmark
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
@@ -156,6 +157,12 @@ install(TARGETS bench_ping DESTINATION lib/${PROJECT_NAME})
 add_executable(bench_pong quality/src/bench_pong.cpp)
 target_link_libraries(bench_pong robot_middleware_lib)
 install(TARGETS bench_pong DESTINATION lib/${PROJECT_NAME})
+
+if(PCL_FOUND)
+  add_executable(bench_cluster quality/src/bench_cluster.cpp)
+  target_link_libraries(bench_cluster robot_middleware_lib ${PCL_LIBRARIES})
+  install(TARGETS bench_cluster DESTINATION lib/${PROJECT_NAME})
+endif()
 
 if(BUILD_TESTING)
   # Enable AMR_TEST_ONLY() macro in library code for test-only method implementations

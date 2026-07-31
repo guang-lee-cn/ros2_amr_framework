@@ -8,6 +8,7 @@
 #include <rclcpp_components/register_node_macro.hpp>
 
 #include <cmath>
+#include <memory>
 
 // ── Constructors ─────────────────────────────────────────────────────
 
@@ -27,7 +28,8 @@ FusionNode::FusionNode(const rclcpp::NodeOptions &options,
   // Create sensors immediately for test hook (skips on_configure lifecycle)
   create_sensors();
   perception_.emplace(*lidar_, *imu_, *camera_,
-                      amr::domain::perception::ClusterDetector::Params{}, deg_config);
+                      std::make_unique<amr::domain::perception::ClusterDetector>(),
+                      deg_config);
 }
 
 // ── Sensor parameter declaration ─────────────────────────────────────

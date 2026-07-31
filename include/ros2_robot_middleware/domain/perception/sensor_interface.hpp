@@ -22,27 +22,27 @@ namespace amr::domain::sensor {
 
 struct LidarScan {
     static constexpr int kMaxRanges = 2048;
-    float ranges[kMaxRanges] = {};
-    size_t range_count = 0;
-    float  angle_min = 0.0F;
-    float  angle_increment = 0.0F;
+    float ranges[kMaxRanges]        = {};
+    size_t range_count              = 0;
+    float angle_min                 = 0.0F;
+    float angle_increment           = 0.0F;
 };
 
 struct ImuData {
     float linear_accel_x = 0.0F;
     float linear_accel_y = 0.0F;
-    float angular_vel_z = 0.0F;
+    float angular_vel_z  = 0.0F;
 };
 
 struct CameraFrame {
-    static constexpr int kMaxWidth  = 640;
-    static constexpr int kMaxHeight = 480;
+    static constexpr int kMaxWidth   = 640;
+    static constexpr int kMaxHeight  = 480;
     static constexpr size_t kMaxSize = kMaxWidth * kMaxHeight * 3;
-    uint8_t *data = nullptr;
-    size_t   capacity = 0;
-    size_t   size = 0;
-    uint16_t width = 0;
-    uint16_t height = 0;
+    uint8_t *data                    = nullptr;
+    size_t capacity                  = 0;
+    size_t size                      = 0;
+    uint16_t width                   = 0;
+    uint16_t height                  = 0;
 #ifndef NDEBUG
     uint64_t generation = 0;
 #endif
@@ -50,14 +50,16 @@ struct CameraFrame {
 
 // ── Abstract interface (runtime polymorphism) ────────────────────────
 
-template <typename DataType>
-class ISensor {
+template <typename DataType> class ISensor {
 public:
-    virtual ~ISensor() = default;
+    virtual ~ISensor()               = default;
     virtual bool read(DataType &out) = 0;
-    virtual bool init()           { return true; }
-    virtual void shutdown()       {}
-    virtual int  health() const   { return health_; }
+    virtual bool init() {
+        return true;
+    }
+    virtual void shutdown() {
+    }
+    virtual int health() const { return health_; }
 
 protected:
     int health_ = 0;
@@ -65,8 +67,7 @@ protected:
 
 // ── CRTP helper (compile-time dispatch for concrete implementations) ─
 
-template <typename Derived, typename DataType>
-class SensorBase : public ISensor<DataType> {
+template <typename Derived, typename DataType> class SensorBase : public ISensor<DataType> {
 public:
     bool read(DataType &out) final {
         return static_cast<Derived *>(this)->read_impl(out);
@@ -79,8 +80,11 @@ public:
     }
 
     // Default no-ops — override in derived
-    bool init_impl()    { return true; }
-    void shutdown_impl() {}
+    bool init_impl() {
+        return true;
+    }
+    void shutdown_impl() {
+    }
 };
 
 } // namespace amr::domain::sensor

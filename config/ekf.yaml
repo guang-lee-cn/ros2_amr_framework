@@ -1,0 +1,58 @@
+# ── robot_localization EKF 配置 ──────────────────────────────────────
+# 用途：IMU + 轮编码器 → 机器人位姿估计（/odom）
+# 说明：
+#   - imu0: 当前已接入（/sensor/imu，imu_node 发布，100Hz）
+#   - odom0: 轮编码器里程计（底盘适配器就绪后启用，见 P1f）
+# 框架：world_frame=odom, odom_frame=odom, base_link_frame=base_link
+
+ekf_filter_node:
+  ros__parameters:
+    # 输出频率
+    frequency: 30.0
+
+    # 传感器超时
+    sensor_timeout: 0.1
+
+    # 2D 平面环境
+    two_d_mode: true
+
+    # 坐标系
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_link
+    world_frame: odom
+
+    # ── 轮编码器里程计（底盘适配器就绪后启用）──────────────
+    # odom0: /odom_raw
+    # odom0_config: [true,  true,  false,
+    #                false, false, false,
+    #                true,  true,  false,
+    #                false, false, true,
+    #                false, false, false]
+    # odom0_queue_size: 2
+    # odom0_differential: false
+
+    # ── IMU（当前唯一输入）────────────────────────────────
+    imu0: /sensor/imu
+    imu0_config: [false, false, false,
+                  false, false, true,       # 只用 yaw（2D 平面）
+                  false, false, false,
+                  false, false, true,       # 只用 yaw 角速度
+                  false, false, false]
+    imu0_queue_size: 5
+    imu0_differential: false
+    imu0_relative: true
+    imu0_remove_gravitational_acceleration: true
+
+    # ── 控制输入（cmd_vel，可选）───────────────────────────
+    use_control: false
+
+    # 诊断
+    print_diagnostics: true
+    publish_tf: true
+
+    # 噪声协方差（完整 15 维对角线）
+    # 顺序：x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az
+    process_noise_covariance: [0.05, 0.05, 0.0, 0.0, 0.0, 0.06,
+                               0.025, 0.025, 0.0, 0.0, 0.0, 0.02,
+                               0.01, 0.01, 0.0]
