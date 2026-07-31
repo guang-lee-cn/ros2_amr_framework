@@ -94,7 +94,7 @@ foreach(node ${INDEPENDENT_NODES})
   install(TARGETS ${node}_node DESTINATION lib/${PROJECT_NAME})
 endforeach()
 
-install(DIRECTORY config launch
+install(DIRECTORY config launch worlds
   DESTINATION share/${PROJECT_NAME})
 
 # ── Performance instrumentation option ──────────────────────────────

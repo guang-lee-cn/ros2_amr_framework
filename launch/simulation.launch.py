@@ -113,29 +113,31 @@ def generate_launch_description():
         output="screen",
     )
 
-    # ── 我们的业务节点（LifecycleNode, 自激活） ────────────────────────
-    # 注意：仿真模式下 sensor 节点不启动——Gazebo 传感器通过 ros_gz_bridge 直接
+    # ── 我们的业务节点 ──────────────────────────────────────────────
+    # 仿真模式下 sensor 节点不启动——Gazebo 传感器通过 ros_gz_bridge 直接
     # 提供 /sensor/lidar, /sensor/imu, /sensor/camera 数据。
-    # 仅在非仿真模式（system.launch.py）启动 sensor 节点做模拟数据生成。
-    compute_nodes = [
-        ("fusion_node", "fusion"),
-        ("decision_node", "decision"),
-        ("motor_ctrl_node", "motor_ctrl"),
-        ("health_monitor_node", "health_monitor"),
+    # compute_container 承载 fusion + decision + motor（零拷贝），
+    # health_monitor 独立（与 system.launch.py 一致）。
+    nodes = [
+        RosNode(
+            package="ros2_robot_middleware",
+            executable="compute_container",
+            name="compute",
+            namespace="",
+            output="screen",
+            parameters=[{"use_sim_time": use_sim_time}],
+        ),
+        LifecycleNode(
+            package="ros2_robot_middleware",
+            executable="health_monitor_node",
+            name="health_monitor",
+            namespace="",
+            output="screen",
+            parameters=[{"use_sim_time": use_sim_time}],
+            respawn=True,
+            respawn_delay=2.0,
+        ),
     ]
-
-    nodes = []
-    for exec_name, node_name in compute_nodes:
-        nodes.append(
-            LifecycleNode(
-                package="ros2_robot_middleware",
-                executable=exec_name,
-                name=node_name,
-                namespace="",
-                output="screen",
-                parameters=[{"use_sim_time": use_sim_time}],
-            )
-        )
 
     return LaunchDescription([
         ExecuteProcess(

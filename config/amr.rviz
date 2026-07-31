@@ -1,0 +1,42 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+      Cell Size: 0.5
+    - Class: rviz_default_plugins/TF
+      Name: TF
+      Enabled: true
+    - Class: rviz_default_plugins/LaserScan
+      Name: LiDAR Scan
+      Enabled: true
+      Topic: /sensor/lidar
+      Color: 255, 80, 80
+      Size: 3
+      Style: Points
+    - Class: rviz_default_plugins/PoseArray
+      Name: Planned Path
+      Enabled: true
+      Topic: /planning/path
+      Color: 80, 255, 80
+      Shape: Arrow
+    - Class: rviz_default_plugins/Odometry
+      Name: Robot Pose (odom)
+      Enabled: true
+      Topic: /odom
+      Color: 80, 80, 255
+      Length: 0.5
+  Global Options:
+    Fixed Frame: base_link
+    Background Color: 24, 24, 30
+  Views:
+    Current:
+      Class: rviz_default_plugins/TopDownOrtho
+      Distance: 10
+      Target Frame: base_link
