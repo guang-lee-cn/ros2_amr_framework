@@ -42,6 +42,11 @@ MotorCtrlNode::on_configure(const rclcpp_lifecycle::State &)
   status_pub_ = this->create_publisher<std_msgs::msg::String>(
     "/cmd/status", rclcpp::QoS(10).reliable());
 
+  // Subscribe to /odom (robot_localization EKF) — closed-loop pose source
+  odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
+    "/odom", rclcpp::QoS(10).reliable(),
+    [this](nav_msgs::msg::Odometry::SharedPtr msg) { on_odom(msg); });
+
   return CallbackReturn::SUCCESS;
 }
 
@@ -75,6 +80,7 @@ MotorCtrlNode::on_cleanup(const rclcpp_lifecycle::State &)
   action_server_.reset();
   service_server_.reset();
   status_pub_.reset();
+  odom_sub_.reset();
 
   return CallbackReturn::SUCCESS;
 }
@@ -86,8 +92,21 @@ MotorCtrlNode::on_shutdown(const rclcpp_lifecycle::State &)
   action_server_.reset();
   service_server_.reset();
   status_pub_.reset();
+  odom_sub_.reset();
 
   return CallbackReturn::SUCCESS;
+}
+
+void MotorCtrlNode::on_odom(const nav_msgs::msg::Odometry::SharedPtr msg)
+{
+  std::lock_guard<std::mutex> lock(pose_mutex_);
+  current_pose_.x = static_cast<float>(msg->pose.pose.position.x);
+  current_pose_.y = static_cast<float>(msg->pose.pose.position.y);
+  // Extract yaw from quaternion (z = sin(yaw/2))
+  const auto &q = msg->pose.pose.orientation;
+  current_pose_.theta = static_cast<float>(
+      2.0 * std::atan2(q.z, q.w));
+  odom_valid_.store(true, std::memory_order_release);
 }
 
 rclcpp_action::GoalResponse MotorCtrlNode::handle_goal(
@@ -116,7 +135,12 @@ void MotorCtrlNode::execute(const std::shared_ptr<ServerGoalHandle> goal_handle)
   using amr::domain::execution::Pose2D;
   using amr::domain::execution::Waypoint;
 
-  Pose2D current{0.0F, 0.0F, 0.0F};
+  // Use odom-fused pose as the current state; fall back to (0,0,0) pre-odom.
+  Pose2D current;
+  {
+    std::lock_guard<std::mutex> lock(pose_mutex_);
+    current = current_pose_;
+  }
   Waypoint target{goal->target_x, goal->target_y};
 
   // 2-point path: current position → goal
@@ -127,6 +151,12 @@ void MotorCtrlNode::execute(const std::shared_ptr<ServerGoalHandle> goal_handle)
 
   while (rclcpp::ok()) {
     auto step_start = std::chrono::steady_clock::now();
+
+    // Read latest odom pose (closed-loop). Lock briefly, copy.
+    {
+      std::lock_guard<std::mutex> lock(pose_mutex_);
+      current = current_pose_;
+    }
 
     if (goal_handle->is_canceling()) {
       auto result = std::make_shared<MoveToPose::Result>();
@@ -139,7 +169,7 @@ void MotorCtrlNode::execute(const std::shared_ptr<ServerGoalHandle> goal_handle)
       return;
     }
 
-    // Pure Pursuit tracking
+    // Pure Pursuit tracking (uses real odom pose, not self-integrated)
     auto twist = tracker_.track(path, current);
 
     if (twist.linear == 0.0F && twist.angular == 0.0F) {
@@ -153,12 +183,17 @@ void MotorCtrlNode::execute(const std::shared_ptr<ServerGoalHandle> goal_handle)
       return;
     }
 
-    // Update position from velocity (kinematic model)
-    const float dt = 1.0F / 20.0F;
-    current.x += twist.linear * std::cos(current.theta) * dt;
-    current.y += twist.linear * std::sin(current.theta) * dt;
-    current.theta += twist.angular * dt;
-
+    // Pose advance: closed-loop when /odom is available; otherwise fall back
+    // to kinematic integration (simulation/demo mode without a real base).
+    if (!odom_valid_.load(std::memory_order_acquire)) {
+      const float dt = 1.0F / 20.0F;
+      current.x += twist.linear * std::cos(current.theta) * dt;
+      current.y += twist.linear * std::sin(current.theta) * dt;
+      current.theta += twist.angular * dt;
+      // Keep the fused pose in sync so odom arrival doesn't jump backwards.
+      std::lock_guard<std::mutex> lock(pose_mutex_);
+      current_pose_ = current;
+    }
     // Update path start to current position (closing the gap)
     path[0] = {current.x, current.y};
 

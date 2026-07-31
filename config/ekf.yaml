@@ -7,8 +7,9 @@
 
 ekf_filter_node:
   ros__parameters:
-    # 输出频率
-    frequency: 30.0
+    # 输出频率 — WSL2 下 30Hz 会触发 "Failed to meet update rate" 警告
+    # IMU 100Hz 输入足够，10Hz 输出对 PurePursuit 20Hz 控制环够用
+    frequency: 10.0
 
     # 传感器超时
     sensor_timeout: 0.1
