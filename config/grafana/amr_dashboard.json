@@ -1,0 +1,99 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Phase Latency (AMR_PERF_PHASE) — :9091",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "expr": "amr_phase_fusion:tick_avg_us", "legendFormat": "fusion:tick avg", "refId": "A" },
+        { "expr": "amr_phase_decision:on_perception_avg_us", "legendFormat": "decision:on_perception avg", "refId": "B" },
+        { "expr": "amr_phase_decision:astar_avg_us", "legendFormat": "decision:astar avg", "refId": "C" },
+        { "expr": "amr_phase_decision:send_goal_avg_us", "legendFormat": "decision:send_goal avg", "refId": "D" },
+        { "expr": "amr_phase_motor:execute_avg_us", "legendFormat": "motor:execute avg", "refId": "E" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "µs",
+          "custom": { "lineWidth": 2, "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "title": "Phase P99 (AMR_PERF_PHASE) — :9091",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "expr": "amr_phase_fusion:tick_p99_us", "legendFormat": "fusion:tick p99", "refId": "A" },
+        { "expr": "amr_phase_decision:on_perception_p99_us", "legendFormat": "decision:on_perception p99", "refId": "B" },
+        { "expr": "amr_phase_motor:execute_p99_us", "legendFormat": "motor:execute p99", "refId": "C" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "µs", "custom": { "lineWidth": 2, "fillOpacity": 10 } }
+      }
+    },
+    {
+      "title": "Fusion Latency (health_monitor :9090)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "expr": "amr_fusion_latency_seconds_sum / amr_fusion_latency_seconds_count", "legendFormat": "fusion avg (s)", "refId": "A" },
+        { "expr": "amr_motor_latency_seconds_sum / amr_motor_latency_seconds_count", "legendFormat": "motor avg (s)", "refId": "B" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s", "custom": { "lineWidth": 2, "fillOpacity": 10 } }
+      }
+    },
+    {
+      "title": "Sensor Rates + Degradation",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "expr": "amr_sensor_rate_hz{sensor=\"lidar\"}", "legendFormat": "lidar (Hz)", "refId": "A" },
+        { "expr": "amr_sensor_rate_hz{sensor=\"imu\"}", "legendFormat": "imu (Hz)", "refId": "B" },
+        { "expr": "amr_degradation_level", "legendFormat": "degradation (0-4)", "refId": "C", "yaxis": 2 }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Hz",
+          "custom": { "lineWidth": 2, "fillOpacity": 10 },
+          "thresholds": { "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] }
+        }
+      }
+    },
+    {
+      "title": "Tracked Objects + Fusion Cycles",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "expr": "amr_object_count", "legendFormat": "objects", "refId": "A" },
+        { "expr": "rate(amr_fusion_cycles_total[1m])", "legendFormat": "fusion cycles/s", "refId": "B" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "lineWidth": 2, "fillOpacity": 10 } }
+      }
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["amr", "ros2"],
+  "templating": { "list": [] },
+  "time": { "from": "now-5m", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "AMR Pipeline",
+  "uid": "amr-pipeline",
+  "version": 1
+}
