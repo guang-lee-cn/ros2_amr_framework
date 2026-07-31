@@ -78,7 +78,9 @@ target_link_libraries(compute_component "${cpp_typesupport_target}")
 # Component container — loads compute nodes (fusion + decision + motor_ctrl)
 # into a single process. Sensor drivers remain independent processes.
 add_executable(compute_container src/infrastructure/compute_container.cpp)
-target_link_libraries(compute_container compute_component)
+# compute_component has fusion/decision/motor; robot_middleware_lib provides
+# PrometheusHttpServer + metrics_registry (used by perf endpoint).
+target_link_libraries(compute_container compute_component robot_middleware_lib)
 ament_target_dependencies(compute_container rclcpp rclcpp_components spdlog)
 target_link_libraries(compute_container fmt::fmt)
 install(TARGETS compute_component DESTINATION lib)
@@ -105,6 +107,10 @@ install(DIRECTORY config launch
 option(AMR_PERF_INSTRUMENTATION "Enable compile-time performance instrumentation" OFF)
 
 if(AMR_PERF_INSTRUMENTATION)
+  # Compile-time macro so #ifdef AMR_PERF_INSTRUMENTATION in .cpp works
+  # (e.g. compute_container's perf endpoint guard).
+  add_compile_definitions(AMR_PERF_INSTRUMENTATION)
+
   set(AMR_PERF_MACROS
 "#include <atomic>
 #include <chrono>

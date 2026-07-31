@@ -13,10 +13,36 @@
 #include "ros2_robot_middleware/infrastructure/decision_node.hpp"
 #include "ros2_robot_middleware/infrastructure/fusion_node.hpp"
 #include "ros2_robot_middleware/infrastructure/motor_ctrl_node.hpp"
+#include "ros2_robot_middleware/infrastructure/prometheus_http_server.hpp"
+#include "generated/perf_instrumentation.hpp"
 #include "ros2_robot_middleware/observability/spdlog_adapter.hpp"
 
 #include <memory>
+#include <sstream>
 #include <rclcpp/rclcpp.hpp>
+
+#ifdef AMR_PERF_INSTRUMENTATION
+namespace {
+
+// Perf instrumentation snapshot → Prometheus text format.
+// Exposes AMR_PERF_PHASE data (phase latency avg/p50/p99) from this process.
+// Only built when AMR_PERF_INSTRUMENTATION=ON — production builds eliminate
+// the instrumentation entirely (see generated/perf_instrumentation.hpp).
+std::string perf_metrics_text() {
+  std::ostringstream out;
+  for (const auto &s : amr::observability::PerfRegistry::instance().snapshots()) {
+    out << "# HELP amr_phase_" << s.name << " Phase latency (us)\n";
+    out << "# TYPE amr_phase_" << s.name << " gauge\n";
+    out << "amr_phase_" << s.name << "_count " << s.count << "\n";
+    out << "amr_phase_" << s.name << "_avg_us " << s.avg_us() << "\n";
+    out << "amr_phase_" << s.name << "_p50_us " << s.p50_us << "\n";
+    out << "amr_phase_" << s.name << "_p99_us " << s.p99_us << "\n";
+  }
+  return out.str();
+}
+
+}  // namespace
+#endif  // AMR_PERF_INSTRUMENTATION
 
 int main(int argc, char *argv[])
 {
@@ -24,6 +50,12 @@ int main(int argc, char *argv[])
 
   // Observability: spdlog async logger (replaces ring buffer)
   amr::observability::Logging::init_spdlog();
+
+#ifdef AMR_PERF_INSTRUMENTATION
+  // Perf instrumentation endpoint — separate port from health_monitor's :9090
+  PrometheusHttpServer perf_server(9091, perf_metrics_text);
+  perf_server.start();
+#endif
 
   auto exec = std::make_shared<rclcpp::executors::MultiThreadedExecutor>();
 
@@ -44,6 +76,10 @@ int main(int argc, char *argv[])
 
   exec->spin();
   rclcpp::shutdown();
+
+#ifdef AMR_PERF_INSTRUMENTATION
+  perf_server.stop();
+#endif
 
   // Drain remaining log events before exit
   amr::observability::Logging::shutdown();
