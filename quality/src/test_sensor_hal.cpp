@@ -54,30 +54,26 @@ TEST(SimulatedImuTest, Read_ReturnsZeroCenteredData) {
 
 // ── SimulatedCamera ──────────────────────────────────────────────────
 
-TEST(SimulatedCameraTest, Read_FillsCallerBuffer) {
+// Camera image data is unused in current pipeline (P1c) — SimulatedCamera
+// returns a minimal empty frame. read() success still drives degradation.
+TEST(SimulatedCameraTest, Read_ReturnsTrue_ForDegradation) {
   SimulatedCamera cam;
   ASSERT_TRUE(cam.init());
 
   CameraFrame frame;
-  ASSERT_TRUE(cam.read(frame));
-
-  EXPECT_EQ(frame.width, 640u);
-  EXPECT_EQ(frame.height, 480u);
-  EXPECT_GT(frame.size, 0u);
-  EXPECT_NE(frame.data, nullptr);
+  EXPECT_TRUE(cam.read(frame));  // read() succeeds → camera_ok=true → no degradation
 }
 
-TEST(SimulatedCameraTest, GenerationCounter_Advances) {
+TEST(SimulatedCameraTest, Read_ReturnsEmptyFrame) {
   SimulatedCamera cam;
   cam.init();
 
-  CameraFrame f1, f2;
-  cam.read(f1);
-  cam.read(f2);
-
-#ifndef NDEBUG
-  EXPECT_NE(f1.generation, f2.generation);
-#endif
+  CameraFrame frame;
+  ASSERT_TRUE(cam.read(frame));
+  EXPECT_EQ(frame.width, 1u);
+  EXPECT_EQ(frame.height, 1u);
+  EXPECT_EQ(frame.size, 0u);
+  EXPECT_EQ(frame.data, nullptr);
 }
 
 // ── PerceptionService with SimulatedSensors ──────────────────────────
