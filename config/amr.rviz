@@ -33,7 +33,7 @@ Visualization Manager:
       Color: 80, 80, 255
       Length: 0.5
   Global Options:
-    Fixed Frame: base_link
+    Fixed Frame: odom
     Background Color: 24, 24, 30
   Views:
     Current:

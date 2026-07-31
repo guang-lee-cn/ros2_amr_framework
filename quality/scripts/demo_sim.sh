@@ -31,6 +31,12 @@ echo "   Gazebo 传感器 → bridge → /sensor/*"
 echo "   → fusion/decision/motor → /perception/objects"
 echo "   → /planning/path → /odom"
 echo ""
+
+# 清理残留 DDS SHM（上次异常退出遗留，会导致端口 7000 冲突）
+echo " 清理残留 SHM..."
+rm -f /dev/shm/fastrtps_* 2>/dev/null || true
+rm -f /tmp/fastrtps_* 2>/dev/null || true
+
 echo " 启动 Gazebo + 业务管线..."
 ros2 launch ros2_robot_middleware simulation.launch.py &
 SIM_PID=$!

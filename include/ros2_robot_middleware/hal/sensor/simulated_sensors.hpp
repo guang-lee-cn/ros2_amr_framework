@@ -19,6 +19,7 @@
 #include <cstring>
 #include <mutex>
 #include <random>
+#include <vector>
 
 namespace amr::hal::sensor {
 
@@ -29,22 +30,78 @@ namespace amr::hal::sensor {
 // caller's stack frame — no shared buffer, no mutex needed.
 // ══════════════════════════════════════════════════════════════════════
 
+/// 圆形障碍物（场景配置）
+struct Obstacle {
+    float x = 0.0F;
+    float y = 0.0F;
+    float radius = 0.3F;
+};
+
+/// 演示场景 — 障碍物布局
+struct Scenario {
+    std::vector<Obstacle> obstacles;
+};
+
+/// SimulatedLidar — 场景驱动点云生成。
+/// 默认：空旷环境（远处点云）。配置障碍物后，在障碍方向返回障碍表面距离。
 class SimulatedLidar : public amr::hal::sensor::SensorBase<SimulatedLidar,
                         amr::hal::sensor::LidarScan> {
 public:
+    /// 无效距离：未命中障碍的射线返回此值（> 量程），
+    /// 下游 DBSCAN 的 max_range 过滤会将其剔除，避免把远空当成"物体"。
+    static constexpr float kInvalidRange = 6.5F;
+
+    explicit SimulatedLidar(Scenario scenario = {})
+        : scenario_(std::move(scenario)), max_range_(6.0F) {}
+
     bool read_impl(amr::hal::sensor::LidarScan &out) {
-        // Write directly into caller-owned stack buffer. No lock needed —
-        // this is the only thread that touches `out`.
         out.range_count     = 360;
         out.angle_min       = -M_PI;
         out.angle_increment = 2.0F * M_PI / 360.0F;
 
         for (size_t i = 0; i < out.range_count; ++i) {
             float angle = out.angle_min + i * out.angle_increment;
-            out.ranges[i] = 2.0F + 1.5F * std::sin(angle * 3.0F) * std::cos(angle * 2.0F);
+            // 沿射线找最近障碍物；未命中 = 无效距离（超出量程），
+            // 让下游 DBSCAN 的 max_range 过滤掉，避免把远处空当"物体"。
+            float hit = kInvalidRange;
+            for (const auto &obs : scenario_.obstacles) {
+                float d = ray_obstacle_dist(angle, obs);
+                if (d < hit) hit = d;
+            }
+            out.ranges[i] = hit;
         }
         return true;
     }
+
+    const Scenario &scenario() const { return scenario_; }
+    void set_scenario(Scenario s) { scenario_ = std::move(s); }
+
+private:
+    /// 从原点沿 angle 方向的射线到圆形障碍的距离。
+    /// 用圆心到射线的最小距离判断是否相交，返回交点距离。
+    static float ray_obstacle_dist(float angle, const Obstacle &obs) {
+        // 射线方向
+        float dx = std::cos(angle);
+        float dy = std::sin(angle);
+        // 圆心相对原点
+        float cx = obs.x;
+        float cy = obs.y;
+        // 圆心到射线的投影距离（t = 投影参数）
+        float t = cx * dx + cy * dy;
+        if (t < 0.0F) return kInvalidRange;  // 障碍在射线反方向
+        // 投影点到圆心的垂直距离
+        float px = cx - t * dx;
+        float py = cy - t * dy;
+        float perp = std::sqrt(px * px + py * py);
+        if (perp > obs.radius) return kInvalidRange;  // 射线未穿过障碍
+        // 进入圆面的距离 = 投影距离 - 弦半长
+        float half_chord = std::sqrt(obs.radius * obs.radius - perp * perp);
+        float entry = t - half_chord;
+        return entry > 0.0F ? entry : kInvalidRange;
+    }
+
+    Scenario scenario_;
+    float max_range_;
 };
 
 // ══════════════════════════════════════════════════════════════════════

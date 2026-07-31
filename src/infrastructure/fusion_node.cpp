@@ -8,6 +8,7 @@
 #include <rclcpp_components/register_node_macro.hpp>
 
 #include <cmath>
+#include <cstring>
 #include <memory>
 
 // ── Constructors ─────────────────────────────────────────────────────
@@ -41,6 +42,22 @@ void FusionNode::declare_sensor_parameters() {
   this->declare_parameter("sensors.imu.topic", "/imu/data");
   this->declare_parameter("sensors.camera.type", "simulated");
   this->declare_parameter("sensors.camera.topic", "/camera/color/image_raw");
+  // 演示场景：obstacle / slalom / corridor / empty（默认）
+  this->declare_parameter("scenario", "empty");
+}
+
+/// 按场景名返回障碍物布局（演示用）。
+amr::hal::sensor::Scenario FusionNode::load_scenario(const std::string &name) {
+  amr::hal::sensor::Scenario s;
+  if (name == "obstacle") {
+    s.obstacles = {{2.0F, 0.0F, 0.4F}};
+  } else if (name == "slalom") {
+    s.obstacles = {{1.5F, 0.0F, 0.3F}, {2.5F, 0.8F, 0.3F}, {3.5F, 0.0F, 0.3F}};
+  } else if (name == "corridor") {
+    s.obstacles = {{2.0F, -0.6F, 0.5F}, {2.0F, 0.6F, 0.5F},
+                   {4.0F, -0.6F, 0.5F}, {4.0F, 0.6F, 0.5F}};
+  }
+  return s;  // empty 返回空场景
 }
 
 void FusionNode::create_sensors() {
@@ -48,7 +65,9 @@ void FusionNode::create_sensors() {
 
   lidar_cfg_.type  = this->get_parameter("sensors.lidar.type").as_string();
   lidar_cfg_.topic = this->get_parameter("sensors.lidar.topic").as_string();
-  lidar_  = SensorFactory::create_lidar(lidar_cfg_);
+  // 演示场景：Simulated LiDAR 按场景生成障碍物点云
+  auto scenario = load_scenario(this->get_parameter("scenario").as_string());
+  lidar_  = SensorFactory::create_lidar(lidar_cfg_, scenario);
 
   imu_cfg_.type  = this->get_parameter("sensors.imu.type").as_string();
   imu_cfg_.topic = this->get_parameter("sensors.imu.topic").as_string();
@@ -82,6 +101,12 @@ FusionNode::CallbackReturn FusionNode::on_configure(const rclcpp_lifecycle::Stat
   heartbeat_pub_ = this->create_publisher<std_msgs::msg::String>(
       "/sensor/fusion/heartbeat", rclcpp::QoS(10).reliable());
 
+  lidar_pub_ = this->create_publisher<sensor_msgs::msg::LaserScan>(
+      "/sensor/lidar", rclcpp::QoS(10).reliable());
+
+  pointcloud_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
+      "/sensor/pointcloud", rclcpp::QoS(10).reliable());
+
   return CallbackReturn::SUCCESS;
 }
 
@@ -92,6 +117,8 @@ FusionNode::CallbackReturn FusionNode::on_activate(const rclcpp_lifecycle::State
 
   fusion_pub_->on_activate();
   heartbeat_pub_->on_activate();
+  lidar_pub_->on_activate();
+  pointcloud_pub_->on_activate();
   return CallbackReturn::SUCCESS;
 }
 
@@ -100,12 +127,16 @@ FusionNode::CallbackReturn FusionNode::on_deactivate(const rclcpp_lifecycle::Sta
   heartbeat_timer_.reset();
   fusion_pub_->on_deactivate();
   heartbeat_pub_->on_deactivate();
+  lidar_pub_->on_deactivate();
+  pointcloud_pub_->on_deactivate();
   return CallbackReturn::SUCCESS;
 }
 
 FusionNode::CallbackReturn FusionNode::on_cleanup(const rclcpp_lifecycle::State &) {
   fusion_pub_.reset();
   heartbeat_pub_.reset();
+  lidar_pub_.reset();
+  pointcloud_pub_.reset();
   perception_.reset();
   if (lidar_)  lidar_->shutdown();
   if (imu_)    imu_->shutdown();
@@ -121,6 +152,8 @@ FusionNode::CallbackReturn FusionNode::on_shutdown(const rclcpp_lifecycle::State
   heartbeat_timer_.reset();
   fusion_pub_.reset();
   heartbeat_pub_.reset();
+  lidar_pub_.reset();
+  pointcloud_pub_.reset();
   return CallbackReturn::SUCCESS;
 }
 
@@ -142,6 +175,50 @@ void FusionNode::timer_callback() {
   last_tick_ = now;
 
   if (!perception_) return;
+
+  // 发布模拟 LiDAR 点云（供 Foxglove/RViz 可视化）
+  amr::hal::sensor::LidarScan scan;
+  if (perception_->lidar_snapshot(scan)) {
+    // LaserScan（RViz 兼容）
+    auto scan_msg = sensor_msgs::msg::LaserScan{};
+    scan_msg.header.stamp = now;
+    scan_msg.header.frame_id = "lidar_frame";
+    scan_msg.angle_min = scan.angle_min;
+    scan_msg.angle_increment = scan.angle_increment;
+    scan_msg.angle_max = scan.angle_min + scan.angle_increment * static_cast<float>(scan.range_count - 1);
+    scan_msg.range_min = 0.1F;
+    scan_msg.range_max = 6.5F;
+    scan_msg.ranges.assign(scan.ranges, scan.ranges + scan.range_count);
+    lidar_pub_->publish(scan_msg);
+
+    // PointCloud2（Foxglove 3D 需要，LaserScan 无法直接渲染）
+    auto pc_msg = sensor_msgs::msg::PointCloud2{};
+    pc_msg.header.stamp = now;
+    pc_msg.header.frame_id = "lidar_frame";
+    pc_msg.height = 1;
+    pc_msg.width = static_cast<uint32_t>(scan.range_count);
+    pc_msg.is_dense = true;
+    pc_msg.is_bigendian = false;
+    // 字段: x,y,z (float32 各 4 字节)
+    pc_msg.fields.resize(3);
+    pc_msg.fields[0].name = "x"; pc_msg.fields[0].offset = 0; pc_msg.fields[0].datatype = 7; pc_msg.fields[0].count = 1;
+    pc_msg.fields[1].name = "y"; pc_msg.fields[1].offset = 4; pc_msg.fields[1].datatype = 7; pc_msg.fields[1].count = 1;
+    pc_msg.fields[2].name = "z"; pc_msg.fields[2].offset = 8; pc_msg.fields[2].datatype = 7; pc_msg.fields[2].count = 1;
+    pc_msg.point_step = 12;
+    pc_msg.row_step = pc_msg.point_step * pc_msg.width;
+    pc_msg.data.resize(pc_msg.row_step);
+    for (uint32_t i = 0; i < pc_msg.width; ++i) {
+      float angle = scan.angle_min + static_cast<float>(i) * scan.angle_increment;
+      float r = scan.ranges[i];
+      float x = r * std::cos(angle);
+      float y = r * std::sin(angle);
+      float z = 0.0F;
+      std::memcpy(&pc_msg.data[i * 12 + 0], &x, 4);
+      std::memcpy(&pc_msg.data[i * 12 + 4], &y, 4);
+      std::memcpy(&pc_msg.data[i * 12 + 8], &z, 4);
+    }
+    pointcloud_pub_->publish(pc_msg);
+  }
 
   auto old_level = current_level_;
   current_level_ = perception_->evaluate_degradation();

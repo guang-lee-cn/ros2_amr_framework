@@ -11,6 +11,7 @@
 #include "ros2_robot_middleware/hal/sensor/sensor_factory.hpp"
 #include "ros2_robot_middleware/infrastructure/tf2_transform_provider.hpp"
 #include "ros2_robot_middleware/msg/perception_objects.hpp"
+#include <sensor_msgs/msg/point_cloud2.hpp>
 #include <std_msgs/msg/string.hpp>
 
 #include <rclcpp/rclcpp.hpp>
@@ -50,6 +51,7 @@ private:
   void create_sensors();
   void timer_callback();
   void update_heartbeat_status();
+  amr::hal::sensor::Scenario load_scenario(const std::string &name);
 
   // Sensor parameters (from config/sensors.yaml via ROS2 params)
   amr::hal::sensor::SensorConfig lidar_cfg_;
@@ -72,6 +74,10 @@ private:
   // ROS2 infrastructure — DDS pub/sub
   rclcpp_lifecycle::LifecyclePublisher<ros2_robot_middleware::msg::PerceptionObjects>::SharedPtr fusion_pub_;
   rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::String>::SharedPtr heartbeat_pub_;
+  // 模拟点云发布（供 Foxglove/RViz 可视化）— SimulatedLidar 是内部传感器不发布 topic
+  rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::LaserScan>::SharedPtr lidar_pub_;
+  // PointCloud2 点云（Foxglove 3D 需要，LaserScan 无法直接渲染）
+  rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::PointCloud2>::SharedPtr pointcloud_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::TimerBase::SharedPtr heartbeat_timer_;
   rclcpp::Time last_tick_;

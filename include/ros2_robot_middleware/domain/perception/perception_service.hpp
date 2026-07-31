@@ -9,6 +9,7 @@
 #include "ros2_robot_middleware/domain/perception/tracker.hpp"
 #include "ros2_robot_middleware/domain/transform_provider.hpp"
 
+#include <algorithm>
 #include <memory>
 #include <vector>
 
@@ -97,6 +98,16 @@ public:
   std::vector<TrackedObject> fuse_tracked(Level degradation) {
     auto clusters = fuse(degradation);
     return tracker_.update(clusters);
+  }
+
+  /// 当前 LiDAR 原始点云快照（供可视化发布）。返回 false 表示无数据。
+  bool lidar_snapshot(amr::hal::sensor::LidarScan &out) const {
+    if (!lidar_ranges_ || lidar_range_count_ == 0) return false;
+    out.range_count = lidar_range_count_;
+    out.angle_min = lidar_angle_min_;
+    out.angle_increment = lidar_angle_inc_;
+    std::copy(lidar_ranges_, lidar_ranges_ + lidar_range_count_, out.ranges);
+    return true;
   }
 
   size_t track_count() const { return tracker_.track_count(); }

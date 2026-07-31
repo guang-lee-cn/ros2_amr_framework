@@ -66,6 +66,15 @@ public:
         return ptr ? std::move(ptr) : std::make_unique<SimulatedLidar>();  // fallback
     }
 
+    /// Create simulated LiDAR with a scenario (obstacle layout) — for demo
+    /// scenarios where the robot must navigate around known obstacles.
+    static LidarPtr create_lidar(const SensorConfig &cfg, const Scenario &scenario) {
+        if (cfg.type == "simulated") {
+            return std::make_unique<SimulatedLidar>(scenario);
+        }
+        return create_lidar(cfg);  // real adapter ignores scenario
+    }
+
     static ImuPtr create_imu(const SensorConfig &cfg) {
         register_builtin_sensors();
         auto ptr = make_sensor<ImuData>("imu", cfg.type);

@@ -1,0 +1,35 @@
+# AMR 演示场景配置 — SimulatedLidar 读此配置生成含障碍物的点云
+#
+# 场景选择（launch 传参数）:
+#   scenario: obstacle  → 单障碍，展示 A* 绕障
+#   scenario: slalom    → 多障碍，展示连续避障
+#   scenario: corridor  → 走廊，展示路径平滑
+#
+# 障碍物: 圆形障碍（圆心 + 半径），SimulatedLidar 在其方向生成短距离点云
+
+scenarios:
+  obstacle:
+    description: "单障碍 — 展示 A* 绕障"
+    obstacles:
+      - { x: 2.0, y: 0.0, radius: 0.4 }
+    start: { x: 0.5, y: 0.5 }
+    goal:  { x: 4.0, y: 0.5 }
+
+  slalom:
+    description: "多障碍 — 展示连续避障"
+    obstacles:
+      - { x: 1.5, y: 0.0, radius: 0.3 }
+      - { x: 2.5, y: 0.8, radius: 0.3 }
+      - { x: 3.5, y: 0.0, radius: 0.3 }
+    start: { x: 0.5, y: 0.5 }
+    goal:  { x: 4.5, y: 0.5 }
+
+  corridor:
+    description: "走廊 — 展示路径平滑"
+    obstacles:
+      - { x: 2.0, y: -0.6, radius: 0.5 }   # 下墙
+      - { x: 2.0, y:  0.6, radius: 0.5 }   # 上墙
+      - { x: 4.0, y: -0.6, radius: 0.5 }
+      - { x: 4.0, y:  0.6, radius: 0.5 }
+    start: { x: 0.5, y: 0.0 }
+    goal:  { x: 5.0, y: 0.0 }

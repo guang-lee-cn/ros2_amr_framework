@@ -42,7 +42,10 @@ def generate_launch_description():
         launch_arguments={
             # -s = headless server mode (WSL2/无 GPU 可用)
             # 移除 -s 可启用 GUI（需要 GPU 加速）
-            "gz_args": f"-r -s {world_path}",
+            # GUI 模式（无 -s）：headless 下渲染系统不初始化，lidar/camera 传感器不产数据。
+            # GUI 强制激活渲染 → 传感器工作。窗口可最小化，显示交给 Foxglove。
+            # 为降低 CPU 负载：窗口最小化 + 降低传感器频率（见 amr.sdf）。
+            "gz_args": f"-r {world_path}",
         }.items(),
     )
 
@@ -56,6 +59,19 @@ def generate_launch_description():
             "-name", "amr",
             "-file", amr_path,
             "-x", "0", "-y", "0", "-z", "0.1",
+        ],
+        output="screen",
+    )
+
+    # ── ros_gz_bridge: 时钟桥接 ────────────────────────────────────────
+    # 关键：use_sim_time=true 的节点需要 /clock，否则回调阻塞。
+    # Gazebo /clock → ROS2 /clock (rosgraph_msgs/Clock)
+    bridge_clock = RosNode(
+        package="ros_gz_bridge",
+        executable="parameter_bridge",
+        name="bridge_clock",
+        arguments=[
+            "/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock",
         ],
         output="screen",
     )
@@ -125,7 +141,14 @@ def generate_launch_description():
             name="compute",
             namespace="",
             output="screen",
-            parameters=[{"use_sim_time": use_sim_time}],
+            parameters=[{
+                "use_sim_time": use_sim_time,
+                # 仿真模式：LiDAR 从 Gazebo 桥接的 /sensor/lidar 读真实点云，
+                # 而非内部 Simulated 传感器（Simulated 是纯数学噪声）。
+                # IMU 保持 simulated（robot_localization 用，模拟数据够）。
+                "sensors.lidar.type": "sick_tim781",
+                "sensors.lidar.topic": "/sensor/lidar",
+            }],
         ),
         LifecycleNode(
             package="ros2_robot_middleware",
@@ -148,6 +171,7 @@ def generate_launch_description():
         declare_use_sim_time,
         gazebo,
         spawn_amr,
+        bridge_clock,
         bridge_lidar,
         bridge_imu,
         bridge_camera,
