@@ -163,15 +163,28 @@ sensor 和 actuator 在数据语义上没有公共抽象。强行统一 IHardwar
 | CycloneDDS 对比分析 | 2d | 线程模型 + 内存管理差异 |
 | 博客产出 | 1d | 第 1-2 篇源码分析博客 |
 
-### P3：规模化 — 导航栈 + 部署
+### P3：控制层自研闭环 — ✅ 完成
+
+> **决策**：全自研路线，不引入 NAV2。理由：① 成熟大厂（MiR/OTTO/海康）均为自研导航栈，方向一致；② PurePursuit + 梯形速度 + odom 已是商用控制器骨架；③ 避免与 NAV2 正面竞争，展示全链路自研能力。
+
+| 任务 | 状态 | 交付物 |
+|:---:|:---:|------|
+| P3a 路径平滑 | ✅ | `path_smoother.hpp` — 内切圆弧圆角，无 overshoot，直线密集采样 |
+| P3b 跟踪误差监控 | ✅ | `track_error_monitor.hpp` — 横向误差→降速/停止，接入 MotorCtrlNode |
+| P3c 动态避障重规划 | ✅ | `grid_updater.hpp` — 感知→膨胀标记→A* 重规划→平滑 |
+| P3d 商业部署方案 | ✅ | `deployment-plan.md` — Docker + OTA + 版本锁定 |
+
+**控制层自研闭环**：感知→障碍标记→A*→平滑→PurePursuit→误差监控。
+
+### P3e：规模化 — 后续
 
 | 任务 | 预计 | 说明 |
 |:---:|:---:|------|
-| NAV2 集成 | 3d | planner + costmap + 避障，替换自研 A* demo grid |
-| slam_toolbox 建图 | 1d | 环境地图，供 NAV2 costmap 用 |
-| robot_localization 补全 | 0.5d | odom0（轮编码器）接入，双传感器融合 |
-| 商业部署方案 | 1d | Docker + OTA 方案设计（文档） |
-| 观测 SDK 独立包 | 2d | 从 infrastructure/ 拆出（可选，按需） |
+| slam_toolbox 建图 | 1d | 环境地图（自主定位前置） |
+| robot_localization odom0 | 0.5d | 轮编码器输入（真实底盘就绪后） |
+| 真实底盘适配器 | 1d | IActuator 实现（硬件在环） |
+| Docker 化落地 | 1d | 从 deployment-plan 文档到实际 Dockerfile |
+| 观测 SDK 独立包 | 2d | 可选，按需 |
 
 ---
 
