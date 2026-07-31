@@ -77,18 +77,27 @@ public:
 
     float dx = lookahead.x - current.x;
     float dy = lookahead.y - current.y;
-    float lookahead_dist = std::sqrt(dx * dx + dy * dy);
 
     // Steering: ω = 2·v·sin(α) / L  (pure pursuit curvature)
     float alpha = std::atan2(dy, dx) - current.theta;
     alpha = std::atan2(std::sin(alpha), std::cos(alpha));  // normalize [-π, π]
 
-    // Speed: trapezoidal profile toward goal, clamped by curvature.
-    float linear = target_speed(goal_dist, alpha);
-    float angular = 2.0F * linear * std::sin(alpha) / params_.lookahead;
-
-    // Clamp angular to physical limit.
-    angular = std::clamp(angular, -params_.max_angular, params_.max_angular);
+    // Final approach: when within lookahead of the goal, abandon the
+    // pursuit arc and steer directly at the goal (line-of-sight).
+    // Using the small goal distance in the curvature formula would
+    // oversteer and oscillate — instead rotate in place toward the goal
+    // at reduced speed.
+    float linear;
+    float angular;
+    if (goal_dist < params_.lookahead) {
+      // Slow approach: mostly steer, small forward creep.
+      linear  = std::min(params_.max_linear, 0.1F);
+      angular = std::clamp(2.0F * alpha, -params_.max_angular, params_.max_angular);
+    } else {
+      linear  = target_speed(goal_dist, alpha);
+      angular = 2.0F * linear * std::sin(alpha) / params_.lookahead;
+      angular = std::clamp(angular, -params_.max_angular, params_.max_angular);
+    }
 
     return {linear, angular};
   }

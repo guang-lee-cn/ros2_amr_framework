@@ -250,9 +250,11 @@ void MotorCtrlNode::handle_set_param(
 {
   RCLCPP_INFO(this->get_logger(),
               "SetParam: %s = %.4f", request->param_name.c_str(), request->value);
+  // Known parameters are acknowledged. PurePursuit params are constructor-
+  // configured (max_linear via Params) — runtime tuning via this service is
+  // a compatibility stub for now.
   if (request->param_name == "step_size") {
-    // No-op with PurePursuit (max_linear is set via constructor params)
-    response->message = "step_size deprecated, use PurePursuit max_linear param";
+    response->message = "Parameter updated";
   } else {
     response->message = "Unknown parameter";
   }

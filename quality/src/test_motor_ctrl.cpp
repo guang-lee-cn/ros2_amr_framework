@@ -10,6 +10,7 @@
 
 #include <chrono>
 #include <memory>
+#include <thread>
 
 class MotorCtrlTest : public ::testing::Test {
 protected:
@@ -17,16 +18,33 @@ protected:
   static void TearDownTestSuite() { rclcpp::shutdown(); }
 };
 
-template <typename Predicate>
-bool spin_until(rclcpp::node_interfaces::NodeBaseInterface::SharedPtr node_iface,
-                Predicate pred, std::chrono::milliseconds timeout) {
-  auto start = std::chrono::steady_clock::now();
-  rclcpp::executors::SingleThreadedExecutor exec;
-  exec.add_node(node_iface);
-  while (!pred() && (std::chrono::steady_clock::now() - start) < timeout) {
-    exec.spin_once(std::chrono::milliseconds(10));
+// Spin the node's executor on a dedicated thread — the action execute()
+// callback runs a blocking 20Hz control loop, so it must not share the
+// test thread (spin_once would block forever waiting on the goal result).
+class SpinHelper {
+public:
+  explicit SpinHelper(rclcpp::node_interfaces::NodeBaseInterface::SharedPtr node_iface) {
+    exec_.add_node(node_iface);
+    thread_ = std::thread([this]() { exec_.spin(); });
   }
-  exec.remove_node(node_iface);
+  ~SpinHelper() {
+    exec_.cancel();
+    if (thread_.joinable()) thread_.join();
+  }
+private:
+  // MultiThreadedExecutor: the action execute() callback blocks in a 20Hz
+  // control loop; multiple threads let the executor keep processing the
+  // action's cancel/result machinery while execute runs.
+  rclcpp::executors::MultiThreadedExecutor exec_;
+  std::thread thread_;
+};
+
+template <typename Predicate>
+bool wait_until(Predicate pred, std::chrono::milliseconds timeout) {
+  auto start = std::chrono::steady_clock::now();
+  while (!pred() && (std::chrono::steady_clock::now() - start) < timeout) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
   return pred();
 }
 
@@ -53,8 +71,8 @@ TEST_F(MotorCtrlTest, CloseTarget_ReachesImmediately) {
       };
 
   client->async_send_goal(goal, opts);
-  ASSERT_TRUE(spin_until(motor->get_node_base_interface(),
-                         [&done] { return done; }, std::chrono::seconds(5)));
+  SpinHelper spin(motor->get_node_base_interface());
+  ASSERT_TRUE(wait_until([&done] { return done; }, std::chrono::seconds(5)));
   EXPECT_TRUE(reached);
 }
 
@@ -81,8 +99,8 @@ TEST_F(MotorCtrlTest, FarTarget_StepsUntilReached) {
       };
 
   client->async_send_goal(goal, opts);
-  ASSERT_TRUE(spin_until(motor->get_node_base_interface(),
-                         [&done] { return done; }, std::chrono::seconds(5)));
+  SpinHelper spin(motor->get_node_base_interface());
+  ASSERT_TRUE(wait_until([&done] { return done; }, std::chrono::seconds(5)));
   EXPECT_TRUE(reached);
 }
 
@@ -98,9 +116,10 @@ TEST_F(MotorCtrlTest, SetParamKnown_UpdatesAndAcks) {
   request->value = 0.10;
   auto future = client->async_send_request(request);
 
-  ASSERT_TRUE(spin_until(motor->get_node_base_interface(),
-                         [&future] { return future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
-                         std::chrono::seconds(2)));
+  SpinHelper spin(motor->get_node_base_interface());
+  ASSERT_TRUE(wait_until(
+      [&future] { return future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
+      std::chrono::seconds(2)));
   auto response = future.get();
   EXPECT_TRUE(response->success);
   EXPECT_EQ(response->message, "Parameter updated");
@@ -118,8 +137,9 @@ TEST_F(MotorCtrlTest, SetParamUnknown_ReturnsMessage) {
   request->value = 1.0;
   auto future = client->async_send_request(request);
 
-  ASSERT_TRUE(spin_until(motor->get_node_base_interface(),
-                         [&future] { return future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
+  SpinHelper spin(motor->get_node_base_interface());
+  ASSERT_TRUE(wait_until(
+      [&future] { return future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
                          std::chrono::seconds(2)));
   auto response = future.get();
   EXPECT_TRUE(response->success);
