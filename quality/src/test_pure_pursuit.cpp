@@ -7,52 +7,89 @@
 using amr::domain::execution::PurePursuit;
 using amr::domain::execution::Pose2D;
 using amr::domain::execution::Waypoint;
+using Params = PurePursuit::Params;
 
 // ── Given_StraightLinePath_Then_ForwardVelocity ───────────────────────
 
 TEST(PurePursuitTest, Given_StraightLinePath_Then_ForwardVelocity) {
-  PurePursuit pp({0.5F, 0.5F, 0.1F});
+  PurePursuit pp(Params{0.5F, 0.5F, 1.5F, 1.0F, 0.1F, 0.5F, 1.0F});
 
-  // Path: straight line along x-axis
   std::vector<Waypoint> path = {{0.0F, 0.0F}, {0.5F, 0.0F}, {1.0F, 0.0F}, {1.5F, 0.0F}, {2.0F, 0.0F}};
-
   Pose2D current{0.0F, 0.0F, 0.0F};  // facing +x
+
   auto twist = pp.track(path, current);
 
-  // Should have forward velocity, near-zero angular on straight path
   EXPECT_GT(twist.linear, 0.0F);
   EXPECT_NEAR(twist.angular, 0.0F, 0.1F);
 }
 
-// ── Given_CurvedPath_Then_NonZeroAngularVelocity ──────────────────────
+// ── Given_MultiWaypointPath_Then_TracksInOrder ─────────────────────────
+// Path-ordered lookahead: robot past the first waypoint must chase the
+// next one, not backtrack to the nearest point.
 
-TEST(PurePursuitTest, Given_CurvedPath_Then_NonZeroAngularVelocity) {
-  PurePursuit pp({0.3F, 0.5F, 0.05F});
+TEST(PurePursuitTest, Given_MultiWaypointPath_Then_TracksInOrder) {
+  PurePursuit pp(Params{0.3F, 0.5F, 1.5F, 1.0F, 0.1F, 0.5F, 1.0F});
 
-  // Path: corner at 90 degrees
-  std::vector<Waypoint> path = {{0.0F, 0.0F}, {1.0F, 0.0F}, {1.0F, 1.0F}};
+  // L-shaped path: go right then up
+  std::vector<Waypoint> path = {{0.0F, 0.0F}, {1.0F, 0.0F}, {1.0F, 1.0F}, {1.0F, 2.0F}};
 
-  // Robot at origin, facing +x — lookahead to (1,0) or beyond
-  Pose2D current{0.0F, 0.0F, 0.0F};
+  // Robot at the corner, facing up — should chase (1,1)/(1,2), not backtrack to (1,0)
+  Pose2D current{1.0F, 0.5F, M_PI / 2.0F};
   auto twist = pp.track(path, current);
 
-  EXPECT_GT(twist.linear, 0.0F);
-  // On a straight segment, angular should be near zero
-  EXPECT_NEAR(twist.angular, 0.0F, 0.2F);
+  EXPECT_GT(twist.linear, 0.0F);  // moving toward next segment
+  // target is straight ahead (up) → near-zero steering
+  EXPECT_NEAR(twist.angular, 0.0F, 0.3F);
+}
 
-  // Robot past the corner, facing +y (was heading right, now need to go up)
-  // The lookahead will pick the last point or intermediate
+// ── Given_TurnAhead_Then_ReducesSpeed ──────────────────────────────────
+// Sharp turn → curvature-limited velocity slows down.
+
+TEST(PurePursuitTest, Given_TurnAhead_Then_ReducesSpeed) {
+  PurePursuit pp(Params{0.3F, 0.5F, 0.5F, 1.0F, 0.1F, 0.5F, 1.0F});  // low max_angular
+
+  // 90° corner ahead: go right, then up
+  std::vector<Waypoint> path = {{0.0F, 0.0F}, {0.5F, 0.0F}, {0.5F, 0.5F}};
+
+  // Robot close enough to the corner that lookahead crosses into the
+  // vertical segment — sharp turn at the target.
+  Pose2D current{0.3F, 0.0F, 0.0F};
+  auto twist = pp.track(path, current);
+
+  // Curvature limit: v = ω_max·L / (2·sin α) — with ω_max=0.5, L=0.3
+  // and α ≈ 68° toward (0.5,0.5), linear must be well below max_linear (0.5).
+  EXPECT_GT(twist.linear, 0.0F);
+  EXPECT_LT(twist.linear, 0.4F);  // slowed by curvature limit
+}
+
+// ── Given_NearGoal_Then_SlowsDown ──────────────────────────────────────
+// Trapezoidal profile: decelerate inside slow_radius.
+
+TEST(PurePursuitTest, Given_NearGoal_Then_SlowsDown) {
+  PurePursuit pp(Params{0.5F, 1.0F, 1.5F, 1.0F, 0.1F, 0.5F, 1.0F});
+
+  std::vector<Waypoint> path = {{0.0F, 0.0F}, {0.5F, 0.0F}, {1.0F, 0.0F}};
+
+  // Far from goal → full speed
+  Pose2D far{0.2F, 0.0F, 0.0F};
+  auto twist_far = pp.track(path, far);
+  EXPECT_NEAR(twist_far.linear, 1.0F, 0.05F);  // max_linear
+
+  // Near goal (0.3m < slow_radius 0.5m) → reduced speed
+  Pose2D near{0.7F, 0.0F, 0.0F};
+  auto twist_near = pp.track(path, near);
+  EXPECT_LT(twist_near.linear, 0.8F);  // clearly below max_linear 1.0
+  EXPECT_GT(twist_near.linear, 0.0F);
 }
 
 // ── Given_GoalReached_Then_ZeroVelocity ───────────────────────────────
 
 TEST(PurePursuitTest, Given_GoalReached_Then_ZeroVelocity) {
-  PurePursuit pp({0.5F, 0.5F, 0.1F});
+  PurePursuit pp(Params{0.5F, 0.5F, 1.5F, 1.0F, 0.1F, 0.5F, 1.0F});
 
   std::vector<Waypoint> path = {{0.0F, 0.0F}, {0.5F, 0.0F}, {1.0F, 0.0F}};
+  Pose2D current{0.98F, 0.0F, 0.0F};  // within goal_tolerance
 
-  // Robot very close to goal
-  Pose2D current{0.98F, 0.0F, 0.0F};
   auto twist = pp.track(path, current);
 
   EXPECT_FLOAT_EQ(twist.linear, 0.0F);
@@ -64,25 +101,23 @@ TEST(PurePursuitTest, Given_GoalReached_Then_ZeroVelocity) {
 TEST(PurePursuitTest, Given_EmptyPath_Then_ZeroVelocity) {
   PurePursuit pp;
   std::vector<Waypoint> path{};
-
   Pose2D current{0.0F, 0.0F, 0.0F};
+
   auto twist = pp.track(path, current);
 
   EXPECT_FLOAT_EQ(twist.linear, 0.0F);
   EXPECT_FLOAT_EQ(twist.angular, 0.0F);
 }
 
-// ── Given_FarFromPath_Then_StillMoves ──────────────────────────────────
+// ── Given_FarFromPath_Then_StillMoves ─────────────────────────────────
 
 TEST(PurePursuitTest, Given_FarFromPath_Then_StillMoves) {
-  PurePursuit pp({1.0F, 0.5F, 0.1F});
+  PurePursuit pp(Params{1.0F, 0.5F, 1.5F, 1.0F, 0.1F, 0.5F, 1.0F});
 
   std::vector<Waypoint> path = {{2.0F, 2.0F}, {3.0F, 3.0F}};
-
-  // Robot far from path, but lookahead > distance to first waypoint
   Pose2D current{1.5F, 1.5F, 0.0F};  // toward (2,2)
+
   auto twist = pp.track(path, current);
 
-  // Should still produce some velocity (chase the closest waypoint)
   EXPECT_GT(twist.linear, 0.0F);
 }
