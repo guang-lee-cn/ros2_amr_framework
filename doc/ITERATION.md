@@ -140,20 +140,21 @@ sensor 和 actuator 在数据语义上没有公共抽象。强行统一 IHardwar
 | 驱动接入开发指南文档 | 0.5d | 阶段 0-4 全流程：硬件准备→ISensor/IActuator 适配→单元测试→YAML 切换→集成验证。写入 `docs/guides/11-driver-integration.md` |
 | IActuator 接口先行定义 | 0.5d | `read(feedback) + write(cmd)`，为底盘/执行器接入铺路 |
 
-### P2：amr_hal 独立 + 代码质量
+### P2：amr_hal 独立 + 代码质量 — ✅ 完成（方案 B：包内重组）
 
-| 任务 | 预计 | 说明 |
+| 任务 | 状态 | 说明 |
 |:---:|:---:|------|
-| common/ 工具 + 错误码 | 1d | error_codes, registry, ihardware 接口 |
-| ISensor<T> 下沉 + sensor/ 目录 | 1d | 从 domain/perception/ 移到 amr_hal/sensor/ |
-| IActuator 接口 + actuator/ 目录 | 0.5d | read(feedback) + write(cmd) |
-| SimulatedLidar/Imu/Camera 迁移 | 0.5d | 从 infrastructure/sensors/ 移到 amr_hal/src/sensor/ |
-| SickTiM781Adapter 迁移 | 0.5d | 同上 |
-| SensorFactory → registry 插件化 | 1d | 宏 + 静态注册表，替代 if-else |
-| test_motor_ctrl 修复 | 0.5d | timer-based stepping 替代 spin_once 阻塞 |
-| observability header-only → .cpp 拆分 | 1d | metrics_registry.hpp + logging.hpp → .hpp/.cpp 分离 |
+| hal/ 目录 + amr::hal 命名空间 | ✅ | `hal/sensor/` + `hal/actuator/` + `hal/common/` |
+| ISensor<T> 下沉 | ✅ | domain/perception → hal/sensor/isensor.hpp |
+| IActuator 接口 | ✅ | hal/actuator/iactuator.hpp |
+| Simulated*/Sick 迁移 | ✅ | infrastructure/sensors → hal/sensor/ |
+| SensorFactory → registry | ✅ | `hal/common/registry.hpp`，静态注册替代 if-else |
+| observability → .cpp 拆分 | ✅ | metrics_registry.cpp（logging 保持 header-only，依赖模板类） |
+| test_motor_ctrl 修复 | ⏳ 待做 | timer-based stepping 替代 spin_once 阻塞 |
 
-### P2：DDS 源码深读 + 博客
+> **决策**：选方案 B（包内重组），非独立包。理由：单人 3 传感器，独立包组织成本 > 收益；接口/实现边界已清晰，将来 `git subtree` 一行拆出。
+
+### P2b：DDS 源码深读 + 博客
 
 | 任务 | 预计 | 说明 |
 |------|:---:|------|
@@ -162,13 +163,15 @@ sensor 和 actuator 在数据语义上没有公共抽象。强行统一 IHardwar
 | CycloneDDS 对比分析 | 2d | 线程模型 + 内存管理差异 |
 | 博客产出 | 1d | 第 1-2 篇源码分析博客 |
 
-### P3：观测 SDK 独立 + 集成
+### P3：规模化 — 导航栈 + 部署
 
 | 任务 | 预计 | 说明 |
-|------|:---:|------|
-| 观测 SDK 独立包（amr_observability） | 2d | 从 infrastructure/ 拆出 |
-| Degradation Framework 标准化 | 1d | 从 Fusion 内部提取为独立库 |
-| Prometheus metrics + AMR_PERF_PHASE 融合 | 1d | 运行时 + 插桩双通道 |
+|:---:|:---:|------|
+| NAV2 集成 | 3d | planner + costmap + 避障，替换自研 A* demo grid |
+| slam_toolbox 建图 | 1d | 环境地图，供 NAV2 costmap 用 |
+| robot_localization 补全 | 0.5d | odom0（轮编码器）接入，双传感器融合 |
+| 商业部署方案 | 1d | Docker + OTA 方案设计（文档） |
+| 观测 SDK 独立包 | 2d | 从 infrastructure/ 拆出（可选，按需） |
 
 ---
 
