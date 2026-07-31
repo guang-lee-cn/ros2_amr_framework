@@ -183,6 +183,18 @@ void MotorCtrlNode::execute(const std::shared_ptr<ServerGoalHandle> goal_handle)
       return;
     }
 
+    // Lateral tracking error monitor: scale speed by deviation from path.
+    auto err = error_monitor_.evaluate(current, path);
+    if (err.level == amr::domain::planning::TrackErrorLevel::ERROR) {
+      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+                           "Track error %.2fm beyond stop threshold — stopping",
+                           err.lateral_error);
+      twist.linear = 0.0F;
+      twist.angular = 0.0F;
+    } else if (err.level == amr::domain::planning::TrackErrorLevel::WARN) {
+      twist.linear *= err.speed_scale;  // slow down when deviating
+    }
+
     // Pose advance: closed-loop when /odom is available; otherwise fall back
     // to kinematic integration (simulation/demo mode without a real base).
     if (!odom_valid_.load(std::memory_order_acquire)) {

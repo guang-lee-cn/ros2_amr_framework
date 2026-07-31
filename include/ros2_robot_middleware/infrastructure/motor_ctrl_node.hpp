@@ -3,6 +3,7 @@
 
 #include "ros2_robot_middleware/action/move_to_pose.hpp"
 #include "ros2_robot_middleware/domain/execution/pure_pursuit.hpp"
+#include "ros2_robot_middleware/domain/planning/track_error_monitor.hpp"
 #include "ros2_robot_middleware/srv/set_param.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "nav_msgs/msg/odometry.hpp"
@@ -47,8 +48,9 @@ private:
 
   void on_odom(const nav_msgs::msg::Odometry::SharedPtr msg);
 
-  // Domain layer — Pure Pursuit path tracking
+  // Domain layer — Pure Pursuit path tracking + lateral error monitor
   amr::domain::execution::PurePursuit tracker_;
+  amr::domain::planning::TrackErrorMonitor error_monitor_;
 
   // ROS2 infrastructure
   rclcpp_action::Server<ros2_robot_middleware::action::MoveToPose>::SharedPtr action_server_;
