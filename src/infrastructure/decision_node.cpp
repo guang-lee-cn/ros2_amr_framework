@@ -5,7 +5,9 @@
 #include "ros2_robot_middleware/observability/trace_points.hpp"
 #include "ros2_robot_middleware/observability/tracer.hpp"
 
+#include <algorithm>
 #include <chrono>
+#include <limits>
 #include <rclcpp_components/register_node_macro.hpp>
 
 // ── Constructors ────────────────────────────────────────────────────────────
@@ -113,12 +115,29 @@ void DecisionNode::on_perception(const PerceptionObjects::SharedPtr& objs)
                                                objs->objects[0].id.c_str()};
   amr::domain::planning::Goal goal;
   if (selector_.select(&obj, 1, goal)) {
+    // Mark all perceived objects except the chosen target as obstacles.
+    // Simple grid: rebuild from scratch each cycle — obstacles are transient.
+    std::fill(demo_grid_.cells.begin(), demo_grid_.cells.end(), false);
+    amr::domain::planning::PerceivedObject obstacles[8];
+    std::size_t n_obs = 0;
+    for (std::size_t i = 0; i < objs->objects.size() && n_obs < 8; ++i) {
+      if (i == 0) continue;  // objects[0] is the navigation target
+      obstacles[n_obs++] = {objs->objects[i].x, objs->objects[i].y,
+                            objs->objects[i].id.c_str()};
+    }
+    if (n_obs > 0) {
+      grid_updater_.mark_obstacles(demo_grid_, obstacles, n_obs,
+                                   std::numeric_limits<std::size_t>::max());
+    }
+
     { AMR_PERF_PHASE("decision:astar");
       amr::domain::planning::Pose start{0.0F, 0.0F};
       amr::domain::planning::Pose goal_pose{goal.x, goal.y};
       auto path = astar_.plan(demo_grid_, start, goal_pose);
       if (!path.empty()) {
-        publish_path(path);
+        // Smooth the polyline for PurePursuit (rounds corners, dense samples).
+        auto smooth = smoother_.smooth(path);
+        publish_path(smooth);
       }
     }
     { AMR_PERF_PHASE("decision:send_goal");

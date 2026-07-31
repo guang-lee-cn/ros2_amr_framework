@@ -3,6 +3,8 @@
 
 #include "ros2_robot_middleware/action/move_to_pose.hpp"
 #include "ros2_robot_middleware/domain/planning/astar_planner.hpp"
+#include "ros2_robot_middleware/domain/planning/grid_updater.hpp"
+#include "ros2_robot_middleware/domain/planning/path_smoother.hpp"
 #include "ros2_robot_middleware/domain/planning/preempt_policy.hpp"
 #include "ros2_robot_middleware/domain/planning/target_selector.hpp"
 #include "ros2_robot_middleware/msg/perception_objects.hpp"
@@ -44,6 +46,8 @@ private:
   amr::domain::planning::TargetSelector selector_;
   amr::domain::planning::PreemptPolicy preempt_;
   amr::domain::planning::AStarPlanner astar_;
+  amr::domain::planning::PathSmoother smoother_;
+  amr::domain::planning::GridUpdater grid_updater_;
   amr::domain::planning::OccupancyGrid demo_grid_;
 
   // ROS2 infrastructure
