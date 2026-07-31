@@ -206,6 +206,7 @@ if(BUILD_TESTING)
   add_amr_test(test_tracker       quality/src/test_tracker.cpp)
   add_amr_test(test_astar         quality/src/test_astar.cpp)
   add_amr_test(test_pure_pursuit  quality/src/test_pure_pursuit.cpp)
+  add_amr_test(test_path_smoother quality/src/test_path_smoother.cpp)
 endif()
 
 ament_package()
