@@ -44,6 +44,7 @@ add_library(robot_middleware_lib STATIC
   src/infrastructure/health_monitor_node.cpp
   src/infrastructure/prometheus_http_server.cpp
   src/infrastructure/fleet_manager_node.cpp
+  src/observability/metrics_registry.cpp
 )
 
 target_include_directories(robot_middleware_lib PUBLIC
@@ -66,6 +67,7 @@ add_library(compute_component SHARED
   src/infrastructure/fusion_node.cpp
   src/infrastructure/decision_node.cpp
   src/infrastructure/motor_ctrl_node.cpp
+  src/observability/metrics_registry.cpp
 )
 target_include_directories(compute_component PUBLIC include ${CMAKE_CURRENT_BINARY_DIR}/rosidl_generator_cpp)
 ament_target_dependencies(compute_component

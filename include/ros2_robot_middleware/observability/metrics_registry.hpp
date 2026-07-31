@@ -9,12 +9,6 @@
 
 #include <atomic>
 #include <cstdint>
-#include <cstring>
-
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <unistd.h>
 
 namespace amr::observability {
 
@@ -28,27 +22,12 @@ struct alignas(64) Histogram {
     std::atomic<int64_t> total_count{0};
     std::atomic<int64_t> total_sum_us{0};
 
-    void record(int64_t latency_us) noexcept {
-        total_count.fetch_add(1, std::memory_order_relaxed);
-        total_sum_us.fetch_add(latency_us, std::memory_order_relaxed);
-        int idx = 0;
-        int64_t bound = kBaseUs;
-        while (idx < kBucketCount - 1 && latency_us >= bound) {
-            ++idx;
-            bound *= kBaseUs;
-        }
-        buckets[idx].fetch_add(1, std::memory_order_relaxed);
-    }
+    void record(int64_t latency_us) noexcept;
 };
 
 // ── Shared memory registry ───────────────────────────────────────────
 class MetricsRegistry {
 public:
-    static MetricsRegistry &instance() {
-        static MetricsRegistry reg;
-        return reg;
-    }
-
     // ── Sensor Rates (Gauge, deci-Hz) ────────────────────────────────
     std::atomic<int32_t> lidar_rate_ds{0};
     std::atomic<int32_t> imu_rate_ds{0};
@@ -70,39 +49,11 @@ public:
     // ── End-to-end timestamp ─────────────────────────────────────────
     std::atomic<int64_t> last_sensor_timestamp_ns{0};
 
-    MetricsRegistry() = default; // public — constructed by shared_metrics()
+    MetricsRegistry() = default;
 };
 
-
-// ── Shared memory allocator for cross-process singleton ──────────────
-// Replaces process-local static with mmap'd shared memory so that
-// lidar/imu/camera/compute/health_monitor all share the same counters.
-
-constexpr const char *kShmName = "/amr_metrics_registry";
-
-inline MetricsRegistry &shared_metrics() {
-    static MetricsRegistry *ptr = []() -> MetricsRegistry * {
-        const size_t sz = sizeof(MetricsRegistry);
-        int fd = shm_open(kShmName, O_CREAT | O_RDWR, 0644);
-        if (fd < 0) {
-            // Fallback: process-local if shm fails (e.g. no /dev/shm)
-            static MetricsRegistry local;
-            return &local;
-        }
-        if (ftruncate(fd, static_cast<off_t>(sz)) < 0) {
-            close(fd);
-            static MetricsRegistry local;
-            return &local;
-        }
-        void *addr = mmap(nullptr, sz, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-        close(fd);
-        if (addr == MAP_FAILED) {
-            static MetricsRegistry local;
-            return &local;
-        }
-        return reinterpret_cast<MetricsRegistry *>(addr);
-    }();
-    return *ptr;
-}
+/// Cross-process singleton — definition in metrics_registry.cpp.
+/// Shared via mmap'd /dev/shm so all processes see the same counters.
+MetricsRegistry &shared_metrics();
 
 } // namespace amr::observability
