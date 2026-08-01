@@ -3,6 +3,7 @@
 > 状态：已完成
 > 目标：建立端到端的可观测性体系，热路径延迟 < 50ns，独立于被观测系统
 > 最终提交：f78a85a (doc) + 6c1364c (trace points) + e479e0a (grafana)
+> **演进**：跨进程 trace 关联缺口已由 [12-observability-trace-propagation.md](12-observability-trace-propagation.md)（M13）闭合。
 
 ---
 
