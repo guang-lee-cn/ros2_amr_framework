@@ -5,8 +5,10 @@
                     (gz → ros2)     (/sensor/*)
 
 启动后检查：
-  ros2 topic list | grep sensor     # 确认传感器 topic 存在
-  ros2 topic echo /sensor/lidar     # 确认 LiDAR 数据流通
+  ros2 topic list | grep -E "scan|points"   # 确认数据 topic 存在
+  ros2 topic hz /scan                       # 确认 LiDAR 数据流通（~10Hz）
+  ros2 topic hz /points                     # 确认点云流通
+  ros2 topic pub -1 /cmd_vel geometry_msgs/Twist "{linear: {x: 0.2}}"  # 确认车动
 """
 
 import os
@@ -40,12 +42,10 @@ def generate_launch_description():
                 "launch", "gz_sim.launch.py"),
         ]),
         launch_arguments={
-            # -s = headless server mode (WSL2/无 GPU 可用)
-            # 移除 -s 可启用 GUI（需要 GPU 加速）
-            # GUI 模式（无 -s）：headless 下渲染系统不初始化，lidar/camera 传感器不产数据。
-            # GUI 强制激活渲染 → 传感器工作。窗口可最小化，显示交给 Foxglove。
-            # 为降低 CPU 负载：窗口最小化 + 降低传感器频率（见 amr.sdf）。
-            "gz_args": f"-r {world_path}",
+            # -s --headless-rendering：服务器 + 离屏渲染（传感器仍产数据）。
+            # 不用 GUI 模式——WSL2 d3d12 下 Qt GLX 集成偶发崩溃（RenderThread 段错误）。
+            # 可视化交给 Foxglove（点云/图像/里程均可看）。
+            "gz_args": f"-r -s --headless-rendering {world_path}",
         }.items(),
     )
 
@@ -58,7 +58,7 @@ def generate_launch_description():
         arguments=[
             "-name", "amr",
             "-file", amr_path,
-            "-x", "0", "-y", "0", "-z", "0.1",
+            "-x", "0", "-y", "0", "-z", "0.15",  # 略高于着地高度(0.125)，落下后轮子干净着地
         ],
         output="screen",
     )
@@ -81,18 +81,35 @@ def generate_launch_description():
     #
     # 语法: <gz_topic>@<ros_type>[<gz_type>]
     # 方向: [ 表示 gz→ros, ] 表示 ros→gz, @ 双向
+    # 实测：gpu_lidar 数据话题为 /lidar（<topic>lidar</topic> 解析到根），
+    # 帧路径 .../sensor/lidar/scan 为空话题。桥接源必须用 /lidar。
     bridge_lidar = RosNode(
         package="ros_gz_bridge",
         executable="parameter_bridge",
         name="bridge_lidar",
         arguments=[
-            "/world/warehouse/model/amr/link/chassis/sensor/lidar/scan"
+            "/lidar"
             "@sensor_msgs/msg/LaserScan"
             "[gz.msgs.LaserScan",
         ],
         remappings=[
-            ("/world/warehouse/model/amr/link/chassis/sensor/lidar/scan",
-             "/sensor/lidar"),
+            ("/lidar", "/scan"),
+        ],
+        output="screen",
+    )
+
+    # 点云桥（新增）：gz /lidar/points → ROS /points (PointCloud2)
+    bridge_points = RosNode(
+        package="ros_gz_bridge",
+        executable="parameter_bridge",
+        name="bridge_points",
+        arguments=[
+            "/lidar/points"
+            "@sensor_msgs/msg/PointCloud2"
+            "[gz.msgs.PointCloudPacked",
+        ],
+        remappings=[
+            ("/lidar/points", "/points"),
         ],
         output="screen",
     )
@@ -102,13 +119,12 @@ def generate_launch_description():
         executable="parameter_bridge",
         name="bridge_imu",
         arguments=[
-            "/world/warehouse/model/amr/link/chassis/sensor/imu/imu"
+            "/imu"
             "@sensor_msgs/msg/Imu"
             "[gz.msgs.IMU",
         ],
         remappings=[
-            ("/world/warehouse/model/amr/link/chassis/sensor/imu/imu",
-             "/sensor/imu"),
+            ("/imu", "/sensor/imu"),
         ],
         output="screen",
     )
@@ -118,13 +134,24 @@ def generate_launch_description():
         executable="parameter_bridge",
         name="bridge_camera",
         arguments=[
-            "/world/warehouse/model/amr/link/chassis/sensor/camera/image"
+            "/camera"
             "@sensor_msgs/msg/Image"
             "[gz.msgs.Image",
         ],
         remappings=[
-            ("/world/warehouse/model/amr/link/chassis/sensor/camera/image",
-             "/sensor/camera"),
+            ("/camera", "/sensor/camera"),
+        ],
+        output="screen",
+    )
+
+    # 速度指令桥（新增方向）：ROS /cmd_vel → gz /cmd_vel (Twist)
+    # 闭环最后一跳：motor 的指令经此桥回到 Gazebo DiffDrive
+    bridge_cmd_vel = RosNode(
+        package="ros_gz_bridge",
+        executable="parameter_bridge",
+        name="bridge_cmd_vel",
+        arguments=[
+            "/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist",
         ],
         output="screen",
     )
@@ -143,11 +170,11 @@ def generate_launch_description():
             output="screen",
             parameters=[{
                 "use_sim_time": use_sim_time,
-                # 仿真模式：LiDAR 从 Gazebo 桥接的 /sensor/lidar 读真实点云，
+                # 仿真模式：LiDAR 从 Gazebo 桥接的 /scan 读真实点云，
                 # 而非内部 Simulated 传感器（Simulated 是纯数学噪声）。
                 # IMU 保持 simulated（robot_localization 用，模拟数据够）。
                 "sensors.lidar.type": "sick_tim781",
-                "sensors.lidar.topic": "/sensor/lidar",
+                "sensors.lidar.topic": "/scan",
             }],
         ),
         LifecycleNode(
@@ -173,7 +200,9 @@ def generate_launch_description():
         spawn_amr,
         bridge_clock,
         bridge_lidar,
+        bridge_points,
         bridge_imu,
         bridge_camera,
+        bridge_cmd_vel,
         *nodes,
     ])

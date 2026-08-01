@@ -10,11 +10,15 @@
       <shadows>true</shadows>
     </scene>
 
-    <!-- 物理引擎 -->
-    <physics type="ode">
+    <!-- 物理引擎：<physics> 只定义 profile，必须显式加载 Physics 系统插件。
+         缺此插件 = 无动力学 → 模型冻结不落体、轮子不转（此前 G3 卡住的根因）。 -->
+    <physics type="dartsim">
       <real_time_update_rate>1000</real_time_update_rate>
       <max_step_size>0.001</max_step_size>
     </physics>
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics">
+      <engine>gz-physics-dartsim-plugin</engine>
+    </plugin>
 
     <!-- 地面 -->
     <model name="ground">
@@ -102,5 +106,15 @@
       </attenuation>
       <direction>-0.5 0.1 -0.9</direction>
     </light>
+
+    <!-- 传感器系统插件：激活所有模型传感器（imu/lidar/camera）。
+         缺此插件 = 话题存在但零数据（此前"无数据"的根因）。 -->
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <!-- 用户命令系统插件：提供 /world/warehouse/create 服务。
+         缺此插件 = AMR 模型无法 spawn（ros_gz_sim create 一直等待服务）。 -->
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
   </world>
 </sdf>

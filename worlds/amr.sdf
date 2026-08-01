@@ -30,7 +30,9 @@
 
       <!-- =============================================================
            LiDAR (GPU Ray Sensor) — 发布到 /world/warehouse/model/amr/link/chassis/sensor/lidar/scan
-           通过 ros_gz_bridge 桥接到 /sensor/lidar (sensor_msgs/LaserScan)
+           + point cloud /points。gz-sim Harmonic 仅支持 gpu_lidar（ray 类型不支持）。
+           产数据的前提是 world 加载 Sensors 系统插件（见 warehouse.sdf）。
+           通过 ros_gz_bridge 桥接到 /scan + /points (sensor_msgs/LaserScan + PointCloud2)
            ============================================================= -->
       <sensor name="lidar" type="gpu_lidar">
         <pose>0.25 0 0.05 0 0 0</pose>
@@ -55,53 +57,26 @@
       </sensor>
 
       <!-- =============================================================
-           IMU — 发布到 /world/warehouse/model/amr/link/chassis/sensor/imu/imu
-           通过 ros_gz_bridge 桥接到 /sensor/imu (sensor_msgs/Imu)
+           IMU — gz 数据话题 /imu（<topic> 解析到根），桥接到 /sensor/imu。
+           fusion 实际用 simulated IMU（launch 参数），此 gz IMU 供 robot_localization。
            ============================================================= -->
       <sensor name="imu" type="imu">
         <always_on>true</always_on>
         <update_rate>100</update_rate>
         <topic>imu</topic>
-        <imu>
-          <angular_velocity>
-            <x><noise type="gaussian" mean="0" stddev="0.0004"/></x>
-            <y><noise type="gaussian" mean="0" stddev="0.0004"/></y>
-            <z><noise type="gaussian" mean="0" stddev="0.0004"/></z>
-          </angular_velocity>
-          <linear_acceleration>
-            <x><noise type="gaussian" mean="0" stddev="0.01"/></x>
-            <y><noise type="gaussian" mean="0" stddev="0.01"/></y>
-            <z><noise type="gaussian" mean="0" stddev="0.01"/></z>
-          </linear_acceleration>
-        </imu>
       </sensor>
 
-      <!-- =============================================================
-           Camera — 发布到 /world/warehouse/model/amr/link/chassis/sensor/camera/image
-           通过 ros_gz_bridge 桥接到 /sensor/camera (sensor_msgs/Image)
-           ============================================================= -->
-      <sensor name="camera" type="camera">
-        <pose>0.28 0 0.05 0 1.57 0</pose>  <!-- 面向前方，旋转补偿 -->
-        <always_on>true</always_on>
-        <update_rate>5</update_rate>
-        <topic>camera</topic>
-        <camera>
-          <horizontal_fov>1.2043</horizontal_fov>  <!-- ~69° -->
-          <image>
-            <width>640</width>
-            <height>480</height>
-            <format>R8G8B8</format>
-          </image>
-          <clip><near>0.1</near><far>10.0</far></clip>
-        </camera>
-      </sensor>
+      <!-- Camera 暂时禁用（2026-08-02）：
+           在 WSL2 d3d12 下，相机 640x480 图像读回（Ogre2RenderTarget::Copy）
+           触发 gz-sim 服务器 SIGSEGV。视觉暂由 /scan + /points 提供。
+           修复渲染读回后再恢复。 -->
     </link>
 
     <!-- ================================================================
          左驱动轮
          ================================================================ -->
     <link name="left_wheel">
-      <pose>0 0.25 -0.05 0 0 0</pose>
+      <pose>0 0.25 -0.05 1.5708 0 0</pose>  <!-- roll 90°: cylinder 轴 Z→Y，对齐 joint 转轴 -->
       <inertial>
         <mass>1.0</mass>
         <inertia><ixx>0.01</ixx><iyy>0.01</iyy><izz>0.01</izz></inertia>
@@ -116,7 +91,7 @@
     </link>
 
     <link name="right_wheel">
-      <pose>0 -0.25 -0.05 0 0 0</pose>
+      <pose>0 -0.25 -0.05 1.5708 0 0</pose>  <!-- roll 90°: cylinder 轴 Z→Y，对齐 joint 转轴 -->
       <inertial>
         <mass>1.0</mass>
         <inertia><ixx>0.01</ixx><iyy>0.01</iyy><izz>0.01</izz></inertia>
@@ -130,16 +105,19 @@
       </visual>
     </link>
 
-    <!-- 差速驱动 joint -->
+    <!-- 差速驱动 joint：pose 定位到轮轴（chassis 坐标系），转轴才过轮心。
+         缺 pose = 转轴过 chassis 中心 → 轮子被卡转不动。 -->
     <joint name="left_wheel_joint" type="revolute">
       <parent>chassis</parent>
       <child>left_wheel</child>
+      <pose>0 0.25 -0.20 0 0 0</pose>
       <axis><xyz>0 1 0</xyz></axis>
     </joint>
 
     <joint name="right_wheel_joint" type="revolute">
       <parent>chassis</parent>
       <child>right_wheel</child>
+      <pose>0 -0.25 -0.20 0 0 0</pose>
       <axis><xyz>0 1 0</xyz></axis>
     </joint>
 
