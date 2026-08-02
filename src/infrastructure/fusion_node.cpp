@@ -83,6 +83,15 @@ void FusionNode::create_sensors() {
 FusionNode::CallbackReturn FusionNode::on_configure(const rclcpp_lifecycle::State &) {
   // Create sensors from YAML-driven params
   create_sensors();
+  // 若 lidar 是可连接适配器（sick_tim781）：宿主直接订阅并喂入扫描数据。
+  // LifecycleNode 组合 rclcpp::Node（非继承），不能直接传 rclcpp::Node&，故用 feed_scan。
+  if (auto *adapter = dynamic_cast<amr::hal::sensor::SickTiM781Adapter *>(lidar_.get())) {
+    scan_sub_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
+        lidar_cfg_.topic, rclcpp::QoS(10).best_effort(),
+        [adapter](sensor_msgs::msg::LaserScan::SharedPtr msg) {
+          adapter->feed_scan(std::move(msg));
+        });
+  }
   lidar_->init();
   imu_->init();
   camera_->init();

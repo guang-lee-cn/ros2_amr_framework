@@ -45,7 +45,7 @@ def generate_launch_description():
             # -s --headless-rendering：服务器 + 离屏渲染（传感器仍产数据）。
             # 不用 GUI 模式——WSL2 d3d12 下 Qt GLX 集成偶发崩溃（RenderThread 段错误）。
             # 可视化交给 Foxglove（点云/图像/里程均可看）。
-            "gz_args": f"-r -s --headless-rendering {world_path}",
+            "gz_args": f"-r {world_path}",
         }.items(),
     )
 
@@ -165,7 +165,8 @@ def generate_launch_description():
         RosNode(
             package="ros2_robot_middleware",
             executable="compute_container",
-            name="compute",
+            # 不能设 name=：compute_container 内部创建 fusion/decision/motor_ctrl 三个节点，
+            # name= 会把三者全部重命名成 compute，导致节点冲突、订阅注册异常（/scan 无订阅者）。
             namespace="",
             output="screen",
             parameters=[{
@@ -177,16 +178,9 @@ def generate_launch_description():
                 "sensors.lidar.topic": "/scan",
             }],
         ),
-        LifecycleNode(
-            package="ros2_robot_middleware",
-            executable="health_monitor_node",
-            name="health_monitor",
-            namespace="",
-            output="screen",
-            parameters=[{"use_sim_time": use_sim_time}],
-            respawn=True,
-            respawn_delay=2.0,
-        ),
+        # health_monitor 不参与仿真：其 1s 检查会误判 compute 启动期节点为 ERROR，
+        # 触发 change_state 把 fusion/decision/motor 卡成 inactive，导致发布中断。
+        # （生产模式在 system.launch.py 使用 health_monitor）
     ]
 
     return LaunchDescription([

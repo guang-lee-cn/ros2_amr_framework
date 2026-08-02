@@ -37,12 +37,19 @@ public:
         : topic_(topic) {}
 
     /// Called by FusionNode after ROS2 node is available. Creates the subscription.
+    /// 注意：宿主节点若是 LifecycleNode（组合 rclcpp::Node，非继承），
+    /// 不能传 rclcpp::Node&，改用 FusionNode 直接订阅 + feed_scan()。
     void connect(rclcpp::Node &node) {
         sub_ = node.create_subscription<sensor_msgs::msg::LaserScan>(
             topic_, rclcpp::QoS(10).best_effort(),
             [this](sensor_msgs::msg::LaserScan::SharedPtr msg) {
                 on_scan(msg);
             });
+    }
+
+    /// 由宿主节点（LifecycleNode）直接订阅话题后喂入扫描数据。
+    void feed_scan(sensor_msgs::msg::LaserScan::SharedPtr msg) {
+        on_scan(std::move(msg));
     }
 
     // ── CRTP contract ────────────────────────────────────────────────

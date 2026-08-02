@@ -78,6 +78,9 @@ private:
   rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::LaserScan>::SharedPtr lidar_pub_;
   // PointCloud2 点云（Foxglove 3D 需要，LaserScan 无法直接渲染）
   rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::PointCloud2>::SharedPtr pointcloud_pub_;
+  // /scan 订阅：当 lidar 是适配器（sick_tim781）时，宿主直接订阅并 feed_scan 喂入。
+  // 声明在 lidar_ 之后 → 先于 lidar_ 析构，避免回调悬垂。
+  rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::TimerBase::SharedPtr heartbeat_timer_;
   rclcpp::Time last_tick_;
