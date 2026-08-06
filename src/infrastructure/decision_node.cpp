@@ -5,6 +5,8 @@
 #include "ros2_robot_middleware/observability/trace_points.hpp"
 #include "ros2_robot_middleware/observability/tracer.hpp"
 
+#include "tf2/exceptions.h"
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -53,6 +55,11 @@ DecisionNode::on_configure(const rclcpp_lifecycle::State &)
     "/amcl_pose", rclcpp::QoS(10).reliable(),
     [this](geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg) { on_amcl_pose(msg); },
     amcl_opts);
+
+  // map→odom TF buffer (AMCL publishes it) — used to dispatch goals in the
+  // motor's odom/world frame while planning in the map frame.
+  tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
+  tf_listener_ = std::make_unique<tf2_ros::TransformListener>(*tf_buffer_);
 
   client_ = rclcpp_action::create_client<MoveToPose>(this, "/cmd/move_to_pose");
 
@@ -105,6 +112,8 @@ DecisionNode::on_cleanup(const rclcpp_lifecycle::State &)
   client_.reset();
   heartbeat_pub_.reset();
   path_pub_.reset();
+  tf_listener_.reset();
+  tf_buffer_.reset();
   return CallbackReturn::SUCCESS;
 }
 
@@ -117,6 +126,8 @@ DecisionNode::on_shutdown(const rclcpp_lifecycle::State &)
   client_.reset();
   heartbeat_pub_.reset();
   path_pub_.reset();
+  tf_listener_.reset();
+  tf_buffer_.reset();
   return CallbackReturn::SUCCESS;
 }
 
@@ -182,8 +193,32 @@ void DecisionNode::on_perception(const PerceptionObjects::SharedPtr& objs)
     auto smooth = smoother_.smooth(path);
     publish_path(smooth);
   }
+  // 5. Dispatch in the motor's frame: decision plans in map (start = AMCL
+  //    map pose, goal = map params) but motor tracks /odom (= world). AMCL
+  //    publishes map→odom — transform the goal before dispatching. Without
+  //    the TF the goal would be read as world coordinates and the robot
+  //    would drive out of the warehouse (G1 coordinate mismatch).
+  float odom_gx = gx, odom_gy = gy;
+  if (tf_buffer_) {
+    try {
+      const auto t = tf_buffer_->lookupTransform(
+          "amr/odom", "map", rclcpp::Time(0),
+          rclcpp::Duration::from_seconds(0.1));
+      // 2D map→odom transform applied to the goal point.
+      const double yaw = 2.0 * std::atan2(t.transform.rotation.z,
+                                          t.transform.rotation.w);
+      const double c = std::cos(yaw), s = std::sin(yaw);
+      odom_gx = static_cast<float>(t.transform.translation.x + c * gx - s * gy);
+      odom_gy = static_cast<float>(t.transform.translation.y + s * gx + c * gy);
+    } catch (const tf2::TransformException &e) {
+      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                           "map→odom TF unavailable, deferring dispatch: %s",
+                           e.what());
+      return;  // cannot dispatch in the motor's frame yet
+    }
+  }
   { AMR_PERF_PHASE("decision:send_goal");
-    send_goal(gx, gy); }
+    send_goal(odom_gx, odom_gy); }
 
   auto lat_us = std::chrono::duration_cast<std::chrono::microseconds>(
                     std::chrono::steady_clock::now() - t_start).count();

@@ -4,6 +4,9 @@
 #include "ros2_robot_middleware/action/move_to_pose.hpp"
 #include "ros2_robot_middleware/msg/perception_objects.hpp"
 
+#include "geometry_msgs/msg/transform_stamped.hpp"
+#include "tf2_ros/static_transform_broadcaster.h"
+
 #include <gtest/gtest.h>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
@@ -30,6 +33,25 @@ bool spin_until(rclcpp::node_interfaces::NodeBaseInterface::SharedPtr node_iface
   return pred();
 }
 
+// decision dispatches goals in the motor's odom frame (map→odom TF).
+// Identity TF keeps the dispatched goal equal to the map-frame goal here.
+// LifecycleNode does NOT derive from rclcpp::Node (jazzy composes the node
+// interfaces) — publish the TF from a plain rclcpp::Node instead.
+void publish_identity_map_odom_tf() {
+  auto tf_node = std::make_shared<rclcpp::Node>("decision_tf_pub");
+  auto tf_broadcaster =
+      std::make_shared<tf2_ros::StaticTransformBroadcaster>(tf_node);
+  geometry_msgs::msg::TransformStamped tf;
+  tf.header.stamp = tf_node->now();
+  tf.header.frame_id = "map";
+  tf.child_frame_id = "amr/odom";
+  tf.transform.translation.x = 0.0;
+  tf.transform.translation.y = 0.0;
+  tf.transform.translation.z = 0.0;
+  tf.transform.rotation.w = 1.0;
+  tf_broadcaster->sendTransform(tf);
+}
+
 // Task-derived goal: perception objects are obstacles, NOT navigation targets.
 // Regression: TargetSelector used objects[0] as the goal — in a static scene
 // (walls/racks) the robot chased the nearest obstacle forever.
@@ -39,6 +61,7 @@ TEST_F(DecisionTest, TaskGoal_IgnoresPerceptionTarget) {
   decision->set_parameter(rclcpp::Parameter("goal_x", 3.0));
   decision->set_parameter(rclcpp::Parameter("goal_y", 0.0));
   decision->activate();
+  publish_identity_map_odom_tf();
 
   float received_x = -1.0F, received_y = -1.0F;
   bool goal_received = false;
@@ -76,6 +99,11 @@ TEST_F(DecisionTest, TaskGoal_IgnoresPerceptionTarget) {
   auto pub = decision->create_publisher<ros2_robot_middleware::msg::PerceptionObjects>(
       "/perception/objects", rclcpp::QoS(10).reliable());
   pub->on_activate();
+
+  // Let the static map→odom TF reach decision's TF listener before perception
+  // triggers a dispatch — dispatch defers while the transform is unavailable.
+  spin_until(decision->get_node_base_interface(),
+             [] { return false; }, std::chrono::milliseconds(300));
   pub->publish(perception);
 
   ASSERT_TRUE(spin_until(decision->get_node_base_interface(),
@@ -95,6 +123,7 @@ TEST_F(DecisionTest, BlockedGoal_DoesNotSendGoal) {
   decision->set_parameter(rclcpp::Parameter("goal_x", 3.0));
   decision->set_parameter(rclcpp::Parameter("goal_y", 0.0));
   decision->activate();
+  publish_identity_map_odom_tf();
 
   bool goal_received = false;
   auto mock_server = rclcpp_action::create_server<ros2_robot_middleware::action::MoveToPose>(
@@ -128,6 +157,10 @@ TEST_F(DecisionTest, BlockedGoal_DoesNotSendGoal) {
   auto pub = decision->create_publisher<ros2_robot_middleware::msg::PerceptionObjects>(
       "/perception/objects", rclcpp::QoS(10).reliable());
   pub->on_activate();
+
+  // Let the static TF reach decision's listener first (see above).
+  spin_until(decision->get_node_base_interface(),
+             [] { return false; }, std::chrono::milliseconds(300));
   pub->publish(perception);
 
   // Spin a fixed window; the goal must never arrive.

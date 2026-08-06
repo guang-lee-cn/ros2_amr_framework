@@ -11,8 +11,11 @@
 #include "std_msgs/msg/string.hpp"
 #include "geometry_msgs/msg/pose_array.hpp"
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
+#include "tf2_ros/buffer.h"
+#include "tf2_ros/transform_listener.h"
 
 #include <atomic>
+#include <memory>
 #include <mutex>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
@@ -69,6 +72,13 @@ private:
   mutable std::mutex pose_mutex_;
   amr::domain::planning::Pose current_pose_{0.0F, 0.0F};
   std::atomic<bool> has_pose_{false};
+
+  // map→odom TF (AMCL publishes it). decision plans in the map frame but the
+  // motor tracks odom/world-frame poses — dispatched goals are transformed
+  // into the motor's frame (fixes the G1 coordinate mismatch that drove the
+  // robot out of the warehouse). Unique_ptrs created in on_configure.
+  std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
+  std::unique_ptr<tf2_ros::TransformListener> tf_listener_;
 
   // Preemption state (ROS2-specific — goal handle lifecycle)
   rclcpp_action::ClientGoalHandle<ros2_robot_middleware::action::MoveToPose>::SharedPtr active_goal_;

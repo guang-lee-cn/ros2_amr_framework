@@ -16,6 +16,7 @@ find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
 find_package(diagnostic_msgs REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(std_msgs REQUIRED)
@@ -71,7 +72,7 @@ add_library(compute_component SHARED
 )
 target_include_directories(compute_component PUBLIC include ${CMAKE_CURRENT_BINARY_DIR}/rosidl_generator_cpp)
 ament_target_dependencies(compute_component
-  rclcpp rclcpp_action rclcpp_lifecycle rclcpp_components lifecycle_msgs sensor_msgs geometry_msgs nav_msgs tf2_ros diagnostic_msgs spdlog std_msgs
+  rclcpp rclcpp_action rclcpp_lifecycle rclcpp_components lifecycle_msgs sensor_msgs geometry_msgs nav_msgs tf2_ros tf2_geometry_msgs diagnostic_msgs spdlog std_msgs
 )
 target_link_libraries(compute_component "${cpp_typesupport_target}")
 
@@ -188,6 +189,7 @@ if(BUILD_TESTING)
     target_compile_definitions(${TEST_NAME} PRIVATE AMR_TEST_HOOKS)  # enables AMR_TEST_ONLY() macro
     ament_target_dependencies(${TEST_NAME}
       rclcpp rclcpp_action rclcpp_lifecycle sensor_msgs geometry_msgs std_msgs
+      tf2_ros tf2_geometry_msgs
     )
     rosidl_get_typesupport_target(cpp_typesupport_target
       ${PROJECT_NAME} "rosidl_typesupport_cpp")
