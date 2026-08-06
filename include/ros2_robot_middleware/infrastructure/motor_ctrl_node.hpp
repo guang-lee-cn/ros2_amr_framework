@@ -2,11 +2,13 @@
 #define ROS2_ROBOT_MIDDLEWARE_MOTOR_CTRL_NODE_HPP_
 
 #include "ros2_robot_middleware/action/move_to_pose.hpp"
+#include "ros2_robot_middleware/domain/execution/collision_guard.hpp"
 #include "ros2_robot_middleware/domain/execution/pure_pursuit.hpp"
 #include "ros2_robot_middleware/domain/planning/track_error_monitor.hpp"
 #include "ros2_robot_middleware/srv/set_param.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "nav_msgs/msg/odometry.hpp"
+#include "sensor_msgs/msg/laser_scan.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 
 #include <atomic>
@@ -48,13 +50,16 @@ private:
                         std::shared_ptr<ros2_robot_middleware::srv::SetParam::Response> response);
 
   void on_odom(const nav_msgs::msg::Odometry::SharedPtr msg);
+  void on_scan(const sensor_msgs::msg::LaserScan::SharedPtr msg);
 
   // Publish the velocity command to the base (DiffDrive in sim, IActuator in prod)
   void publish_twist(float linear, float angular);
 
-  // Domain layer — Pure Pursuit path tracking + lateral error monitor
+  // Domain layer — Pure Pursuit path tracking + lateral error monitor +
+  // collision guard (G2-C: clamps forward velocity by nearest FOV obstacle)
   amr::domain::execution::PurePursuit tracker_;
   amr::domain::planning::TrackErrorMonitor error_monitor_;
+  amr::domain::execution::CollisionGuard guard_;
 
   // ROS2 infrastructure
   rclcpp_action::Server<ros2_robot_middleware::action::MoveToPose>::SharedPtr action_server_;
@@ -71,6 +76,11 @@ private:
   // the same group (rclcpp known behaviour). Separate group ⇒ runs in parallel.
   rclcpp::CallbackGroup::SharedPtr odom_cb_group_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
+
+  // /scan — collision guard input (G2-C). Shares the odom callback group:
+  // both are lightweight non-blocking callbacks that must not be starved by
+  // the blocking execute() loop in the default group.
+  rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
 
   // Thread-safe current pose (updated by odom callback, read by execute loop)
   mutable std::mutex pose_mutex_;

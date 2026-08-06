@@ -5,6 +5,7 @@
 #include "ros2_robot_middleware/observability/metrics_registry.hpp"
 #include "ros2_robot_middleware/observability/tracer.hpp"
 #include "geometry_msgs/msg/twist.hpp"
+#include "sensor_msgs/msg/laser_scan.hpp"
 
 #include <chrono>
 #include <cmath>
@@ -60,6 +61,15 @@ MotorCtrlNode::on_configure(const rclcpp_lifecycle::State &)
     [this](nav_msgs::msg::Odometry::SharedPtr msg) { on_odom(msg); },
     odom_opts);
 
+  // /scan — collision guard input (G2-C). Shares the odom callback group so
+  // the blocking execute() loop cannot starve the guard's laser data.
+  rclcpp::SubscriptionOptions scan_opts;
+  scan_opts.callback_group = odom_cb_group_;
+  scan_sub_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
+    "/scan", rclcpp::QoS(10).reliable(),
+    [this](sensor_msgs::msg::LaserScan::SharedPtr msg) { on_scan(msg); },
+    scan_opts);
+
   return CallbackReturn::SUCCESS;
 }
 
@@ -97,6 +107,7 @@ MotorCtrlNode::on_cleanup(const rclcpp_lifecycle::State &)
   status_pub_.reset();
   cmd_vel_pub_.reset();
   odom_sub_.reset();
+  scan_sub_.reset();
 
   return CallbackReturn::SUCCESS;
 }
@@ -110,6 +121,7 @@ MotorCtrlNode::on_shutdown(const rclcpp_lifecycle::State &)
   status_pub_.reset();
   cmd_vel_pub_.reset();
   odom_sub_.reset();
+  scan_sub_.reset();
 
   return CallbackReturn::SUCCESS;
 }
@@ -124,6 +136,15 @@ void MotorCtrlNode::on_odom(const nav_msgs::msg::Odometry::SharedPtr msg)
   current_pose_.theta = static_cast<float>(
       2.0 * std::atan2(q.z, q.w));
   odom_valid_.store(true, std::memory_order_release);
+}
+
+void MotorCtrlNode::on_scan(const sensor_msgs::msg::LaserScan::SharedPtr msg)
+{
+  amr::domain::execution::ScanData scan;
+  scan.ranges = msg->ranges;  // std::vector<float> copy — 360 beams, cheap
+  scan.angle_min = static_cast<float>(msg->angle_min);
+  scan.angle_increment = static_cast<float>(msg->angle_increment);
+  guard_.set_scan(std::move(scan), std::chrono::steady_clock::now());
 }
 
 rclcpp_action::GoalResponse MotorCtrlNode::handle_goal(
@@ -200,6 +221,26 @@ void MotorCtrlNode::execute(const std::shared_ptr<ServerGoalHandle> goal_handle)
       result->elapsed_time = 0;
       goal_handle->succeed(result);
       RCLCPP_INFO(this->get_logger(), "Goal reached: (%.2f, %.2f)", current.x, current.y);
+      return;
+    }
+
+    // Collision guard (G2-C): clamp forward velocity by the nearest obstacle
+    // in the forward FOV. Angular velocity is untouched — the diff-drive can
+    // still steer around. An obstacle holding the robot stopped >3s fails
+    // the goal so the decision layer replans (anti-deadlock, not a crash).
+    const auto guard_now = std::chrono::steady_clock::now();
+    twist.linear = guard_.clamp(twist.linear, guard_now);
+    if (guard_.stopped(guard_now) &&
+        guard_.blocked_for(guard_now) > std::chrono::seconds(3)) {
+      publish_twist(0.0F, 0.0F);
+      auto result = std::make_shared<MoveToPose::Result>();
+      result->reached = false;
+      result->final_x = current.x;
+      result->final_y = current.y;
+      result->elapsed_time = 0;
+      goal_handle->abort(result);
+      RCLCPP_WARN(this->get_logger(),
+                  "Collision guard blocked >3s — aborting goal for replan");
       return;
     }
 

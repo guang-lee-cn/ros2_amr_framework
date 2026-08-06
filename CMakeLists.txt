@@ -209,6 +209,7 @@ if(BUILD_TESTING)
   add_amr_test(test_path_smoother quality/src/test_path_smoother.cpp)
   add_amr_test(test_track_error  quality/src/test_track_error.cpp)
   add_amr_test(test_grid_updater quality/src/test_grid_updater.cpp)
+  add_amr_test(test_collision_guard quality/src/test_collision_guard.cpp)
   add_amr_test(test_integration_scenario quality/src/test_integration_scenario.cpp)
 endif()
 
