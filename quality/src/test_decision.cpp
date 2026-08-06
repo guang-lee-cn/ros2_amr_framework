@@ -30,9 +30,14 @@ bool spin_until(rclcpp::node_interfaces::NodeBaseInterface::SharedPtr node_iface
   return pred();
 }
 
-TEST_F(DecisionTest, PerceptionArrives_SendsGoalToTargetPose) {
+// Task-derived goal: perception objects are obstacles, NOT navigation targets.
+// Regression: TargetSelector used objects[0] as the goal — in a static scene
+// (walls/racks) the robot chased the nearest obstacle forever.
+TEST_F(DecisionTest, TaskGoal_IgnoresPerceptionTarget) {
   auto decision = std::make_shared<DecisionNode>();
   decision->configure();
+  decision->set_parameter(rclcpp::Parameter("goal_x", 3.0));
+  decision->set_parameter(rclcpp::Parameter("goal_y", 0.0));
   decision->activate();
 
   float received_x = -1.0F, received_y = -1.0F;
@@ -58,6 +63,7 @@ TEST_F(DecisionTest, PerceptionArrives_SendsGoalToTargetPose) {
         gh->succeed(result);
       });
 
+  // Perception detects an object at (2.0, 1.5) — this must NOT become the goal.
   auto perception = ros2_robot_middleware::msg::PerceptionObjects{};
   perception.header.frame_id = "base_link";
   auto obj = ros2_robot_middleware::msg::Object{};
@@ -77,6 +83,56 @@ TEST_F(DecisionTest, PerceptionArrives_SendsGoalToTargetPose) {
                          std::chrono::seconds(3)));
 
   EXPECT_TRUE(goal_received);
-  EXPECT_FLOAT_EQ(received_x, 2.0F);
-  EXPECT_FLOAT_EQ(received_y, 1.5F);
+  EXPECT_FLOAT_EQ(received_x, 3.0F);  // task goal, NOT the detected object
+  EXPECT_FLOAT_EQ(received_y, 0.0F);  // NOT 1.5
+}
+
+// A* must find a path to the task goal; when the goal cell is blocked, no
+// goal may be dispatched (previously send_goal ran unconditionally).
+TEST_F(DecisionTest, BlockedGoal_DoesNotSendGoal) {
+  auto decision = std::make_shared<DecisionNode>();
+  decision->configure();
+  decision->set_parameter(rclcpp::Parameter("goal_x", 3.0));
+  decision->set_parameter(rclcpp::Parameter("goal_y", 0.0));
+  decision->activate();
+
+  bool goal_received = false;
+  auto mock_server = rclcpp_action::create_server<ros2_robot_middleware::action::MoveToPose>(
+      decision, "/cmd/move_to_pose",
+      [](const rclcpp_action::GoalUUID &,
+         std::shared_ptr<const ros2_robot_middleware::action::MoveToPose::Goal>) {
+        return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+      },
+      [](const std::shared_ptr<rclcpp_action::ServerGoalHandle<ros2_robot_middleware::action::MoveToPose>>) {
+        return rclcpp_action::CancelResponse::ACCEPT;
+      },
+      [&](const std::shared_ptr<rclcpp_action::ServerGoalHandle<ros2_robot_middleware::action::MoveToPose>> gh) {
+        goal_received = true;
+        auto result = std::make_shared<ros2_robot_middleware::action::MoveToPose::Result>();
+        result->reached = true;
+        result->final_x = 3.0F;
+        result->final_y = 0.0F;
+        gh->succeed(result);
+      });
+
+  // Object placed exactly at the task goal → grid marks it → A* has no path.
+  auto perception = ros2_robot_middleware::msg::PerceptionObjects{};
+  perception.header.frame_id = "base_link";
+  auto obj = ros2_robot_middleware::msg::Object{};
+  obj.id = "blocker";
+  obj.x = 3.0F;
+  obj.y = 0.0F;
+  obj.z = 0.0F;
+  perception.objects.push_back(obj);
+
+  auto pub = decision->create_publisher<ros2_robot_middleware::msg::PerceptionObjects>(
+      "/perception/objects", rclcpp::QoS(10).reliable());
+  pub->on_activate();
+  pub->publish(perception);
+
+  // Spin a fixed window; the goal must never arrive.
+  spin_until(decision->get_node_base_interface(),
+             [&goal_received] { return goal_received; },
+             std::chrono::milliseconds(1500));
+  EXPECT_FALSE(goal_received);
 }

@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <limits>
 #include <rclcpp_components/register_node_macro.hpp>
 
@@ -15,10 +16,16 @@
 DecisionNode::DecisionNode()
   : rclcpp_lifecycle::LifecycleNode("decision")
 {
+  // Task-derived navigation goal (from launch params / fleet manager).
+  // Perception objects are obstacles, NOT the goal — see on_perception.
+  this->declare_parameter<float>("goal_x", 0.0F);
+  this->declare_parameter<float>("goal_y", 0.0F);
 }
 
 DecisionNode::DecisionNode(const rclcpp::NodeOptions &options)
   : rclcpp_lifecycle::LifecycleNode("decision", options) {
+  this->declare_parameter<float>("goal_x", 0.0F);
+  this->declare_parameter<float>("goal_y", 0.0F);
 }
 
 // ── Lifecycle callbacks ──────────────────────────────────────────────────────
@@ -29,6 +36,11 @@ DecisionNode::on_configure(const rclcpp_lifecycle::State &)
   decision_sub_ = this->create_subscription<PerceptionObjects>(
     "/perception/objects", rclcpp::QoS(10).reliable(),
     [this](PerceptionObjects::SharedPtr msg) { on_perception(msg); });
+
+  // Robot pose for the A* start — replaced hardcoded (0,0).
+  odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
+    "/odom", rclcpp::QoS(10).reliable(),
+    [this](nav_msgs::msg::Odometry::SharedPtr msg) { on_odom(msg); });
 
   client_ = rclcpp_action::create_client<MoveToPose>(this, "/cmd/move_to_pose");
 
@@ -75,6 +87,7 @@ DecisionNode::CallbackReturn
 DecisionNode::on_cleanup(const rclcpp_lifecycle::State &)
 {
   decision_sub_.reset();
+  odom_sub_.reset();
   client_.reset();
   heartbeat_pub_.reset();
   path_pub_.reset();
@@ -86,6 +99,7 @@ DecisionNode::on_shutdown(const rclcpp_lifecycle::State &)
 {
   heartbeat_timer_.reset();
   decision_sub_.reset();
+  odom_sub_.reset();
   client_.reset();
   heartbeat_pub_.reset();
   path_pub_.reset();
@@ -100,53 +114,74 @@ void DecisionNode::on_perception(const PerceptionObjects::SharedPtr& objs)
   TRACE_SCOPE(amr::trace::DECISION_ON_PERCEPTION);
   auto t_start = std::chrono::steady_clock::now();
 
-  if (objs->objects.empty()) return;
-
   auto &m = amr::observability::shared_metrics();
   m.object_count.store(static_cast<int32_t>(objs->objects.size()),
                        std::memory_order_relaxed);
 
-  if (preempt_.should_preempt(active_goal_ != nullptr, 0.0F, 0.0F)) {
-    cancel_active_goal();
+  // 1. Perception objects are OBSTACLES — mark all of them into the grid.
+  //    (Regression: objects[0] was picked as the navigation goal via
+  //    TargetSelector, so in a static scene the robot chased the nearest
+  //    wall/rack forever. The goal now comes from the task layer below.)
+  std::fill(demo_grid_.cells.begin(), demo_grid_.cells.end(), false);
+  amr::domain::planning::PerceivedObject obstacles[8];
+  std::size_t n_obs = 0;
+  for (std::size_t i = 0; i < objs->objects.size() && n_obs < 8; ++i) {
+    obstacles[n_obs++] = {objs->objects[i].x, objs->objects[i].y,
+                          objs->objects[i].id.c_str()};
+  }
+  if (n_obs > 0) {
+    grid_updater_.mark_obstacles(demo_grid_, obstacles, n_obs,
+                                 std::numeric_limits<std::size_t>::max());
   }
 
-  amr::domain::planning::PerceivedObject obj{objs->objects[0].x,
-                                              objs->objects[0].y,
-                                               objs->objects[0].id.c_str()};
-  amr::domain::planning::Goal goal;
-  if (selector_.select(&obj, 1, goal)) {
-    // Mark all perceived objects except the chosen target as obstacles.
-    // Simple grid: rebuild from scratch each cycle — obstacles are transient.
-    std::fill(demo_grid_.cells.begin(), demo_grid_.cells.end(), false);
-    amr::domain::planning::PerceivedObject obstacles[8];
-    std::size_t n_obs = 0;
-    for (std::size_t i = 0; i < objs->objects.size() && n_obs < 8; ++i) {
-      if (i == 0) continue;  // objects[0] is the navigation target
-      obstacles[n_obs++] = {objs->objects[i].x, objs->objects[i].y,
-                            objs->objects[i].id.c_str()};
-    }
-    if (n_obs > 0) {
-      grid_updater_.mark_obstacles(demo_grid_, obstacles, n_obs,
-                                   std::numeric_limits<std::size_t>::max());
-    }
+  // 2. Task-derived goal (launch param / fleet manager), NOT perception.
+  const float gx = static_cast<float>(this->get_parameter("goal_x").as_double());
+  const float gy = static_cast<float>(this->get_parameter("goal_y").as_double());
 
-    { AMR_PERF_PHASE("decision:astar");
-      amr::domain::planning::Pose start{0.0F, 0.0F};
-      amr::domain::planning::Pose goal_pose{goal.x, goal.y};
-      auto path = astar_.plan(demo_grid_, start, goal_pose);
-      if (!path.empty()) {
-        // Smooth the polyline for PurePursuit (rounds corners, dense samples).
-        auto smooth = smoother_.smooth(path);
-        publish_path(smooth);
-      }
-    }
-    { AMR_PERF_PHASE("decision:send_goal");
-      send_goal(goal.x, goal.y); }
+  // 3. A* from the real robot pose (fallback origin pre-odom).
+  amr::domain::planning::Pose start;
+  {
+    std::lock_guard<std::mutex> lock(pose_mutex_);
+    start = current_pose_;
   }
+  amr::domain::planning::Pose goal_pose{gx, gy};
+
+  // 4. Task complete? Robot already within arrival tolerance of the goal —
+  //    do not re-dispatch the same goal (prevents the restart-overshoot loop).
+  constexpr float kArrivalTolerance = 0.15F;  // > PurePursuit goal_tolerance (0.1)
+  const float start_to_goal = std::hypot(start.x - gx, start.y - gy);
+  if (start_to_goal < kArrivalTolerance) {
+    return;  // already there
+  }
+
+  auto path = astar_.plan(demo_grid_, start, goal_pose);
+  if (path.empty()) {
+    // Goal blocked: no useless dispatch; re-plan on the next perception
+    // cycle once the obstacle clears. An in-flight goal is kept.
+    return;
+  }
+
+  // 4. Goal lock: perception noise must not preempt an executing goal.
+  if (active_goal_) return;
+
+  { AMR_PERF_PHASE("decision:astar");
+    auto smooth = smoother_.smooth(path);
+    publish_path(smooth);
+  }
+  { AMR_PERF_PHASE("decision:send_goal");
+    send_goal(gx, gy); }
 
   auto lat_us = std::chrono::duration_cast<std::chrono::microseconds>(
                     std::chrono::steady_clock::now() - t_start).count();
   m.decision_latency.record(lat_us);
+}
+
+void DecisionNode::on_odom(const nav_msgs::msg::Odometry::SharedPtr msg)
+{
+  std::lock_guard<std::mutex> lock(pose_mutex_);
+  current_pose_.x = static_cast<float>(msg->pose.pose.position.x);
+  current_pose_.y = static_cast<float>(msg->pose.pose.position.y);
+  has_pose_.store(true, std::memory_order_release);
 }
 
 // ── Action client wiring (ROS2-specific, stays in Node) ─────────────────────

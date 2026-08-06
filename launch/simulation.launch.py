@@ -194,6 +194,10 @@ def generate_launch_description():
                 # IMU 保持 simulated（robot_localization 用，模拟数据够）。
                 "sensors.lidar.type": "sick_tim781",
                 "sensors.lidar.topic": "/scan",
+                # decision 任务点（任务层下发）。warehouse 场景第一堵墙在 x=3，
+                # 设 2.5 为墙前可达任务点 —— 感知物体全作障碍，不追目标。
+                "goal_x": 2.5,
+                "goal_y": 0.0,
             }],
         ),
         # health_monitor 不参与仿真：其 1s 检查会误判 compute 启动期节点为 ERROR，

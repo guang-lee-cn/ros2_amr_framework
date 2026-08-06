@@ -66,6 +66,10 @@ private:
   rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub_;
 
   // /odom feedback — closed-loop pose source (robot_localization EKF)
+  // Dedicated callback group: the blocking action execute() loop lives in the
+  // node's default MutuallyExclusive group and would starve a subscription in
+  // the same group (rclcpp known behaviour). Separate group ⇒ runs in parallel.
+  rclcpp::CallbackGroup::SharedPtr odom_cb_group_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
 
   // Thread-safe current pose (updated by odom callback, read by execute loop)

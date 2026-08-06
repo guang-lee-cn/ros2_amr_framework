@@ -10,7 +10,10 @@
 #include "ros2_robot_middleware/msg/perception_objects.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "geometry_msgs/msg/pose_array.hpp"
+#include "nav_msgs/msg/odometry.hpp"
 
+#include <atomic>
+#include <mutex>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
@@ -33,6 +36,7 @@ public:
 
 private:
   void on_perception(const ros2_robot_middleware::msg::PerceptionObjects::SharedPtr &objs);
+  void on_odom(const nav_msgs::msg::Odometry::SharedPtr msg);
   void on_goal_response(
     const rclcpp_action::ClientGoalHandle<ros2_robot_middleware::action::MoveToPose>::SharedPtr &goalhdl);
   void on_result(
@@ -56,6 +60,12 @@ private:
   rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseArray>::SharedPtr path_pub_;
   rclcpp::TimerBase::SharedPtr heartbeat_timer_;
   rclcpp_action::Client<ros2_robot_middleware::action::MoveToPose>::SharedPtr client_;
+
+  // /odom — robot pose used as the A* start (replaces hardcoded (0,0))
+  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
+  mutable std::mutex pose_mutex_;
+  amr::domain::planning::Pose current_pose_{0.0F, 0.0F};
+  std::atomic<bool> has_pose_{false};
 
   // Preemption state (ROS2-specific — goal handle lifecycle)
   rclcpp_action::ClientGoalHandle<ros2_robot_middleware::action::MoveToPose>::SharedPtr active_goal_;
