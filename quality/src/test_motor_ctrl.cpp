@@ -7,7 +7,9 @@
 #include <gtest/gtest.h>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
+#include <geometry_msgs/msg/twist.hpp>
 
+#include <atomic>
 #include <chrono>
 #include <memory>
 #include <thread>
@@ -102,6 +104,58 @@ TEST_F(MotorCtrlTest, FarTarget_StepsUntilReached) {
   SpinHelper spin(motor->get_node_base_interface());
   ASSERT_TRUE(wait_until([&done] { return done; }, std::chrono::seconds(5)));
   EXPECT_TRUE(reached);
+}
+
+// Regression: execute() used to compute twist via PurePursuit but never
+// published it to /cmd_vel — the final hop to the base (DiffDrive in sim,
+// real chassis in prod). Tracking a target must emit a non-zero twist.
+TEST_F(MotorCtrlTest, FarTarget_PublishesCmdVel) {
+  auto motor = std::make_shared<MotorCtrlNode>();
+  motor->configure();
+  motor->activate();
+
+  std::atomic<bool> got_nonzero{false};
+  // Listen on a standalone node — a subscription on the motor's own
+  // LifecycleNode is not guaranteed to be processed by the spin threads.
+  auto listener = std::make_shared<rclcpp::Node>("cmd_vel_listener");
+  auto sub = listener->create_subscription<geometry_msgs::msg::Twist>(
+      "/cmd_vel", rclcpp::QoS(10),
+      [&got_nonzero](const geometry_msgs::msg::Twist::SharedPtr msg) {
+        if (std::abs(msg->linear.x) > 0.01F || std::abs(msg->angular.z) > 0.01F) {
+          got_nonzero.store(true, std::memory_order_relaxed);
+        }
+      });
+
+  auto client = rclcpp_action::create_client<ros2_robot_middleware::action::MoveToPose>(
+      motor, "/cmd/move_to_pose");
+  ASSERT_TRUE(client->wait_for_action_server(std::chrono::seconds(2)));
+
+  auto goal = ros2_robot_middleware::action::MoveToPose::Goal{};
+  goal.target_x = 0.5F;
+  goal.target_y = 0.0F;
+  goal.target_theta = 0.0F;
+  goal.max_speed = 0.5F;
+
+  bool done = false;
+  auto opts = rclcpp_action::Client<ros2_robot_middleware::action::MoveToPose>::SendGoalOptions{};
+  opts.result_callback =
+      [&done](const rclcpp_action::ClientGoalHandle<ros2_robot_middleware::action::MoveToPose>::WrappedResult &) {
+        done = true;
+      };
+
+  client->async_send_goal(goal, opts);
+  rclcpp::executors::MultiThreadedExecutor exec;
+  exec.add_node(motor->get_node_base_interface());
+  exec.add_node(listener->get_node_base_interface());
+  auto spin_thread = std::thread([&exec] { exec.spin(); });
+  ASSERT_TRUE(wait_until(
+      [&got_nonzero] { return got_nonzero.load(std::memory_order_relaxed); },
+      std::chrono::seconds(3)));
+  exec.cancel();
+  spin_thread.join();
+  EXPECT_TRUE(got_nonzero.load(std::memory_order_relaxed));
+  // Let the goal complete so teardown is clean.
+  wait_until([&done] { return done; }, std::chrono::seconds(5));
 }
 
 TEST_F(MotorCtrlTest, SetParamKnown_UpdatesAndAcks) {

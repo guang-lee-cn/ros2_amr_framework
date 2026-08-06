@@ -156,6 +156,24 @@ def generate_launch_description():
         output="screen",
     )
 
+    # 里程计桥（新增方向）：gz DiffDrive odometry → ROS /odom
+    # motor_ctrl 以 /odom 为闭环位姿源（订阅 robot_localization EKF 或此直连），
+    # 缺此桥则 motor fallback 运动学积分，位姿与物理车漂移。
+    bridge_odom = RosNode(
+        package="ros_gz_bridge",
+        executable="parameter_bridge",
+        name="bridge_odom",
+        arguments=[
+            "/model/amr/odometry"
+            "@nav_msgs/msg/Odometry"
+            "[gz.msgs.Odometry",
+        ],
+        remappings=[
+            ("/model/amr/odometry", "/odom"),
+        ],
+        output="screen",
+    )
+
     # ── 我们的业务节点 ──────────────────────────────────────────────
     # 仿真模式下 sensor 节点不启动——Gazebo 传感器通过 ros_gz_bridge 直接
     # 提供 /sensor/lidar, /sensor/imu, /sensor/camera 数据。
@@ -198,5 +216,6 @@ def generate_launch_description():
         bridge_imu,
         bridge_camera,
         bridge_cmd_vel,
+        bridge_odom,
         *nodes,
     ])

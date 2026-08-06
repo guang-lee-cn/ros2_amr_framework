@@ -7,6 +7,7 @@
 #include "ros2_robot_middleware/srv/set_param.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "nav_msgs/msg/odometry.hpp"
+#include "geometry_msgs/msg/twist.hpp"
 
 #include <atomic>
 #include <mutex>
@@ -48,6 +49,9 @@ private:
 
   void on_odom(const nav_msgs::msg::Odometry::SharedPtr msg);
 
+  // Publish the velocity command to the base (DiffDrive in sim, IActuator in prod)
+  void publish_twist(float linear, float angular);
+
   // Domain layer — Pure Pursuit path tracking + lateral error monitor
   amr::domain::execution::PurePursuit tracker_;
   amr::domain::planning::TrackErrorMonitor error_monitor_;
@@ -57,6 +61,9 @@ private:
   rclcpp::Service<ros2_robot_middleware::srv::SetParam>::SharedPtr service_server_;
   rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::String>::SharedPtr status_pub_;
   rclcpp::TimerBase::SharedPtr status_timer_;
+
+  // /cmd_vel — velocity command to the base (closed-loop execution output)
+  rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub_;
 
   // /odom feedback — closed-loop pose source (robot_localization EKF)
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;

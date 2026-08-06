@@ -4,6 +4,7 @@
 #include "generated/perf_instrumentation.hpp"
 #include "ros2_robot_middleware/observability/metrics_registry.hpp"
 #include "ros2_robot_middleware/observability/tracer.hpp"
+#include "geometry_msgs/msg/twist.hpp"
 
 #include <chrono>
 #include <cmath>
@@ -42,6 +43,10 @@ MotorCtrlNode::on_configure(const rclcpp_lifecycle::State &)
   status_pub_ = this->create_publisher<std_msgs::msg::String>(
     "/cmd/status", rclcpp::QoS(10).reliable());
 
+  // Velocity command to the base (DiffDrive in sim, IActuator in prod)
+  cmd_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>(
+    "/cmd_vel", rclcpp::QoS(10).reliable());
+
   // Subscribe to /odom (robot_localization EKF) — closed-loop pose source
   odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
     "/odom", rclcpp::QoS(10).reliable(),
@@ -61,6 +66,7 @@ MotorCtrlNode::on_activate(const rclcpp_lifecycle::State &)
   });
 
   status_pub_->on_activate();
+  cmd_vel_pub_->on_activate();
 
   return CallbackReturn::SUCCESS;
 }
@@ -70,6 +76,7 @@ MotorCtrlNode::on_deactivate(const rclcpp_lifecycle::State &)
 {
   status_timer_.reset();
   status_pub_->on_deactivate();
+  cmd_vel_pub_->on_deactivate();
 
   return CallbackReturn::SUCCESS;
 }
@@ -80,6 +87,7 @@ MotorCtrlNode::on_cleanup(const rclcpp_lifecycle::State &)
   action_server_.reset();
   service_server_.reset();
   status_pub_.reset();
+  cmd_vel_pub_.reset();
   odom_sub_.reset();
 
   return CallbackReturn::SUCCESS;
@@ -92,6 +100,7 @@ MotorCtrlNode::on_shutdown(const rclcpp_lifecycle::State &)
   action_server_.reset();
   service_server_.reset();
   status_pub_.reset();
+  cmd_vel_pub_.reset();
   odom_sub_.reset();
 
   return CallbackReturn::SUCCESS;
@@ -173,6 +182,9 @@ void MotorCtrlNode::execute(const std::shared_ptr<ServerGoalHandle> goal_handle)
     auto twist = tracker_.track(path, current);
 
     if (twist.linear == 0.0F && twist.angular == 0.0F) {
+      // Command a full stop before reporting arrival — the base keeps its
+      // last speed until it receives a new message.
+      publish_twist(0.0F, 0.0F);
       auto result = std::make_shared<MoveToPose::Result>();
       result->reached = true;
       result->final_x = current.x;
@@ -194,6 +206,9 @@ void MotorCtrlNode::execute(const std::shared_ptr<ServerGoalHandle> goal_handle)
     } else if (err.level == amr::domain::planning::TrackErrorLevel::WARN) {
       twist.linear *= err.speed_scale;  // slow down when deviating
     }
+
+    // Publish the velocity command to the base (closed loop last hop).
+    publish_twist(twist.linear, twist.angular);
 
     // Pose advance: closed-loop when /odom is available; otherwise fall back
     // to kinematic integration (simulation/demo mode without a real base).
@@ -242,6 +257,13 @@ void MotorCtrlNode::execute(const std::shared_ptr<ServerGoalHandle> goal_handle)
 
     rate.sleep();
   }
+}
+
+void MotorCtrlNode::publish_twist(float linear, float angular) {
+  geometry_msgs::msg::Twist msg;
+  msg.linear.x = linear;
+  msg.angular.z = angular;
+  cmd_vel_pub_->publish(msg);
 }
 
 void MotorCtrlNode::handle_set_param(
