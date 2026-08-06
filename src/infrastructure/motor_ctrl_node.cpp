@@ -224,6 +224,19 @@ void MotorCtrlNode::execute(const std::shared_ptr<ServerGoalHandle> goal_handle)
       return;
     }
 
+    // VFH avoidance (G2-B): if a near obstacle blocks the goal bearing,
+    // override the steering toward the nearest passable gap and slow down
+    // slightly while turning. Same scan snapshot the guard clamps against.
+    {
+      const auto scan = guard_.snapshot();
+      const float goal_angle = tracker_.lookahead_bearing(path, current);
+      const auto avoid = vhf_.steer(scan, goal_angle, twist.linear);
+      if (!avoid.blocked && avoid.steering != 0.0F) {
+        twist.angular = avoid.steering;
+        twist.linear *= 0.7F;  // shed speed while turning around
+      }
+    }
+
     // Collision guard (G2-C): clamp forward velocity by the nearest obstacle
     // in the forward FOV. Angular velocity is untouched — the diff-drive can
     // still steer around. An obstacle holding the robot stopped >3s fails

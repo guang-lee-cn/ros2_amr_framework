@@ -80,6 +80,10 @@ public:
   /// Nearest obstacle distance inside the FOV (m); +inf when none.
   float nearest_distance() const;
 
+  /// Thread-safe copy of the latest scan — feeds the avoidance layer (VFH)
+  /// from the same sensor snapshot the guard clamps against.
+  ScanData snapshot() const;
+
   const Params &params() const { return params_; }
 
 private:
@@ -181,6 +185,15 @@ inline std::chrono::milliseconds CollisionGuard::blocked_for(
 inline float CollisionGuard::nearest_distance() const {
   std::lock_guard<std::mutex> lock(mtx_);
   return nearest_in_fov_locked();
+}
+
+inline ScanData CollisionGuard::snapshot() const {
+  std::lock_guard<std::mutex> lock(mtx_);
+  ScanData out;
+  out.ranges = scan_.ranges;
+  out.angle_min = scan_.angle_min;
+  out.angle_increment = scan_.angle_increment;
+  return out;
 }
 
 }  // namespace execution

@@ -104,6 +104,16 @@ public:
 
   const Params &params() const { return params_; }
 
+  /// Bearing to the lookahead point in the robot frame (rad) — the direction
+  /// the tracker is steering toward. Feeds the local avoidance layer (VFH).
+  float lookahead_bearing(const std::vector<Waypoint> &path,
+                          const Pose2D &current) const {
+    if (path.empty()) return 0.0F;
+    const Waypoint lp = find_lookahead(path, current);
+    float alpha = std::atan2(lp.y - current.y, lp.x - current.x) - current.theta;
+    return std::atan2(std::sin(alpha), std::cos(alpha));
+  }
+
 private:
   /// Find the lookahead point by walking the path from the robot's
   /// nearest waypoint, accumulating segment length until reaching the

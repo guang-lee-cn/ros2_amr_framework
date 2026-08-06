@@ -4,6 +4,7 @@
 #include "ros2_robot_middleware/action/move_to_pose.hpp"
 #include "ros2_robot_middleware/domain/execution/collision_guard.hpp"
 #include "ros2_robot_middleware/domain/execution/pure_pursuit.hpp"
+#include "ros2_robot_middleware/domain/execution/vfh_avoidance.hpp"
 #include "ros2_robot_middleware/domain/planning/track_error_monitor.hpp"
 #include "ros2_robot_middleware/srv/set_param.hpp"
 #include "std_msgs/msg/string.hpp"
@@ -56,10 +57,12 @@ private:
   void publish_twist(float linear, float angular);
 
   // Domain layer — Pure Pursuit path tracking + lateral error monitor +
-  // collision guard (G2-C: clamps forward velocity by nearest FOV obstacle)
+  // collision guard (G2-C: clamps forward velocity) + VFH avoidance
+  // (G2-B: steers around obstacles near the goal bearing)
   amr::domain::execution::PurePursuit tracker_;
   amr::domain::planning::TrackErrorMonitor error_monitor_;
   amr::domain::execution::CollisionGuard guard_;
+  amr::domain::execution::VfhAvoidance vhf_;
 
   // ROS2 infrastructure
   rclcpp_action::Server<ros2_robot_middleware::action::MoveToPose>::SharedPtr action_server_;
