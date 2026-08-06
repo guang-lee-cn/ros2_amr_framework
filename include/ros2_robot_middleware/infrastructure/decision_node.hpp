@@ -10,7 +10,7 @@
 #include "ros2_robot_middleware/msg/perception_objects.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "geometry_msgs/msg/pose_array.hpp"
-#include "nav_msgs/msg/odometry.hpp"
+#include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
 
 #include <atomic>
 #include <mutex>
@@ -36,7 +36,7 @@ public:
 
 private:
   void on_perception(const ros2_robot_middleware::msg::PerceptionObjects::SharedPtr &objs);
-  void on_odom(const nav_msgs::msg::Odometry::SharedPtr msg);
+  void on_amcl_pose(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
   void on_goal_response(
     const rclcpp_action::ClientGoalHandle<ros2_robot_middleware::action::MoveToPose>::SharedPtr &goalhdl);
   void on_result(
@@ -55,14 +55,17 @@ private:
   amr::domain::planning::OccupancyGrid demo_grid_;
 
   // ROS2 infrastructure
+  // Own callback group: the sibling motor_ctrl's action server can starve
+  // subscriptions sharing the node default group (rclcpp known behaviour).
+  rclcpp::CallbackGroup::SharedPtr perception_cb_group_;
   rclcpp::Subscription<ros2_robot_middleware::msg::PerceptionObjects>::SharedPtr decision_sub_;
   rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::String>::SharedPtr heartbeat_pub_;
   rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseArray>::SharedPtr path_pub_;
   rclcpp::TimerBase::SharedPtr heartbeat_timer_;
   rclcpp_action::Client<ros2_robot_middleware::action::MoveToPose>::SharedPtr client_;
 
-  // /odom — robot pose used as the A* start (replaces hardcoded (0,0))
-  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
+  // /amcl_pose — robot pose in the map frame, used as the A* start (G1c)
+  rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr amcl_pose_sub_;
   mutable std::mutex pose_mutex_;
   amr::domain::planning::Pose current_pose_{0.0F, 0.0F};
   std::atomic<bool> has_pose_{false};

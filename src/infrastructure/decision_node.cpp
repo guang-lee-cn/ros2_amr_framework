@@ -14,7 +14,8 @@
 // ── Constructors ────────────────────────────────────────────────────────────
 
 DecisionNode::DecisionNode()
-  : rclcpp_lifecycle::LifecycleNode("decision")
+  : rclcpp_lifecycle::LifecycleNode("decision"),
+    astar_(amr::domain::planning::AStarPlanner::Params{50000, 1.0F})
 {
   // Task-derived navigation goal (from launch params / fleet manager).
   // Perception objects are obstacles, NOT the goal — see on_perception.
@@ -23,7 +24,8 @@ DecisionNode::DecisionNode()
 }
 
 DecisionNode::DecisionNode(const rclcpp::NodeOptions &options)
-  : rclcpp_lifecycle::LifecycleNode("decision", options) {
+  : rclcpp_lifecycle::LifecycleNode("decision", options),
+    astar_(amr::domain::planning::AStarPlanner::Params{50000, 1.0F}) {
   this->declare_parameter<float>("goal_x", 0.0F);
   this->declare_parameter<float>("goal_y", 0.0F);
 }
@@ -33,14 +35,24 @@ DecisionNode::DecisionNode(const rclcpp::NodeOptions &options)
 DecisionNode::CallbackReturn
 DecisionNode::on_configure(const rclcpp_lifecycle::State &)
 {
+  // Own callback group so perception/pose subscriptions are not starved by
+  // the sibling motor_ctrl action server or the high-rate AMCL pose stream.
+  // Reentrant: on_amcl_pose (high-rate) must not serialize-block on_perception.
+  perception_cb_group_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
+  rclcpp::SubscriptionOptions decision_opts;
+  decision_opts.callback_group = perception_cb_group_;
   decision_sub_ = this->create_subscription<PerceptionObjects>(
     "/perception/objects", rclcpp::QoS(10).reliable(),
-    [this](PerceptionObjects::SharedPtr msg) { on_perception(msg); });
+    [this](PerceptionObjects::SharedPtr msg) { on_perception(msg); },
+    decision_opts);
 
-  // Robot pose for the A* start — replaced hardcoded (0,0).
-  odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
-    "/odom", rclcpp::QoS(10).reliable(),
-    [this](nav_msgs::msg::Odometry::SharedPtr msg) { on_odom(msg); });
+  // Robot pose in the map frame (AMCL), used as the A* start — G1c.
+  rclcpp::SubscriptionOptions amcl_opts;
+  amcl_opts.callback_group = perception_cb_group_;
+  amcl_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
+    "/amcl_pose", rclcpp::QoS(10).reliable(),
+    [this](geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg) { on_amcl_pose(msg); },
+    amcl_opts);
 
   client_ = rclcpp_action::create_client<MoveToPose>(this, "/cmd/move_to_pose");
 
@@ -50,12 +62,14 @@ DecisionNode::on_configure(const rclcpp_lifecycle::State &)
   path_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>(
     "/planning/path", rclcpp::QoS(10).reliable());
 
-  // Initialize demo OccupancyGrid (empty 200×200 grid, 5cm resolution, 10m×10m)
-  demo_grid_.width = 200;
-  demo_grid_.height = 200;
+  // Initialize OccupancyGrid (400×400 grid, 5cm resolution, 20m×20m).
+  // G1c: A* now plans in the map frame — warehouse obstacles sit at
+  // map coords x[8,15] y[6,15], so a 20m grid is required (10m overflowed).
+  demo_grid_.width = 400;
+  demo_grid_.height = 400;
   demo_grid_.resolution = 0.05F;
   demo_grid_.origin = {0.0F, 0.0F};
-  demo_grid_.cells.assign(200 * 200, false);
+  demo_grid_.cells.assign(400 * 400, false);
 
   return CallbackReturn::SUCCESS;
 }
@@ -87,7 +101,7 @@ DecisionNode::CallbackReturn
 DecisionNode::on_cleanup(const rclcpp_lifecycle::State &)
 {
   decision_sub_.reset();
-  odom_sub_.reset();
+  amcl_pose_sub_.reset();
   client_.reset();
   heartbeat_pub_.reset();
   path_pub_.reset();
@@ -99,7 +113,7 @@ DecisionNode::on_shutdown(const rclcpp_lifecycle::State &)
 {
   heartbeat_timer_.reset();
   decision_sub_.reset();
-  odom_sub_.reset();
+  amcl_pose_sub_.reset();
   client_.reset();
   heartbeat_pub_.reset();
   path_pub_.reset();
@@ -176,7 +190,8 @@ void DecisionNode::on_perception(const PerceptionObjects::SharedPtr& objs)
   m.decision_latency.record(lat_us);
 }
 
-void DecisionNode::on_odom(const nav_msgs::msg::Odometry::SharedPtr msg)
+void DecisionNode::on_amcl_pose(
+    const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg)
 {
   std::lock_guard<std::mutex> lock(pose_mutex_);
   current_pose_.x = static_cast<float>(msg->pose.pose.position.x);
