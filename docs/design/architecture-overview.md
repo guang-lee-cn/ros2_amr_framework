@@ -1,27 +1,89 @@
 # 架构总览（工作文档，持续更新）
 
-> 用途：**后续所有架构梳理流程（L1 总体 → L2 子系统 → L3 组件 → L4 类接口）的分析都追加到本文档**。
-> 每次分析追加一节，标记日期，保留历史，便于回溯进度与边界。
-> 图表规范见 `/home/guang/code/prompt/references/diagram-spec.md`（Mermaid 渲染规避规则）。
-> 日期：2026-08-07 首次建立
+> 用途：**后续所有架构梳理流程的分析都追加到本文档**，标记日期保留历史。
+> 图表规范：`/home/guang/code/prompt/references/diagram-spec.md` §6（Mermaid 渲染规避规则）。
+> 日期：2026-08-07 建立 / 2026-08-07 按"边界 + 两种视角 + 输入输出表 + 故障定位"重构
 
 ---
 
-## 1. 总体架构
+## 1. 小车边界（谁是小车，谁不是）
 
-### 1.1 用户视角（L1，黑盒）
+```mermaid
+flowchart TB
+    subgraph CAR["小车整车边界"]
+        CONT["compute_container 自动驾驶大脑（自研）<br>fusion 感知 / decision 决策 / motor 执行"]
+        LOC["定位与建图（开源 NAV2）<br>AMCL / map_server / slam_toolbox"]
+        PHYS["传感器与执行器（真车）<br>LiDAR / IMU / 差速电机"]
+        CONT --> PHYS
+        PHYS --> CONT
+        LOC --> CONT
+    end
+    ENV["环境<br>货架 / 障碍 / 道路 / 目标点"]
+    PHYS --> ENV
+    ENV --> PHYS
+    OPS["用户 / 调度系统"]
+    OPS -->|"任务目标"| CONT
+```
 
-从用户角度看，系统是一个"能自主导航的 AMR 整车"：下发任务目标，车执行，用户看到车的状态。内部模块是黑盒。
+- **小车 = 物理体（传感器/执行器）+ 自动驾驶大脑（compute_container）+ 车载定位（AMCL）**
+- **compute_container（自研）**：融合感知 + 决策 + 执行，单进程（intra-process 零拷贝）——小车的"大脑"
+- **AMCL / map_server / slam_toolbox（开源）**：独立进程，不在计算容器内——小车的"地图/定位外设"
+- **仿真器（当前）/ 真车硬件（生产）**：替代 `PHYS`，为大脑提供传感器数据、接收执行指令
+
+## 2. 两种视角
+
+### 2.1 用户视角（使用产品的人）
+
+用户看到的是**两个黑盒**：环境（货架/障碍/道路）和**小车（整车）**。用户不关心内部，只关心**行为是否符合预期**：
 
 ```mermaid
 flowchart LR
-    USER["用户 / 调度"] -->|"下发任务"| AMR["AMR 整车<br>自主导航"]
-    AMR -->|"位置 / 状态 / 地图"| VIEW["可视化界面<br>RViz / Grafana"]
+    ENV["环境黑盒<br>货架 / 障碍 / 平坦路"]
+    CAR["小车黑盒<br>自主导航"]
+    ENV --> CAR
+    CAR -->|"遇障停 → 绕行 → 到达目标"| EXP["预期行为<br>取货 → 前往最新规划点"]
 ```
 
-### 1.2 内部主数据流（L2）
+| 用户看到的情况 | 预期行为 |
+|---|---|
+| 前方有障碍 | 减速 / 停车 / 绕行，不撞 |
+| 平坦路 | 持续前进 |
+| 到达目标点 | 停车，等待下一个任务 |
+| 任务下发 | 规划新路线前往 |
 
-整车内部按「感知 → 决策 → 执行」单向链工作，建图/定位是坐标系地基。
+### 2.2 开发者视角（调试/排障的人）
+
+开发者看到的**环境黑盒 = 仿真器**。关心：仿真器代替什么真实设备、输出哪些数据、数据流到哪、计算容器内有哪些模块及其输入输出。
+
+```mermaid
+flowchart LR
+    SIM["仿真器黑盒<br>代替：真车传感器 + 执行器<br>输入 /cmd_vel<br>输出 /scan /odom /tf /clock"]
+    CONT["compute_container（自研大脑）<br>fusion / decision / motor"]
+    LOC["开源组件<br>AMCL / map_server"]
+    SIM --> CONT
+    CONT --> SIM
+    LOC --> CONT
+```
+
+## 3. 全系统输入输出表（一张表看全）
+
+| 模块 | 所属 | 输入 | 输出 | 业务含义 |
+|---|---|---|---|---|
+| fusion_node | 容器内·自研 | `/scan` | `/perception/objects` | 感知：识别障碍物列表 |
+| decision_node | 容器内·自研 | `/perception/objects`、`/amcl_pose`、`goal_x/goal_y` | `/cmd/move_to_pose`、`/planning/path` | 决策：绕障规划、派发目标 |
+| motor_ctrl_node | 容器内·自研 | `/cmd/move_to_pose`、`/odom`、`/scan` | `/cmd_vel` | 执行：算速度指令（跟踪+绕行+护栏） |
+| AMCL | 容器外·开源 NAV2 | `/scan`、`/odom`、`/map` | `/amcl_pose`、`map→odom` TF | 定位：车在地图中的位置 |
+| map_server | 容器外·开源 NAV2 | 地图文件 | `/map` | 地图加载 |
+| slam_toolbox | 容器外·开源 | `/scan`、`/odom`、`/tf` | 地图（建图） | 建图 |
+| Gazebo 仿真 | 容器外·开源 | `/cmd_vel` | `/scan`、`/odom`、`/tf`、`/clock` | 代替真车硬件，物理仿真 |
+
+**关键语义**：
+- **`/scan` 一个数据、两个消费者**：fusion（障碍感知）+ motor（护栏/VFH 安全），语义都是"看环境"
+- **`/odom` 一个数据、两个消费者**：AMCL（运动模型定位）+ motor（执行闭环），语义都是"看自身"
+- **`/clock` 隐式时间源**：全节点 `use_sim_time` 共享
+- **决策不消费 bridge 原始数据**：只拿感知的产物（障碍列表）和定位的产物（amcl_pose + TF）
+
+## 4. 坐标系与数据流（定位故障用）
 
 ```mermaid
 flowchart LR
@@ -31,139 +93,57 @@ flowchart LR
     DEC["决策 decision"]
     MOT["执行 motor"]
     POS["定位 AMCL"]
-    GZ -->|"/scan /odom /tf"| BR
+    GZ -->|"/scan"| BR
+    GZ -->|"/odom"| BR
+    GZ -->|"/tf"| BR
     BR -->|"/scan"| FUS
     BR -->|"/odom /tf"| POS
     POS -->|"map-odom TF"| DEC
     FUS -->|"障碍列表"| DEC
     DEC -->|"move_to_pose"| MOT
     MOT -->|"/cmd_vel"| BR
-    BR -->|"/cmd_vel"| GZ
-    GZ -->|"/odom 反馈"| BR
+    BR -->|"/cmd_vel 控制"| GZ
 ```
 
-## 2. 逐模块：作用 / 输入 / 输出 / 互联
+- 坐标系：`map = world + origin(8.162, 9.852)`；decision 在 map 帧规划，派发时经 TF 转 odom 帧给 motor（坐标系 bug 修复点）
 
-### 2.1 仿真环境（开源 — Gazebo Harmonic 8.14）
-| 项 | 内容 |
-|---|---|
-| **作用** | 物理世界 + 传感器真值：车（DiffDrive 差速 + GPU LiDAR 360° + IMU）、仓库场景（货架/障碍） |
-| **输入** | `/cmd_vel`（速度指令） |
-| **输出** | `/scan`（激光）、`/odom`（位姿）、`/tf`、`/clock`（仿真时钟） |
-| **互联** | 经 bridge 与全系统通信；当前唯一"真值"来源，**产品代码不依赖它**（HAL 可切真车） |
+## 5. 故障定位流程（出问题怎么办）
 
-### 2.2 建图 / 定位（开源 — slam_toolbox + NAV2）
-| 项 | 内容 |
-|---|---|
-| **作用** | 建图（slam_toolbox 扫场地生成地图）→ 已知地图导航（map_server 加载 + AMCL 粒子滤波定位） |
-| **输入** | `/scan`、`/odom`、`/tf` |
-| **输出** | `map→odom` TF、`/amcl_pose`（map 帧车位置） |
-| **互联** | 喂给 decision 作 A* 起点和坐标系基准；**坐标系定义者**（map = world + origin） |
-
-### 2.3 感知子系统（自研 — fusion_node）
-| 项 | 内容 |
-|---|---|
-| **作用** | 多传感器融合：LiDAR 聚类 → Kalman 跟踪 → 障碍物列表。含降级策略（传感器故障保底） |
-| **输入** | `/scan`（+ 可选 IMU/相机/PCL） |
-| **输出** | `/perception/objects`（map 帧障碍：id/位置/速度） |
-| **互联** | 喂给 decision 作为**障碍**（不是目标）；独立进程（故障隔离） |
-
-### 2.4 决策子系统（自研 — decision_node，任务层入口）
-| 项 | 内容 |
-|---|---|
-| **作用** | 全局路径规划：障碍标进栅格 → A* 绕障 → 平滑 → 派发执行目标。目标是**任务来源**（当前参数，未来 Fleet Manager） |
-| **输入** | `/perception/objects`（障碍）、`/amcl_pose`（A* 起点）、`goal_x/goal_y`（任务，map 帧） |
-| **输出** | `/planning/path`（map 帧展示）、`/cmd/move_to_pose` action（odom 帧目标） |
-| **互联** | 接收感知障碍 + 定位位姿；派发前经 **map→odom TF 转换**；收到执行失败后重规划 |
-
-### 2.5 执行子系统（自研 — motor_ctrl_node）
-| 项 | 内容 |
-|---|---|
-| **作用** | 三级速度控制：PurePursuit（全局跟踪）→ VFH（局部绕行）→ CollisionGuard（安全硬停）→ 偏差监控 |
-| **输入** | `/cmd/move_to_pose` action（odom 帧目标）、`/odom`（闭环位姿）、`/scan`（护栏+VFH） |
-| **输出** | `/cmd_vel`（速度指令）、action 结果（成功/失败回报） |
-| **互联** | 决策层的执行器；阻塞 3s 失败回报触发重规划；`/cmd_vel` 经 bridge 到仿真 |
-
-### 2.6 监控子系统（自研 + 开源）
-| 项 | 内容 |
-|---|---|
-| **作用** | health_monitor（心跳/降级/恢复）+ Prometheus 指标 + Grafana 可视化 |
-| **输入** | 各节点心跳、指标 |
-| **输出** | 告警、Grafana 面板 |
-| **互联** | 横向贯穿，不参与主数据流 |
-
-### 2.7 HAL 层（自研，面向真车）
-| 项 | 内容 |
-|---|---|
-| **作用** | 硬件抽象：`isensor`/`iactuator` + 传感器适配器（sick_tim781）+ 模拟实现。**仿真/真车切换点** |
-| **互联** | 感知/执行经 HAL 访问硬件；当前仿真走模拟路径 |
-
-### 2.8 任务层（现状 + 未来）
-- 当前：`goal_x/goal_y` launch 参数（单机单任务）
-- 未来：fleet_manager_node（已建骨架）→ 多车调度/WMS 对接
-
-## 3. 模块间关系要点
-
-1. **单向依赖链**：`感知 → 决策 → 执行`，各层只对下游发指令；上游感知不决策（感知障碍 ≠ 导航目标）
-2. **两个坐标系交汇在决策层**：决策在 map 帧规划（A*），派发时转 odom 帧给执行（坐标系 bug 修复点）
-3. **开源组件是"地基"**（仿真、定位、建图），**自研是"大脑和手脚"**（感知融合、决策、执行）
-4. **执行层是安全底线**：感知/决策全错时，护栏（scan 级）保证不撞、不死锁
-
-## 4. 决策子系统展开（L3）
+**现象 → 数据流检查 → 定位模块 → 判定自研/开源 → 修复**
 
 ```mermaid
-flowchart LR
-    P1["/perception/objects"]
-    P2["/amcl_pose"]
-    P3["goal 参数"]
-    GU["grid_updater 障碍栅格"]
-    AST["astar_planner 全局路径"]
-    SM["path_smoother 拐角圆滑"]
-    TF["map-odom 坐标转换"]
-    P1 --> GU
-    GU --> AST
-    P2 --> AST
-    P3 --> AST
-    AST --> SM
-    SM --> TF
+flowchart TB
+    P["故障现象<br>车不动 / 乱走 / 撞障 / 定位跳"]
+    D["查数据流（ros2 topic echo）<br>/scan /perception/objects /amcl_pose /cmd_vel"]
+    M["定位到模块"]
+    S["自研：代码在 ros2_robot_middleware<br>→ 查该模块源码 + 单测"]
+    O["开源：NAV2 / gz / bridge<br>→ 查配置 + 上游 issue"]
+    F["修复 + 单元测试 + 仿真验证"]
+    P --> D --> M --> S
+    M --> O
+    S --> F
+    O --> F
 ```
 
-## 5. 执行子系统展开（L4）
-
-```mermaid
-flowchart LR
-    SCAN["/scan"]
-    PP["PurePursuit 全局跟踪"]
-    V["VFH 局部绕行"]
-    CG["CollisionGuard 安全护栏"]
-    CMD["/cmd_vel"]
-    SCAN --> V
-    SCAN --> CG
-    PP --> V
-    V --> CG
-    CG --> CMD
-```
-
-### CollisionGuard 类接口
-
-| 方法 | 签名 | 职责 |
-|---|---|---|
-| `set_scan` | `(ScanData, time_point)` | 线程安全存储最新 scan |
-| `clamp` | `(float cmd_v, time_point) → float` | 障碍在 stop 区→0，safe 区→线性降速 |
-| `stopped` | `(time_point) → bool` | 护栏是否强制停 |
-| `blocked_for` | `(time_point) → ms` | 阻塞时长（防死锁超时） |
-| `snapshot` | `() → ScanData` | 供 VFH 的线程安全 scan 拷贝 |
+| 现象 | 先查 | 定位模块 | 自研/开源 | 常见原因 |
+|---|---|---|---|---|
+| 车不动 | `/cmd_vel` 有无速度 | motor → decision | 自研 | 无目标派发 / 护栏停 / 速度 0 |
+| 车乱走出界 | `/amcl_pose` 是否可信 | AMCL → decision | 开源+自研 | 定位漂移 / 地图错 / 坐标系 |
+| 车撞障碍 | 撞前 `/cmd_vel` 是否降速 | 护栏/VFH → motor | 自研 | 护栏未触发 / scan 脏（如车体回波） |
+| 感知不到障碍 | `/perception/objects` 有无 | fusion | 自研 | `/scan` 断 / 聚类参数 |
+| 定位跳变 | `/amcl_pose` 连续性 | AMCL | 开源 | 地图稀疏 / scan 噪声 |
+| 仿真器异常 | gz 日志 | 仿真 | 开源 | 物理 / 模型 / gz 服务 |
 
 ## 6. 完成度 / 开源 / 闭源
 
 | 模块 | 来源 | 版本 | 完成度 | 商用程度 |
 |---|---|---|---|---|
-| 感知融合 | 自研 | - | 高（测试绿） | 需数据评测 |
-| A* 决策 | 自研 | - | 高（G1 全链验证） | 基础可用，需任务集成 |
+| 感知融合 fusion | 自研 | - | 高（测试绿） | 需数据评测 |
+| A* 决策 decision | 自研 | - | 高（G1 全链验证） | 基础可用，需任务集成 |
 | PurePursuit 执行 | 自研 | - | 高（闭环） | 需调优 |
 | 碰撞护栏 | 自研 | - | 完成（11 GWT） | 安全底线，可用 |
 | VFH 绕行 | 自研 | - | 完成（8 GWT） | 待仿真验证 |
-| 建图/定位 | 开源 | slam_toolbox/NAV2 (jazzy) | 集成 | 地图精度受限 |
+| 定位/建图 | 开源 | NAV2 (jazzy) | 集成 | 地图精度受限 |
 | 仿真 | 开源 | Gazebo Harmonic 8.14 | 集成 | 开发/评测用 |
 | 可观测 | 自研+开源 | Prometheus/Grafana | 高 | 可用 |
 
