@@ -18,6 +18,7 @@ find_package(nav_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(diagnostic_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(action_msgs REQUIRED)
@@ -94,6 +95,15 @@ foreach(node ${INDEPENDENT_NODES})
   target_link_libraries(${node}_node robot_middleware_lib)
   install(TARGETS ${node}_node DESTINATION lib/${PROJECT_NAME})
 endforeach()
+
+# Scene simulator — synthetic sensor driver for the interview demo
+# (replaces Gazebo; gz-sim gpu_lidar has engine bugs on this platform).
+add_executable(scene_simulator
+  src/infrastructure/scene_simulator_main.cpp
+  src/infrastructure/scene_simulator_node.cpp)
+target_link_libraries(scene_simulator robot_middleware_lib)
+ament_target_dependencies(scene_simulator visualization_msgs)
+install(TARGETS scene_simulator DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY config launch worlds
   DESTINATION share/${PROJECT_NAME})
@@ -213,7 +223,12 @@ if(BUILD_TESTING)
   add_amr_test(test_grid_updater quality/src/test_grid_updater.cpp)
   add_amr_test(test_collision_guard quality/src/test_collision_guard.cpp)
   add_amr_test(test_vfh_avoidance  quality/src/test_vfh_avoidance.cpp)
+  add_amr_test(test_velocity_smoother quality/src/test_velocity_smoother.cpp)
+  add_amr_test(test_goal_dispatch_gate quality/src/test_goal_dispatch_gate.cpp)
+  add_amr_test(test_simulated_scene quality/src/test_simulated_scene.cpp)
   add_amr_test(test_integration_scenario quality/src/test_integration_scenario.cpp)
+  add_amr_test(test_depth_obstacle_detector quality/src/test_depth_obstacle_detector.cpp)
+  add_amr_test(test_degradation_policy quality/src/test_degradation_policy.cpp)
 endif()
 
 ament_package()

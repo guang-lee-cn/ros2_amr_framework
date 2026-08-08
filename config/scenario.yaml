@@ -33,3 +33,11 @@ scenarios:
       - { x: 4.0, y:  0.6, radius: 0.5 }
     start: { x: 0.5, y: 0.0 }
     goal:  { x: 5.0, y: 0.0 }
+
+  lowstep:
+    description: "低矮障碍 + 常规障碍 — 相机深度补 lidar 盲区（低矮障碍 category=low）"
+    obstacles:
+      - { x: 1.5, y: 0.0, radius: 0.3, top_height: 0.15 }   # lidar 不可见、相机可见
+      - { x: 2.5, y: 0.5, radius: 0.4 }                     # 常规（lidar/相机都见 → merge 去重）
+    start: { x: 0.5, y: 0.5 }
+    goal:  { x: 4.0, y: 0.5 }

@@ -19,6 +19,8 @@ struct Cluster {
   float z = 0.0F;
   int   point_count = 0;
   std::string id;
+  /// 语义类别（预留：相机识别接入后填充；深度低矮障碍 = "low"）。
+  std::string category;
 };
 
 class IClusterAlgorithm {

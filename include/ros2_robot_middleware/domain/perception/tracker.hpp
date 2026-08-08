@@ -34,6 +34,7 @@ struct TrackedObject {
   int   track_id = 0;
   int   age = 0;       // frames since creation
   int   miss_count = 0; // consecutive frames without detection
+  std::string category;  // inherited from the last matched detection
 };
 
 struct TrackerParams {
@@ -47,12 +48,16 @@ public:
   explicit MultiObjectTracker(const TrackerParams &p = TrackerParams{}) : params_(p) {}
 
   /// Process one frame of detections. dt = prediction step (seconds).
+  /// ax/ay = body-frame control acceleration applied to every track's KF
+  /// prediction. Caller passes the IMU accel NEGATED: a static obstacle seen
+  /// from the body frame appears to accelerate opposite the robot (ṗ̇_b = −a_robot).
   std::vector<TrackedObject> update(const std::vector<Cluster> &detections,
-                                     double dt = 0.2) {
+                                     double dt = 0.2,
+                                     double ax = 0.0, double ay = 0.0) {
     // Step 1: Predict all active tracks forward
     for (auto &t : tracks_) {
-      t.kf.predict(dt, 0.0, 0.0);  // no IMU accel in this KF (position-only tracking)
-      t.miss_count++;               // assume unmatched until proven otherwise
+      t.kf.predict(dt, ax, ay);  // IMU control input (body-frame motion comp.)
+      t.miss_count++;             // assume unmatched until proven otherwise
     }
 
     // Step 2: Greedy nearest-neighbor association
@@ -83,6 +88,7 @@ public:
       if (best_det >= 0) {
         // Match found — KF update with detection
         tracks_[t].kf.update(detections[best_det].x, detections[best_det].y);
+        tracks_[t].category = detections[best_det].category;
         tracks_[t].miss_count = 0;
         tracks_[t].age++;
         det_matched[best_det] = true;
@@ -101,6 +107,7 @@ public:
       new_track.id = next_id_++;
       new_track.age = 1;
       new_track.miss_count = 0;
+      new_track.category = detections[d].category;
       tracks_.push_back(new_track);
     }
 
@@ -124,6 +131,7 @@ public:
       obj.track_id   = t.id;
       obj.age        = t.age;
       obj.miss_count = t.miss_count;
+      obj.category   = t.category;
       result.push_back(obj);
     }
     return result;
@@ -141,6 +149,7 @@ private:
     int id = 0;
     int age = 0;
     int miss_count = 0;
+    std::string category;  // inherited from the last matched detection
   };
 
   TrackerParams params_;

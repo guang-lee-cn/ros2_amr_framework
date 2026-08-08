@@ -3,6 +3,7 @@
 
 #include "ros2_robot_middleware/action/move_to_pose.hpp"
 #include "ros2_robot_middleware/domain/planning/astar_planner.hpp"
+#include "ros2_robot_middleware/domain/planning/goal_dispatch_gate.hpp"
 #include "ros2_robot_middleware/domain/planning/grid_updater.hpp"
 #include "ros2_robot_middleware/domain/planning/path_smoother.hpp"
 #include "ros2_robot_middleware/domain/planning/preempt_policy.hpp"
@@ -40,6 +41,7 @@ public:
 private:
   void on_perception(const ros2_robot_middleware::msg::PerceptionObjects::SharedPtr &objs);
   void on_amcl_pose(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
+  void on_fusion_heartbeat(const std_msgs::msg::String::SharedPtr msg);
   void on_goal_response(
     const rclcpp_action::ClientGoalHandle<ros2_robot_middleware::action::MoveToPose>::SharedPtr &goalhdl);
   void on_result(
@@ -85,6 +87,11 @@ private:
   float last_target_x_ = 0.0F;
   float last_target_y_ = 0.0F;
   int retry_count_ = 0;
+
+  // Dispatch gate: fusion-ready gating + same-goal dedup (map-frame identity).
+  // Extraction keeps decision logic unit-testable without ROS2.
+  amr::domain::planning::GoalDispatchGate gate_;
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr fusion_hb_sub_;
 };
 
 #endif

@@ -54,6 +54,11 @@ public:
     return it->second();
   }
 
+  /// Whether a (category, type) factory is registered.
+  bool contains(const std::string &category, const std::string &type) const {
+    return factories_.count(category + "_" + type) > 0;
+  }
+
   /// List all registered "category_type" keys.
   std::vector<std::string> types() const {
     std::vector<std::string> result;

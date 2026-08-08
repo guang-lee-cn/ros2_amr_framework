@@ -42,7 +42,6 @@ public:
 
     const double tx = tf.transform.translation.x;
     const double ty = tf.transform.translation.y;
-    const double tz = tf.transform.translation.z;
 
     // Quaternion → rotation matrix (2D only: yaw)
     const double qx = tf.transform.rotation.x;

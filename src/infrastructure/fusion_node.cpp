@@ -56,6 +56,12 @@ amr::hal::sensor::Scenario FusionNode::load_scenario(const std::string &name) {
   } else if (name == "corridor") {
     s.obstacles = {{2.0F, -0.6F, 0.5F}, {2.0F, 0.6F, 0.5F},
                    {4.0F, -0.6F, 0.5F}, {4.0F, 0.6F, 0.5F}};
+  } else if (name == "lowstep") {
+    // 低矮障碍（top 0.15 < lidar mount 0.3 → 相机深度补盲）
+    // + 常规障碍（lidar/相机都见 → merge 去重）。
+    amr::hal::sensor::Obstacle low{1.5F, 0.0F, 0.3F, 0.0F, 0.15F};
+    amr::hal::sensor::Obstacle normal{2.5F, 0.5F, 0.4F};
+    s.obstacles = {low, normal};
   }
   return s;  // empty 返回空场景
 }
@@ -75,7 +81,19 @@ void FusionNode::create_sensors() {
 
   camera_cfg_.type  = this->get_parameter("sensors.camera.type").as_string();
   camera_cfg_.topic = this->get_parameter("sensors.camera.topic").as_string();
-  camera_ = SensorFactory::create_camera(camera_cfg_);
+  // 场景同样驱动相机深度：低矮障碍补盲（lidar 看不到的由深度检测到）。
+  camera_ = SensorFactory::create_camera(camera_cfg_, scenario);
+
+  // 配置拼写错误可见化：请求了非 simulated 类型但未注册 → 已静默 fallback。
+  auto &reg = amr::hal::common::SensorRegistry::instance();
+  if (imu_cfg_.type != "simulated" && !reg.contains("imu", imu_cfg_.type)) {
+    RCLCPP_WARN(this->get_logger(), "IMU type '%s' not registered, fell back to simulated",
+                imu_cfg_.type.c_str());
+  }
+  if (camera_cfg_.type != "simulated" && !reg.contains("camera", camera_cfg_.type)) {
+    RCLCPP_WARN(this->get_logger(), "Camera type '%s' not registered, fell back to simulated",
+                camera_cfg_.type.c_str());
+  }
 }
 
 // ── Lifecycle callbacks ──────────────────────────────────────────────
@@ -175,8 +193,9 @@ void FusionNode::timer_callback() {
   auto t_start = std::chrono::steady_clock::now();
 
   auto now = this->now();
+  double dt = 0.2;  // tracker 预测步长：默认 200ms，首个 tick 前无 dt
   if (last_tick_.nanoseconds() > 0) {
-    double dt = (now - last_tick_).seconds();
+    dt = (now - last_tick_).seconds();
     if (dt > 0.001 && dt < 1.0 && perception_) {
       perception_->tick(dt);
     }
@@ -234,12 +253,18 @@ void FusionNode::timer_callback() {
 
   auto msg            = ros2_robot_middleware::msg::PerceptionObjects{};
   msg.header.stamp    = this->now();
-  msg.header.frame_id = "base_link";
+  // 障碍在车体帧发布；decision 用 TF 变换到 map 帧标记 A* 网格。
+  // 用 "amr/chassis"（TF 树帧）而非 "base_link"（TF 树无此帧）。
+  msg.header.frame_id = "amr/chassis";
 
-  auto clusters = perception_->fuse(current_level_);
-  for (const auto &c : clusters) {
+  // 用 tracker 输出（带持久 track_id + KF 速度估计 + IMU 运动补偿），
+  // 而非原始 DBSCAN 簇。id 用 track_id（跨帧稳定），供 decision 关联。
+  auto tracked = perception_->fuse_tracked(current_level_, dt);
+  for (const auto &c : tracked) {
     auto obj = ros2_robot_middleware::msg::Object{};
-    obj.id = c.id; obj.x = c.x; obj.y = c.y; obj.z = c.z;
+    obj.id = "trk_" + std::to_string(c.track_id);
+    obj.x = c.x; obj.y = c.y; obj.z = 0.0F;
+    obj.category = c.category;  // 深度低矮障碍="low"；识别接入后为语义类别
     msg.objects.push_back(obj);
   }
 

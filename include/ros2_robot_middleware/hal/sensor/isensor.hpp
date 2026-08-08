@@ -15,6 +15,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 namespace amr::hal::sensor {
 
@@ -43,6 +44,9 @@ struct CameraFrame {
     size_t size                      = 0;
     uint16_t width                   = 0;
     uint16_t height                  = 0;
+    /// 1D 水平扫描线深度（毫米），对应前方 FOV 的一组射线；0 = 无返回。
+    /// 值小（≤ 数百元素）按值拷贝；RGB 大缓冲仍走上方指针视图。
+    std::vector<uint16_t> depth;
 #ifndef NDEBUG
     uint64_t generation = 0;
 #endif

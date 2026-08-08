@@ -86,6 +86,15 @@ public:
         auto ptr = make_sensor<CameraFrame>("camera", cfg.type);
         return ptr ? std::move(ptr) : std::make_unique<SimulatedCamera>();
     }
+
+    /// Create simulated camera with a scenario — generates FOV depth from the
+    /// same obstacle layout as the lidar (low-obstacle blind-spot detection).
+    static CameraPtr create_camera(const SensorConfig &cfg, const Scenario &scenario) {
+        if (cfg.type == "simulated") {
+            return std::make_unique<SimulatedCamera>(scenario);
+        }
+        return create_camera(cfg);  // real adapter ignores scenario
+    }
 };
 
 } // namespace amr::hal::sensor

@@ -3,6 +3,7 @@
 
 #include "ros2_robot_middleware/domain/perception/cluster_detector.hpp"
 #include "ros2_robot_middleware/domain/perception/degradation_policy.hpp"
+#include "ros2_robot_middleware/domain/perception/depth_obstacle_detector.hpp"
 #include "ros2_robot_middleware/domain/perception/icluster_algorithm.hpp"
 #include "ros2_robot_middleware/domain/perception/kalman_filter.hpp"
 #include "ros2_robot_middleware/hal/sensor/isensor.hpp"
@@ -73,7 +74,14 @@ public:
       imu_ay_ = imu_data.linear_accel_y;
     }
 
-    kf_.predict(dt, imu_ax_, imu_ay_);
+    // Camera depth → low-obstacle clusters (lidar blind-spot fill).
+    // Camera stale → clear: depth naturally disappears (incl. the NO_CAMERA
+    // degradation window where old data must not linger).
+    if (camera_ok && !cam_frame.depth.empty()) {
+      depth_clusters_ = DepthObstacleDetector::detect(cam_frame.depth);
+    } else {
+      depth_clusters_.clear();
+    }
   }
 
   Level evaluate_degradation() const {
@@ -91,13 +99,19 @@ public:
       case Level::NO_LIDAR: break;
       case Level::CRITICAL: break;
     }
-    if (!clusters.empty()) kf_.update(clusters[0].x, clusters[0].y);
+    // Depth clusters merge only when camera is trusted (FULL / NO_IMU).
+    // NO_CAMERA → lidar only; NO_LIDAR/CRITICAL stay empty.
+    if (degradation == Level::FULL || degradation == Level::NO_IMU) {
+      clusters = DepthObstacleDetector::merge(clusters, depth_clusters_);
+    }
     return clusters;
   }
 
-  std::vector<TrackedObject> fuse_tracked(Level degradation) {
+  /// Tracked-output variant: dt from the caller, IMU accel applied NEGATED
+  /// (a static obstacle in body frame appears to accelerate opposite the robot).
+  std::vector<TrackedObject> fuse_tracked(Level degradation, double dt) {
     auto clusters = fuse(degradation);
-    return tracker_.update(clusters);
+    return tracker_.update(clusters, dt, -imu_ax_, -imu_ay_);
   }
 
   /// 当前 LiDAR 原始点云快照（供可视化发布）。返回 false 表示无数据。
@@ -112,11 +126,6 @@ public:
 
   size_t track_count() const { return tracker_.track_count(); }
 
-  double kf_x()  const { return kf_.x(); }
-  double kf_y()  const { return kf_.y(); }
-  double kf_vx() const { return kf_.vx(); }
-  double kf_vy() const { return kf_.vy(); }
-
   static const char *heartbeat_for(Level level) {
     return DegradationPolicy::to_heartbeat_string(level);
   }
@@ -126,7 +135,6 @@ public:
 private:
   std::unique_ptr<IClusterAlgorithm> cluster_;
   DegradationPolicy policy_;
-  KalmanFilter2D<>  kf_;
   MultiObjectTracker tracker_;
 
   LidarSensor  &lidar_;
@@ -139,6 +147,7 @@ private:
   float        lidar_angle_min_  = 0.0F;
   float        lidar_angle_inc_  = 0.0F;
   double       imu_ax_ = 0.0, imu_ay_ = 0.0;
+  std::vector<amr::domain::perception::Cluster> depth_clusters_;  // camera depth → low obstacles
 
   double lidar_age_s_  = -1.0;
   double imu_age_s_    = -1.0;

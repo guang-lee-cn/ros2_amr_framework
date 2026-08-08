@@ -2,6 +2,7 @@
 #define ROS2_ROBOT_MIDDLEWARE_DOMAIN_DEGRADATION_POLICY_HPP_
 
 #include <cstdint>
+#include <string>
 
 namespace amr {
 namespace domain {
@@ -70,6 +71,23 @@ public:
       case DegradationLevel::CRITICAL:  return "critical";
     }
     return "unknown";
+  }
+
+  /// Parse a fusion heartbeat string back to a DegradationLevel.
+  /// Returns false for unknown / "inactive" strings.
+  static bool from_heartbeat_string(const std::string &s, DegradationLevel &out) {
+    if (s == "alive")                { out = DegradationLevel::FULL;      return true; }
+    if (s == "degraded_no_lidar")    { out = DegradationLevel::NO_LIDAR;  return true; }
+    if (s == "degraded_no_camera")   { out = DegradationLevel::NO_CAMERA; return true; }
+    if (s == "degraded_no_imu")      { out = DegradationLevel::NO_IMU;    return true; }
+    if (s == "critical")             { out = DegradationLevel::CRITICAL;  return true; }
+    return false;
+  }
+
+  /// Only FULL is nominal — any degradation means the perception output is
+  /// not fully trustworthy (used by the decision gate: dispatch only on alive).
+  static bool is_nominal(DegradationLevel level) {
+    return level == DegradationLevel::FULL;
   }
 
 private:

@@ -1,5 +1,6 @@
 #include "ros2_robot_middleware/infrastructure/aliases.hpp"
 #include "ros2_robot_middleware/infrastructure/decision_node.hpp"
+#include "ros2_robot_middleware/domain/perception/degradation_policy.hpp"
 #include "generated/perf_instrumentation.hpp"
 #include "ros2_robot_middleware/observability/metrics_registry.hpp"
 #include "ros2_robot_middleware/observability/trace_points.hpp"
@@ -63,6 +64,14 @@ DecisionNode::on_configure(const rclcpp_lifecycle::State &)
 
   client_ = rclcpp_action::create_client<MoveToPose>(this, "/cmd/move_to_pose");
 
+  // Fusion-ready gate: dispatch only after fusion reports alive (cold-start
+  // A* used to plan straight through the wall while the grid was still empty).
+  // Same callback group as perception — low-rate (1 Hz) but semantically tied.
+  fusion_hb_sub_ = this->create_subscription<std_msgs::msg::String>(
+    "/sensor/fusion/heartbeat", rclcpp::QoS(10).reliable(),
+    [this](std_msgs::msg::String::SharedPtr msg) { on_fusion_heartbeat(msg); },
+    decision_opts);
+
   heartbeat_pub_ = this->create_publisher<std_msgs::msg::String>(
     "/decision/heartbeat", rclcpp::QoS(10).reliable());
 
@@ -109,6 +118,7 @@ DecisionNode::on_cleanup(const rclcpp_lifecycle::State &)
 {
   decision_sub_.reset();
   amcl_pose_sub_.reset();
+  fusion_hb_sub_.reset();
   client_.reset();
   heartbeat_pub_.reset();
   path_pub_.reset();
@@ -123,6 +133,7 @@ DecisionNode::on_shutdown(const rclcpp_lifecycle::State &)
   heartbeat_timer_.reset();
   decision_sub_.reset();
   amcl_pose_sub_.reset();
+  fusion_hb_sub_.reset();
   client_.reset();
   heartbeat_pub_.reset();
   path_pub_.reset();
@@ -151,8 +162,31 @@ void DecisionNode::on_perception(const PerceptionObjects::SharedPtr& objs)
   amr::domain::planning::PerceivedObject obstacles[8];
   std::size_t n_obs = 0;
   for (std::size_t i = 0; i < objs->objects.size() && n_obs < 8; ++i) {
-    obstacles[n_obs++] = {objs->objects[i].x, objs->objects[i].y,
-                          objs->objects[i].id.c_str()};
+    // Obstacles arrive in the body frame (amr/chassis); the A* grid is in the
+    // map frame. Transform via TF — otherwise obstacle coordinates go stale
+    // relative to a moving robot and A* plans straight through the obstacle.
+    const float ox = objs->objects[i].x;
+    const float oy = objs->objects[i].y;
+    float wx = ox, wy = oy;
+    if (tf_buffer_) {
+      try {
+        const auto t = tf_buffer_->lookupTransform(
+            "map", "amr/chassis", rclcpp::Time(0),
+            rclcpp::Duration::from_seconds(0.1));
+        const double yaw = 2.0 * std::atan2(t.transform.rotation.z,
+                                            t.transform.rotation.w);
+        const double c = std::cos(yaw), s = std::sin(yaw);
+        wx = static_cast<float>(t.transform.translation.x + c * ox - s * oy);
+        wy = static_cast<float>(t.transform.translation.y + s * ox + c * oy);
+      } catch (const tf2::TransformException &e) {
+        // Fallback: keep body-frame coordinates (valid when map≡body, e.g.
+        // robot at origin). Do NOT block the decision — transform is best-effort.
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                             "chassis→map TF unavailable, using body coords: %s",
+                             e.what());
+      }
+    }
+    obstacles[n_obs++] = {wx, wy, objs->objects[i].id.c_str()};
   }
   if (n_obs > 0) {
     grid_updater_.mark_obstacles(demo_grid_, obstacles, n_obs,
@@ -177,6 +211,13 @@ void DecisionNode::on_perception(const PerceptionObjects::SharedPtr& objs)
   const float start_to_goal = std::hypot(start.x - gx, start.y - gy);
   if (start_to_goal < kArrivalTolerance) {
     return;  // already there
+  }
+  // Dispatch gate: fusion-ready gating + same-goal dedup on the MAP-frame
+  // goal identity. Previous dedup compared the map-frame goal param against
+  // the odom-frame dispatched value — with a real map→odom offset they never
+  // matched and the robot re-dispatched the same goal forever (spin at goal).
+  if (!gate_.should_dispatch(gx, gy)) {
+    return;
   }
 
   auto path = astar_.plan(demo_grid_, start, goal_pose);
@@ -219,6 +260,7 @@ void DecisionNode::on_perception(const PerceptionObjects::SharedPtr& objs)
   }
   { AMR_PERF_PHASE("decision:send_goal");
     send_goal(odom_gx, odom_gy); }
+  gate_.note_dispatched(gx, gy);  // map-frame goal identity, for dedup
 
   auto lat_us = std::chrono::duration_cast<std::chrono::microseconds>(
                     std::chrono::steady_clock::now() - t_start).count();
@@ -232,6 +274,19 @@ void DecisionNode::on_amcl_pose(
   current_pose_.x = static_cast<float>(msg->pose.pose.position.x);
   current_pose_.y = static_cast<float>(msg->pose.pose.position.y);
   has_pose_.store(true, std::memory_order_release);
+}
+
+void DecisionNode::on_fusion_heartbeat(const std_msgs::msg::String::SharedPtr msg)
+{
+  // Only "alive" (FULL) unlocks dispatch. Degraded states (no_lidar, critical,
+  // no_camera, no_imu) mean the grid may be untrustworthy — do NOT dispatch
+  // (cold-start A* through an empty grid / partial sensing is exactly the
+  // wall-penetration class of bug this gate exists to stop).
+  using amr::domain::perception::DegradationLevel;
+  using amr::domain::perception::DegradationPolicy;
+  DegradationLevel level;
+  const bool parsed = DegradationPolicy::from_heartbeat_string(msg->data, level);
+  gate_.set_fusion_ready(parsed && DegradationPolicy::is_nominal(level));
 }
 
 // ── Action client wiring (ROS2-specific, stays in Node) ─────────────────────
