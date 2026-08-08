@@ -73,8 +73,37 @@ string message
 | 线程安全 | `ISensor<T>::read()` 内部自己保证线程安全（值拷贝/mutex），调用方无需加锁 |
 | 生命周期 | `ISensor<T>` 的 `init()/shutdown()` 在 LifecycleNode 的 `on_configure/on_cleanup` 中调用 |
 
+## IActuator 数据契约（v1，2026-08-01 落地）
+
+> 状态：契约先行，结构体将在 I5 写入 `hal/actuator/iactuator.hpp`，配套模拟实现 + 单测锁定语义。
+
+```cpp
+namespace amr::hal::actuator {
+/// 底盘指令（对应 cmd_vel）
+struct WheelCmd {
+  float vx = 0.0F;   // 线速度 m/s
+  float vy = 0.0F;   // 侧向 m/s（差速底盘恒 0）
+  float wz = 0.0F;   // 角速度 rad/s
+};
+/// 底盘反馈（编码器）
+struct WheelFeedback {
+  float left_wheel_rps  = 0.0F;
+  float right_wheel_rps = 0.0F;
+  uint64_t timestamp_us = 0;
+};
+}  // namespace amr::hal::actuator
+```
+
+| 方法 | 语义 | 返回 false 含义 |
+|------|------|----------------|
+| `write(const Cmd&)` | 下发指令到硬件 | 传输失败 → 调用方降级 |
+| `read(Fb&)` | 读回反馈 | 无新数据 → 调用方保持上一帧 |
+
+**版本规则**：真实底盘接入若暴露语义偏差，走 v1.1（末尾加字段，不删字段）通道，不重写 v1。
+
 ## 接口版本兼容
 
 - `.msg` / `.srv` / `.action` 文件新增字段必须在末尾，不删除已有字段，不改变已有字段类型和顺序
 - DDS Topic 名变更 → 需要同步更新所有 subscriber/publisher，属于破坏性变更
 - `ISensor<T>` 虚接口新增方法 → 旧的 Adapter 实现编译失败，需同步适配
+- `IActuator<Cmd,Fb>` 签名冻结；数据字段变更走 v1.x 兼容通道

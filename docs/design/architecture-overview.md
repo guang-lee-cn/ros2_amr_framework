@@ -147,6 +147,21 @@ flowchart TB
 | 仿真 | 开源 | Gazebo Harmonic 8.14 | 集成 | 开发/评测用 |
 | 可观测 | 自研+开源 | Prometheus/Grafana | 高 | 可用 |
 
+### 6.1 计算容器商用差距（2026-08-07 走读评估）
+
+**功能骨架完整**（感知→决策→执行闭环，153 单测绿），差距在"深度 + 可靠性 + 安全认证"：
+
+| 层 | 当前（代码实况） | 商用标准 | 优先级 |
+|---|---|---|---|
+| 感知 | LiDAR 单模态 DBSCAN 聚类，静态障碍 | 多传感器 EKF + 物体识别分类 + 动态跟踪预测 | P1 |
+| 规划 | A* 静态网格 + 单目标（goal_x/y 参数） | 局部动态避障 + 行为树任务 + 多目标优化 | P2 |
+| 控制 | PurePursuit + 护栏速度 clamp | MPC + 加速度/jerk 平滑 + 精确到位（±cm） | **P0** |
+| 安全 | 单线程护栏逻辑 | SIL2/PL-d 功能安全认证 + 双通道 | P3 |
+| 冗余 | 单进程单点 | 双主控热备 + 独立看门狗 | P3 |
+| 任务 | 单目标参数 | 任务队列 + 车队协调（Open-RMF） | P2 |
+
+**最现实第一步**：控制层（加速度约束 + 到位精度）——中工作量，直接提升可用性。
+
 ## 7. 环境问题 vs 产品问题
 
 **产品问题（已解决/需解决）**：
@@ -156,9 +171,19 @@ flowchart TB
 - ⚠️ VFH 仿真验证（当前卡点）
 
 **环境问题（仿真，非产品缺陷）**：
-- ❌ 车 spawn 后异常滑动 0.94m（无 cmd_vel 却移动）
-- ❌ LiDAR 检测车体自身（最小 world 证实 0.68m 车体弧线；warehouse 里 0.2m）
-- ❌ gz service 大面积不可用（查询超时）
+- ❌ **gz-sim 8 gpu_lidar + ogre2 引擎 bug（2026-08-07 确认，关键）**：
+  - 现象：车运动时 gpu_lidar 的 world_pose 不随车更新（卡初始值 x=0.4）→ 渲染用旧位置 → scan 回波消失 → 护栏看不到墙 → 车穿墙
+  - 证据：车走 1m，gz /lidar world_pose.x 仍 0.4；车接近墙时 scan 回波从 2.8m 变 inf
+  - 社区：gz-sensors #504 / gz-sim #2743 / Gazebo Answers 2023（"Lidar movement not in sync"）——Linux 用户同样遇到，**平台无关**
+  - 结论：Windows 原生装 gz-sim 8 同样无法解决（引擎 bug，非 WSL2 特有）；ogre(OGRE1) 在 gz-sim8 不可用（geometry 加载失败）
+- ❌ 车 spawn 后滑动：根因 = **残留 `ros2 topic pub` 进程 + gz DiffDrive 保持最后 cmd_vel**（已清理，非物理异常）
+- ❌ 2 轮差速车无前后支撑 → 前后倾倒 pitch 16°（已加前后支撑球修复）
+- ❌ gz service 查询超时（gz model / gz topic 部分不可用）
+- ✅ **bridge 的 LaserScan 转换正常**（之前误判为"丢 beams"，实为 echo 解析错误；rclpy 实测 360 beams，720→360 = 取垂直层）
+
+**关键洞察（2026-08-07 排查沉淀）**：
+- 数据链路验证必须用 rclpy 直接数（echo/文本解析会误判数据长度）
+- "仿真跑不起来"要区分：车物理（支撑/滑动）、引擎渲染（gpu_lidar world_pose）、桥接（bridge 转换）、业务代码——**逐层隔离**（最小 world → 完整仿真）
 
 ---
 

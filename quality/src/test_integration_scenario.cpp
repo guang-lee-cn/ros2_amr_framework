@@ -117,3 +117,46 @@ TEST_F(ScenarioIntegrationTest, Given_EmptyScenario_Then_NoObjects) {
 
   EXPECT_EQ(object_count, 0) << "empty 场景不应有物体";
 }
+
+// ── Given_LowStepScenario_Then_FusesLidarAndDepth ─────────────────────
+// lowstep 场景含低矮障碍 (1.5,0) top=0.15（lidar 不可见）+ 常规障碍 (2.5,0.5)。
+// 双通道融合：lidar 检出常规障碍（category 空），相机深度检出低矮障碍
+// （category="low"）→ 共 2 个物体，且必有一个 category="low"。
+
+TEST_F(ScenarioIntegrationTest, Given_LowStepScenario_Then_FusesLidarAndDepth) {
+  rclcpp::NodeOptions opts;
+  opts.parameter_overrides().push_back(
+      rclcpp::Parameter("scenario", "lowstep"));
+  auto fusion = std::make_shared<FusionNode>(opts);
+  fusion->configure();
+  fusion->activate();
+
+  ros2_robot_middleware::msg::PerceptionObjects::SharedPtr objs;
+  auto objs_sub = fusion->create_subscription<ros2_robot_middleware::msg::PerceptionObjects>(
+      "/perception/objects", rclcpp::QoS(10).reliable(),
+      [&objs](ros2_robot_middleware::msg::PerceptionObjects::SharedPtr msg) {
+        if (msg->objects.size() >= 2) objs = msg;  // 等双通道都出
+      });
+
+  // 首帧 CRITICAL（传感器 age=-1），等到 FULL 且 ≥2 物体再断言。
+  ASSERT_TRUE(spin_until(fusion->get_node_base_interface(),
+                         [&objs, &fusion] {
+                           return objs != nullptr &&
+                                  fusion->degradation_level() ==
+                                      FusionNode::DegradationLevel::FULL;
+                         },
+                         std::chrono::seconds(5)));
+
+  ASSERT_NE(objs, nullptr);
+  ASSERT_GE(objs->objects.size(), 2u);
+
+  // 低矮障碍 (1.5,0) 在 x≈1.5 附近、category="low"；常规障碍 category 空。
+  bool saw_low = false;
+  bool saw_lidar = false;
+  for (const auto &obj : objs->objects) {
+    if (obj.category == "low") { saw_low = true; }
+    else if (obj.category.empty()) { saw_lidar = true; }
+  }
+  EXPECT_TRUE(saw_low) << "相机深度应检出低矮障碍 (category=low)";
+  EXPECT_TRUE(saw_lidar) << "lidar 应检出常规障碍 (category 空)";
+}

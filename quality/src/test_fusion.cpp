@@ -102,3 +102,37 @@ TEST_F(FusionTest, MultiCycleRun_NoCrash) {
 
   EXPECT_GE(static_cast<int>(fusion->degradation_level()), 0);
 }
+
+// ── Category propagation: fusion copies Cluster.category into Object ──
+// lowstep scenario has a low obstacle (lidar-invisible) detected only by the
+// camera depth → published object must carry category="low".
+TEST_F(FusionTest, Given_LowStepScenario_When_Publish_CategoryCopied) {
+  auto fusion = std::make_shared<FusionNode>();
+  fusion->set_parameter(rclcpp::Parameter("scenario", std::string("lowstep")));
+  fusion->configure();
+  fusion->activate();
+
+  ros2_robot_middleware::msg::PerceptionObjects::SharedPtr last_output;
+  auto out_sub = fusion->create_subscription<ros2_robot_middleware::msg::PerceptionObjects>(
+      "/perception/objects", rclcpp::QoS(10).reliable(),
+      [&last_output](ros2_robot_middleware::msg::PerceptionObjects::SharedPtr msg) {
+        last_output = msg;
+      });
+
+  // First tick starts at CRITICAL (sensor ages -1 = never received); wait until
+  // the system settles to FULL and the fused output actually has objects.
+  ASSERT_TRUE(spin_until(fusion->get_node_base_interface(),
+                         [&last_output, &fusion] {
+                           return last_output != nullptr &&
+                                  !last_output->objects.empty() &&
+                                  fusion->degradation_level() ==
+                                      FusionNode::DegradationLevel::FULL;
+                         },
+                         std::chrono::seconds(5)));
+
+  bool saw_low = false;
+  for (const auto &obj : last_output->objects) {
+    if (obj.category == "low") { saw_low = true; break; }
+  }
+  EXPECT_TRUE(saw_low);  // camera depth detected the lidar-invisible low obstacle
+}

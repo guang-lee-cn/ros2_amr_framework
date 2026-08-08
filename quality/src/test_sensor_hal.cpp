@@ -153,3 +153,94 @@ TEST_F(SickTiM781Test, SubscribeAndRead_ReturnsValidScan) {
   exec.remove_node(node->get_node_base_interface());
 }
 
+
+// ── 低矮障碍：lidar 不可见、相机深度可见（盲区补全） ─────────────────
+
+using amr::hal::sensor::Obstacle;
+using amr::hal::sensor::Scenario;
+using amr::domain::perception::PerceptionService;
+
+TEST(SimulatedLidarTest, Given_LowObstacle_When_Read_SkipsBelowMount) {
+  Scenario s;
+  s.obstacles.push_back({1.5F, 0.0F, 0.3F, 0.0F, 0.15F});  // top 0.15 < mount 0.3
+  SimulatedLidar lidar(s, 0.3F);
+  lidar.init();
+
+  LidarScan scan;
+  ASSERT_TRUE(lidar.read(scan));
+  // Dead-ahead ray (angle 0) is ray 180 of 360; low obstacle must be invisible.
+  EXPECT_EQ(scan.ranges[180], SimulatedLidar::kInvalidRange);
+}
+
+TEST(SimulatedCameraTest, Given_LowObstacleAhead_When_Read_DepthReturned) {
+  Scenario s;
+  s.obstacles.push_back({1.5F, 0.0F, 0.3F, 0.0F, 0.15F});
+  SimulatedCamera cam(s);
+  cam.init();
+
+  CameraFrame frame;
+  ASSERT_TRUE(cam.read(frame));
+  // Dead-ahead ray is the center of 121 (index 60). Depth must be non-zero.
+  ASSERT_EQ(frame.depth.size(), 121u);
+  EXPECT_GT(frame.depth[60], 0U);
+}
+
+TEST(SimulatedCameraTest, Given_ObstacleOutOfFOV_When_Read_DepthAllInvalid) {
+  Scenario s;
+  s.obstacles.push_back({2.0F, 1.8F, 0.3F});  // atan2(1.8,2.0)≈42° > 30° FOV
+  SimulatedCamera cam(s);
+  cam.init();
+
+  CameraFrame frame;
+  ASSERT_TRUE(cam.read(frame));
+  for (size_t i = 0; i < frame.depth.size(); ++i) {
+    EXPECT_EQ(frame.depth[i], 0U) << "ray " << i;
+  }
+}
+
+TEST(SimulatedCameraTest, Given_EmptyScene_When_Read_DepthAllInvalid) {
+  SimulatedCamera cam;  // default: empty scenario
+  cam.init();
+
+  CameraFrame frame;
+  ASSERT_TRUE(cam.read(frame));
+  for (size_t i = 0; i < frame.depth.size(); ++i) {
+    EXPECT_EQ(frame.depth[i], 0U) << "ray " << i;
+  }
+}
+
+// ── PerceptionService 深度融合 ───────────────────────────────────────
+
+TEST(PerceptionDepthTest, Given_CameraDepthObstacle_When_FuseFull_MergedClusters) {
+  Scenario s;
+  s.obstacles.push_back({1.5F, 0.0F, 0.3F, 0.0F, 0.15F});  // lidar misses, camera sees
+  SimulatedLidar  lidar(s, 0.3F);
+  SimulatedImu    imu;
+  SimulatedCamera camera(s);
+  lidar.init(); imu.init(); camera.init();
+
+  PerceptionService ps(lidar, imu, camera);
+  ps.tick(0.2);
+  auto clusters = ps.fuse(PerceptionService::Level::FULL);
+  bool has_low = false;
+  for (const auto &c : clusters) {
+    if (c.category == "low") has_low = true;
+  }
+  EXPECT_TRUE(has_low);
+}
+
+TEST(PerceptionDepthTest, Given_NoCameraLevel_When_Fuse_MergedSkipped) {
+  Scenario s;
+  s.obstacles.push_back({1.5F, 0.0F, 0.3F, 0.0F, 0.15F});
+  SimulatedLidar  lidar(s, 0.3F);
+  SimulatedImu    imu;
+  SimulatedCamera camera(s);
+  lidar.init(); imu.init(); camera.init();
+
+  PerceptionService ps(lidar, imu, camera);
+  ps.tick(0.2);
+  auto clusters = ps.fuse(PerceptionService::Level::NO_CAMERA);
+  for (const auto &c : clusters) {
+    EXPECT_NE(c.category, "low");  // depth clusters not merged when camera is out
+  }
+}

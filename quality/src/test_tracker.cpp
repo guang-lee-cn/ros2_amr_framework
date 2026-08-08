@@ -14,7 +14,7 @@ TEST(TrackerTest, SingleDetection_SpawnsTrack) {
   MultiObjectTracker tracker;
 
   std::vector<Cluster> dets;
-  dets.push_back({2.0F, 3.0F, 0.0F, 0, ""});
+  dets.push_back({2.0F, 3.0F, 0.0F, 0, "", ""});
 
   auto result = tracker.update(dets, 0.2);
   ASSERT_EQ(result.size(), 1u);
@@ -28,7 +28,7 @@ TEST(TrackerTest, SingleDetection_SpawnsTrack) {
 TEST(TrackerTest, PersistentDetection_MaintainsTrackId) {
   MultiObjectTracker tracker;
 
-  Cluster det{1.0F, 0.0F, 0.0F, 0, ""};
+  Cluster det{1.0F, 0.0F, 0.0F, 0, "", ""};
   for (int i = 0; i < 5; ++i) {
     auto result = tracker.update({det}, 0.2);
     ASSERT_EQ(result.size(), 1u);
@@ -45,7 +45,7 @@ TEST(TrackerTest, MissingDetection_PrunedAfterTimeout) {
   MultiObjectTracker tracker(p);
 
   // Feed detection once to spawn track
-  auto result = tracker.update({{1.0F, 0.0F, 0.0F, 0, ""}}, 0.2);
+  auto result = tracker.update({{1.0F, 0.0F, 0.0F, 0, "", ""}}, 0.2);
   ASSERT_EQ(result.size(), 1u);
 
   // Feed empty frames — track should be pruned after 3 misses
@@ -61,8 +61,8 @@ TEST(TrackerTest, TwoSeparatedDetections_TwoTracks) {
   MultiObjectTracker tracker;
 
   std::vector<Cluster> dets;
-  dets.push_back({1.0F, 0.0F, 0.0F, 0, ""});
-  dets.push_back({5.0F, 0.0F, 0.0F, 0, ""});  // 4m apart > association_radius
+  dets.push_back({1.0F, 0.0F, 0.0F, 0, "", ""});
+  dets.push_back({5.0F, 0.0F, 0.0F, 0, "", ""});  // 4m apart > association_radius
 
   auto result = tracker.update(dets, 0.2);
   ASSERT_EQ(result.size(), 2u);
@@ -78,7 +78,7 @@ TEST(TrackerTest, MovingObject_KfPredictsPosition) {
   for (int i = 0; i < 20; ++i) {
     float x = 0.1F * i;
     float y = 0.05F * i;
-    auto result = tracker.update({{x, y, 0.0F, 0, ""}}, 0.1);
+    auto result = tracker.update({{x, y, 0.0F, 0, "", ""}}, 0.1);
     ASSERT_EQ(result.size(), 1u);
     EXPECT_EQ(result[0].track_id, 0);
     // After a few frames, KF should estimate velocity
@@ -92,13 +92,47 @@ TEST(TrackerTest, MovingObject_KfPredictsPosition) {
 
 TEST(TrackerTest, Reset_ClearsAllTracks) {
   MultiObjectTracker tracker;
-  tracker.update({{1.0F, 0.0F, 0.0F, 0, ""}}, 0.2);
+  tracker.update({{1.0F, 0.0F, 0.0F, 0, "", ""}}, 0.2);
   EXPECT_EQ(tracker.track_count(), 1u);
 
   tracker.reset();
   EXPECT_EQ(tracker.track_count(), 0u);
 
   // IDs restart from 0 after reset
-  auto result = tracker.update({{3.0F, 0.0F, 0.0F, 0, ""}}, 0.2);
+  auto result = tracker.update({{3.0F, 0.0F, 0.0F, 0, "", ""}}, 0.2);
+  EXPECT_EQ(result[0].track_id, 0);
+}
+
+// ── IMU control input (body-frame motion compensation) ───────────────
+
+// Physical model: a static obstacle seen from the body frame appears to
+// accelerate OPPOSITE the robot (ṗ̇_b = −a_robot). The caller passes the
+// NEGATED IMU accel; this test pins the direction so the sign can't regress.
+TEST(TrackerTest, Given_StaticObstacle_When_RobotAccelerates_BodyPosShiftsBackward) {
+  MultiObjectTracker tracker;
+  // Spawn a static obstacle dead ahead at (2, 0).
+  tracker.update({{2.0F, 0.0F, 0.0F, 0, "", ""}}, 0.2);
+  // Robot accelerates forward (a_robot=+2 m/s²) → obstacle appears to move back.
+  // Caller passes −a_imu = −2 (the tracker applies it as the KF control input).
+  auto result = tracker.update({}, 1.0, -2.0, 0.0);
+  ASSERT_EQ(result.size(), 1u);
+  EXPECT_LT(result[0].x, 2.0F);  // predicted body-frame x moved backward
+}
+
+TEST(TrackerTest, Given_AccelProvided_When_Update_VelocityNegative) {
+  MultiObjectTracker tracker;
+  tracker.update({{2.0F, 0.0F, 0.0F, 0, "", ""}}, 0.2);
+  auto result = tracker.update({}, 1.0, -2.0, 0.0);
+  ASSERT_EQ(result.size(), 1u);
+  EXPECT_LT(result[0].vx, 0.0F);  // obstacle's apparent velocity is backward
+}
+
+TEST(TrackerTest, Given_NoAccel_When_Update_BehaviorUnchanged) {
+  MultiObjectTracker tracker;
+  // ax=ay=0 must reproduce the legacy constant-velocity behavior exactly.
+  tracker.update({{1.0F, 0.0F, 0.0F, 0, "", ""}}, 0.2);
+  auto result = tracker.update({{1.0F, 0.0F, 0.0F, 0, "", ""}}, 0.2, 0.0, 0.0);
+  ASSERT_EQ(result.size(), 1u);
+  EXPECT_NEAR(result[0].x, 1.0F, 0.01F);
   EXPECT_EQ(result[0].track_id, 0);
 }

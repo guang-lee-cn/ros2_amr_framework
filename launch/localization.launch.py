@@ -63,7 +63,7 @@ def generate_launch_description():
     static_tf_lidar = RosNode(
         package="tf2_ros", executable="static_transform_publisher",
         parameters=[{"use_sim_time": use_sim_time}],
-        arguments=["0.25", "0", "0.05", "0", "0", "0",
+        arguments=["0.25", "0", "0.30", "0", "0", "0",
                    "amr/chassis", "amr/chassis/lidar"],
         output="screen",
     )
@@ -104,8 +104,9 @@ def generate_launch_description():
             "use_sim_time": use_sim_time,
             "sensors.lidar.type": "sick_tim781",
             "sensors.lidar.topic": "/scan",
-            # G1c: 任务点用 map 坐标系（world (2.0,0) → map (10.16,9.85)）
-            "goal_x": 10.16,
+            # VFH 验证: 任务点放墙后（world x=3 墙, 后缘 3.15 → map 11.31;
+            # goal map (12.0,9.85) = world (3.84,0)，必须绕障）
+            "goal_x": 12.0,
             "goal_y": 9.85,
         }],
     )

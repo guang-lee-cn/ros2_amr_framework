@@ -95,7 +95,7 @@ def generate_launch_description():
     static_tf_lidar = RosNode(
         package="tf2_ros", executable="static_transform_publisher",
         parameters=[{"use_sim_time": use_sim_time}],
-        arguments=["0.25", "0", "0.05", "0", "0", "0",
+        arguments=["0.25", "0", "0.30", "0", "0", "0",
                    "amr/chassis", "amr/chassis/lidar"],
         output="screen",
     )
