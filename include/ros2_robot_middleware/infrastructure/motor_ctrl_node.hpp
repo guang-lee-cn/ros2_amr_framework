@@ -5,12 +5,14 @@
 #include "ros2_robot_middleware/domain/execution/collision_guard.hpp"
 #include "ros2_robot_middleware/domain/execution/pure_pursuit.hpp"
 #include "ros2_robot_middleware/domain/execution/vfh_avoidance.hpp"
+#include "ros2_robot_middleware/domain/execution/velocity_smoother.hpp"
 #include "ros2_robot_middleware/domain/planning/track_error_monitor.hpp"
 #include "ros2_robot_middleware/srv/set_param.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
 #include "geometry_msgs/msg/twist.hpp"
+#include "geometry_msgs/msg/pose_array.hpp"
 
 #include <atomic>
 #include <mutex>
@@ -52,6 +54,7 @@ private:
 
   void on_odom(const nav_msgs::msg::Odometry::SharedPtr msg);
   void on_scan(const sensor_msgs::msg::LaserScan::SharedPtr msg);
+  void on_path(const geometry_msgs::msg::PoseArray::SharedPtr msg);
 
   // Publish the velocity command to the base (DiffDrive in sim, IActuator in prod)
   void publish_twist(float linear, float angular);
@@ -63,6 +66,11 @@ private:
   amr::domain::planning::TrackErrorMonitor error_monitor_;
   amr::domain::execution::CollisionGuard guard_;
   amr::domain::execution::VfhAvoidance vhf_;
+  // G2-D control-layer hardening: time-domain acceleration limits on the
+  // published /cmd_vel (PurePursuit only limits in the geometry domain).
+  amr::domain::execution::VelocitySmoother smoother_;
+  amr::domain::execution::Twist2D last_cmd_{0.0F, 0.0F};
+  bool vfh_enabled_{true};  // VFH local avoidance; demo disables (A* path already avoids)
 
   // ROS2 infrastructure
   rclcpp_action::Server<ros2_robot_middleware::action::MoveToPose>::SharedPtr action_server_;
@@ -84,6 +92,14 @@ private:
   // both are lightweight non-blocking callbacks that must not be starved by
   // the blocking execute() loop in the default group.
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
+
+  // /planning/path — the decision layer's A* global path. The motor tracks
+  // it (not a 2-point straight line) so the robot follows the globally-planned
+  // avoidance around obstacles. Demo: map≡odom so the map-frame path is used
+  // directly; production would transform via TF.
+  rclcpp::Subscription<geometry_msgs::msg::PoseArray>::SharedPtr path_sub_;
+  std::vector<amr::domain::execution::Waypoint> latest_path_;
+  mutable std::mutex path_mutex_;
 
   // Thread-safe current pose (updated by odom callback, read by execute loop)
   mutable std::mutex pose_mutex_;

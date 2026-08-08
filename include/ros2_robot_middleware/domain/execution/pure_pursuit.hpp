@@ -46,11 +46,11 @@ struct Waypoint {
 class PurePursuit {
 public:
   struct Params {
-    float lookahead = 0.5F;        // lookahead distance (m)
+    float lookahead = 1.0F;        // lookahead distance (m)
     float max_linear = 0.5F;       // max linear velocity (m/s)
     float max_angular = 1.5F;      // max angular velocity (rad/s)
     float accel_limit = 1.0F;      // linear accel (m/s²)
-    float goal_tolerance = 0.1F;   // arrived within this distance (m)
+    float goal_tolerance = 0.05F;  // arrived within this distance (m)
     float slow_radius = 0.5F;      // start decelerating within this distance (m)
     float max_track_err = 1.0F;    // lateral error to clamp steering (m)
   };

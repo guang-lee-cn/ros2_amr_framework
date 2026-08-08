@@ -35,7 +35,7 @@ namespace execution {
 class VfhAvoidance {
 public:
   struct Params {
-    float active_range = 1.2F;      // obstacle within → steer (m)
+    float active_range = 3.0F;      // obstacle within → steer (m)
     float passable_threshold = 0.5F; // sector passable if nearest > this (m)
     float fov_half = 0.7854F;       // intervention looks at goal ± 45°
     float max_steering = 1.5F;      // angular velocity limit (rad/s)

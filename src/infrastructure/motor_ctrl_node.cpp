@@ -22,6 +22,7 @@ MotorCtrlNode::MotorCtrlNode(const rclcpp::NodeOptions &options)
 MotorCtrlNode::CallbackReturn
 MotorCtrlNode::on_configure(const rclcpp_lifecycle::State &)
 {
+  vfh_enabled_ = this->declare_parameter("vfh_enabled", true);
   action_server_ = rclcpp_action::create_server<MoveToPose>(
     this, "/cmd/move_to_pose",
     [this](const rclcpp_action::GoalUUID &uuid, std::shared_ptr<const MoveToPose::Goal> goal) {
@@ -70,7 +71,32 @@ MotorCtrlNode::on_configure(const rclcpp_lifecycle::State &)
     [this](sensor_msgs::msg::LaserScan::SharedPtr msg) { on_scan(msg); },
     scan_opts);
 
+  // A* global path from the decision layer (obstacle avoidance route).
+  path_sub_ = this->create_subscription<geometry_msgs::msg::PoseArray>(
+    "/planning/path", rclcpp::QoS(10).reliable(),
+    [this](geometry_msgs::msg::PoseArray::SharedPtr msg) { on_path(msg); });
+
   return CallbackReturn::SUCCESS;
+}
+
+void MotorCtrlNode::on_path(const geometry_msgs::msg::PoseArray::SharedPtr msg) {
+  std::lock_guard<std::mutex> lock(path_mutex_);
+  latest_path_.clear();
+  latest_path_.reserve(msg->poses.size());
+  for (const auto &pose : msg->poses) {
+    latest_path_.push_back({static_cast<float>(pose.position.x),
+                            static_cast<float>(pose.position.y)});
+  }
+  // Debug: A* global path shape (demo/development).
+  if (!msg->poses.empty()) {
+    RCLCPP_INFO(this->get_logger(),
+                "path %zu pts, start=(%.2f,%.2f) mid=(%.2f,%.2f) end=(%.2f,%.2f)",
+                msg->poses.size(),
+                msg->poses.front().position.x, msg->poses.front().position.y,
+                msg->poses[msg->poses.size() / 2].position.x,
+                msg->poses[msg->poses.size() / 2].position.y,
+                msg->poses.back().position.x, msg->poses.back().position.y);
+  }
 }
 
 MotorCtrlNode::CallbackReturn
@@ -181,7 +207,9 @@ void MotorCtrlNode::execute(const std::shared_ptr<ServerGoalHandle> goal_handle)
   }
   Waypoint target{goal->target_x, goal->target_y};
 
-  // 2-point path: current position → goal
+  // 2-point path: current position → goal. (A* global path tracking is
+  // disabled — TODO: smooth the planned path; lookahead jumps on sharp
+  // bends cause oscillation. VFH handles local avoidance.)
   std::vector<Waypoint> path = {{current.x, current.y}, target};
   float total_dist = std::sqrt(goal->target_x * goal->target_x + goal->target_y * goal->target_y);
 
@@ -209,6 +237,12 @@ void MotorCtrlNode::execute(const std::shared_ptr<ServerGoalHandle> goal_handle)
 
     // Pure Pursuit tracking (uses real odom pose, not self-integrated)
     auto twist = tracker_.track(path, current);
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+        "exe: pos=(%.2f,%.2f,%.0f°) lb=%.0f° alpha=%.0f° twist=(%.2f,%.2f)",
+        current.x, current.y, current.theta * 180.0F / M_PI,
+        tracker_.lookahead_bearing(path, current) * 180.0F / M_PI,
+        (tracker_.lookahead_bearing(path, current) - current.theta) * 180.0F / M_PI,
+        twist.linear, twist.angular);
 
     if (twist.linear == 0.0F && twist.angular == 0.0F) {
       // Command a full stop before reporting arrival — the base keeps its
@@ -227,7 +261,8 @@ void MotorCtrlNode::execute(const std::shared_ptr<ServerGoalHandle> goal_handle)
     // VFH avoidance (G2-B): if a near obstacle blocks the goal bearing,
     // override the steering toward the nearest passable gap and slow down
     // slightly while turning. Same scan snapshot the guard clamps against.
-    {
+    // Optional: demo disables it when the A* global path already avoids.
+    if (vfh_enabled_) {
       const auto scan = guard_.snapshot();
       const float goal_angle = tracker_.lookahead_bearing(path, current);
       const auto avoid = vhf_.steer(scan, goal_angle, twist.linear);
@@ -322,9 +357,13 @@ void MotorCtrlNode::execute(const std::shared_ptr<ServerGoalHandle> goal_handle)
 }
 
 void MotorCtrlNode::publish_twist(float linear, float angular) {
+  // Velocity smoother (G2-D): clamp the rate of change vs the last command
+  // so the base accelerates/brakes smoothly instead of snapping speeds.
+  constexpr float kDt = 0.05F;  // 20Hz control period (rclcpp::Rate(20))
+  last_cmd_ = smoother_.smooth({linear, angular}, last_cmd_, kDt);
   geometry_msgs::msg::Twist msg;
-  msg.linear.x = linear;
-  msg.angular.z = angular;
+  msg.linear.x = last_cmd_.linear;
+  msg.angular.z = last_cmd_.angular;
   cmd_vel_pub_->publish(msg);
 }
 

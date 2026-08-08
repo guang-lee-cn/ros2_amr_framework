@@ -42,9 +42,10 @@ def generate_launch_description():
                 "launch", "gz_sim.launch.py"),
         ]),
         launch_arguments={
-            # -s --headless-rendering：服务器 + 离屏渲染（传感器仍产数据）。
-            # 不用 GUI 模式——WSL2 d3d12 下 Qt GLX 集成偶发崩溃（RenderThread 段错误）。
-            # 可视化交给 Foxglove（点云/图像/里程均可看）。
+            # 必须用 GUI 模式（不带 -s/headless）：gpu_lidar 需要渲染场景，headless
+            # 下 WSL2 无 GPU 上下文 → /scan 全 inf，护栏/VFH/感知全失效。
+            # GUI 窗口在 WSL2 d3d12 下会黑屏/偶发崩溃，但这是纯显示问题——
+            # 仿真与传感器数据完全正常，可视化交给 Foxglove。
             "gz_args": f"-r {world_path}",
         }.items(),
     )
@@ -58,7 +59,7 @@ def generate_launch_description():
         arguments=[
             "-name", "amr",
             "-file", amr_path,
-            "-x", "0", "-y", "0", "-z", "0.15",  # 略高于着地高度(0.125)，落下后轮子干净着地
+            "-x", "0", "-y", "0", "-z", "0.0",  # 轮底 model z=0.025，0.0 几乎贴地，最低冲击
         ],
         output="screen",
     )
@@ -174,6 +175,32 @@ def generate_launch_description():
         output="screen",
     )
 
+    # 静态 TF：chassis → lidar（0.25 0 0.30），Foxglove URDF 渲染 lidar 圆柱用
+    static_tf_lidar = RosNode(
+        package="tf2_ros", executable="static_transform_publisher",
+        parameters=[{"use_sim_time": use_sim_time}],
+        arguments=["0.25", "0", "0.30", "0", "0", "0",
+                   "amr/chassis", "amr/chassis/lidar"],
+        output="screen",
+    )
+
+    # TF 桥（新增）：gz 模型位姿 → ROS /tf
+    # 没有它 /tf 发布者为 0，Foxglove 3D 面板无坐标系可渲染 → 看不到小车。
+    bridge_tf = RosNode(
+        package="ros_gz_bridge",
+        executable="parameter_bridge",
+        name="bridge_tf",
+        arguments=[
+            "/model/amr/tf"
+            "@tf2_msgs/msg/TFMessage"
+            "[gz.msgs.Pose_V",
+        ],
+        remappings=[
+            ("/model/amr/tf", "/tf"),
+        ],
+        output="screen",
+    )
+
     # ── 我们的业务节点 ──────────────────────────────────────────────
     # 仿真模式下 sensor 节点不启动——Gazebo 传感器通过 ros_gz_bridge 直接
     # 提供 /sensor/lidar, /sensor/imu, /sensor/camera 数据。
@@ -221,5 +248,7 @@ def generate_launch_description():
         bridge_camera,
         bridge_cmd_vel,
         bridge_odom,
+        bridge_tf,
+        static_tf_lidar,
         *nodes,
     ])
