@@ -110,6 +110,9 @@
     <!-- 传感器系统插件：激活所有模型传感器（imu/lidar/camera）。
          缺此插件 = 话题存在但零数据（此前"无数据"的根因）。 -->
     <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <!-- ogre2（唯一可用）：ogre(OGRE1) 在 gz-sim8 报 geometry 加载失败。
+           ogre2 有 gpu_lidar 引擎 bug（world_pose 不随车更新，见 gz-sensors#504），
+           平台无关——Windows 原生同样遇到，这是 gz-sim8 引擎局限。 -->
       <render_engine>ogre2</render_engine>
     </plugin>
 
