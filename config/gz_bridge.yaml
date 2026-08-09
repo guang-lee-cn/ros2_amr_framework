@@ -1,0 +1,27 @@
+# ros_gz bridge（nav2 tb4 schema：ros_topic_name + gz_topic_name + types + direction）
+# 无 topic_name / qos_profile（tb4 实测这两个都报错，正确字段是 ros/gz_topic_name）
+- ros_topic_name: /scan
+  gz_topic_name: /lidar             # amr.sdf lidar <topic> 解析到根
+  ros_type_name: sensor_msgs/msg/LaserScan
+  gz_type_name: gz.msgs.LaserScan
+  direction: GZ_TO_ROS
+- ros_topic_name: /odom
+  gz_topic_name: /odom
+  ros_type_name: nav_msgs/msg/Odometry
+  gz_type_name: gz.msgs.Odometry
+  direction: GZ_TO_ROS
+- ros_topic_name: /tf
+  gz_topic_name: /tf
+  ros_type_name: tf2_msgs/msg/TFMessage
+  gz_type_name: gz.msgs.Pose_V
+  direction: GZ_TO_ROS              # DiffDrive <tf_topic>tf，frame amr/odom→amr/chassis
+- ros_topic_name: /cmd_vel
+  gz_topic_name: /cmd_vel
+  ros_type_name: geometry_msgs/msg/Twist
+  gz_type_name: gz.msgs.Twist
+  direction: ROS_TO_GZ              # motor_ctrl → gz DiffDrive
+- ros_topic_name: /clock
+  gz_topic_name: /clock
+  ros_type_name: rosgraph_msgs/msg/Clock
+  gz_type_name: gz.msgs.Clock
+  direction: GZ_TO_ROS              # use_sim_time 必需

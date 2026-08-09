@@ -105,6 +105,9 @@ target_link_libraries(scene_simulator robot_middleware_lib)
 ament_target_dependencies(scene_simulator visualization_msgs)
 install(TARGETS scene_simulator DESTINATION lib/${PROJECT_NAME})
 
+# mock_amcl — gz /odom → /amcl_pose(map) + TF map→amr/odom，仿真补 map 帧
+install(PROGRAMS scripts/mock_amcl.py DESTINATION lib/${PROJECT_NAME} RENAME mock_amcl)
+
 install(DIRECTORY config launch worlds
   DESTINATION share/${PROJECT_NAME})
 

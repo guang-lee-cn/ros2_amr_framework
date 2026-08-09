@@ -38,7 +38,7 @@
         <!-- z=1.00：地面环推到 ~1.77m。车接近墙(<1.77m)时墙比地面环近 → 护栏检测墙停。
              地面环(z=0 点)在 0° 遮挡墙是 WSL2 gpu_lidar beam 俯角的固有 bug，
              抬高 lidar 让地面环推远，车接近墙时墙回波先于地面环被检测。 -->
-        <pose>0.40 0 1.00 0 0 0</pose>
+        <pose>0.25 0 1.00 0 0 0</pose>
         <always_on>true</always_on>
         <update_rate>10</update_rate>
         <topic>lidar</topic>
@@ -143,10 +143,10 @@
         <inertia><ixx>0.001</ixx><iyy>0.001</iyy><izz>0.001</izz></inertia>
       </inertial>
       <collision name="collision">
-        <sphere><radius>0.05</radius></sphere>
+        <geometry><sphere><radius>0.05</radius></sphere></geometry>
       </collision>
       <visual name="visual">
-        <sphere><radius>0.05</radius></sphere>
+        <geometry><sphere><radius>0.05</radius></sphere></geometry>
         <material><ambient>0.1 0.1 0.1</ambient><diffuse>0.2 0.2 0.2</diffuse></material>
       </visual>
     </link>
@@ -164,10 +164,10 @@
         <inertia><ixx>0.001</ixx><iyy>0.001</iyy><izz>0.001</izz></inertia>
       </inertial>
       <collision name="collision">
-        <sphere><radius>0.05</radius></sphere>
+        <geometry><sphere><radius>0.05</radius></sphere></geometry>
       </collision>
       <visual name="visual">
-        <sphere><radius>0.05</radius></sphere>
+        <geometry><sphere><radius>0.05</radius></sphere></geometry>
         <material><ambient>0.1 0.1 0.1</ambient><diffuse>0.2 0.2 0.2</diffuse></material>
       </visual>
     </link>
@@ -187,6 +187,11 @@
       <wheel_separation>0.5</wheel_separation>
       <wheel_radius>0.075</wheel_radius>
       <topic>/cmd_vel</topic>
+      <odom_topic>odom</odom_topic>
+      <tf_topic>tf</tf_topic>
+      <frame_id>amr/odom</frame_id>
+      <child_frame_id>amr/chassis</child_frame_id>
+      <odom_publish_frequency>30</odom_publish_frequency>
     </plugin>
 
     <!-- ================================================================
