@@ -10,17 +10,37 @@ world_pose 不随车更新，见架构文档 §7）。SceneSimulator 发布合�
   → SceneSimulator 积分 /cmd_vel 更新车 → 闭环自主导航到目标
 
 可视化：Foxglove 连接 ws://localhost:8765，3D 面板看车 + scan + 路径。
+robot_state_publisher 读 amr_visual.urdf 发布 /robot_description + joint TF
+（fixed joint 无需 /joint_states）→ Foxglove 从 /robot_description 渲染小车。
 """
 
+import os
+
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch_ros.actions import Node
 
 
 def generate_launch_description():
+    pkg_dir = get_package_share_directory("ros2_robot_middleware")
+    urdf_path = os.path.join(pkg_dir, "worlds", "amr_visual.urdf")
+
+    # scene 是 map→amr/odom 的唯一 TF 发布者，误杀即整棵子树坍塌 →
+    # Foxglove 报"X 到 map 变换缺失"。respawn 让它崩/被杀后自动重启（B1）。
     scene = Node(
         package="ros2_robot_middleware",
         executable="scene_simulator",
         output="screen",
+        respawn=True,
+        respawn_delay=2.0,
+    )
+
+    # 发布 /robot_description + fixed-joint TF → Foxglove 渲染小车模型
+    robot_state_publisher = Node(
+        package="robot_state_publisher",
+        executable="robot_state_publisher",
+        output="screen",
+        parameters=[{"robot_description": open(urdf_path).read()}],
     )
 
     compute = Node(
@@ -32,13 +52,14 @@ def generate_launch_description():
             # fusion 用 sick_tim781 适配器：订阅 /scan（SceneSimulator 提供）
             "sensors.lidar.type": "sick_tim781",
             "sensors.lidar.topic": "/scan",
-            # 决策目标：box(8,0) 之前（x=7，box 前缘 7.75）。
-            # 走直线到目标，护栏在 box 前不触发（0.75m > stop_dist 0.3）。
-            # 绕障（G2-B VFH）单测已覆盖；demo 展示感知→决策→执行闭环。
-            "goal_x": 7.0,
+            # 决策目标：box(8,0) 之后（x=15）。避障：A* 全局绕 inflation 区
+            #（inscribed_radius 0.35 → path 离 box > guard stop_dist 0.30）+ guard 兜底限速。
+            # VFH off：inscribed 0.35 已让 A* 绕够远；多障碍 scene 下 VFH 与 A* 重复避障冲突。
+            # 循环 goal 由外部脚本切换 2↔15，驱动车持续往返绕障。
+            "goal_x": 15.0,
             "goal_y": 0.0,
             "vfh_enabled": False,
         }],
     )
 
-    return LaunchDescription([scene, compute])
+    return LaunchDescription([scene, robot_state_publisher, compute])

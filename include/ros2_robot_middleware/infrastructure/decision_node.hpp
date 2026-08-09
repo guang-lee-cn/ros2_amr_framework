@@ -8,8 +8,10 @@
 #include "ros2_robot_middleware/domain/planning/path_smoother.hpp"
 #include "ros2_robot_middleware/domain/planning/preempt_policy.hpp"
 #include "ros2_robot_middleware/domain/planning/target_selector.hpp"
+#include "ros2_robot_middleware/domain/planning/scan_to_grid.hpp"
 #include "ros2_robot_middleware/msg/perception_objects.hpp"
 #include "std_msgs/msg/string.hpp"
+#include "sensor_msgs/msg/laser_scan.hpp"
 #include "geometry_msgs/msg/pose_array.hpp"
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
 #include "tf2_ros/buffer.h"
@@ -42,6 +44,7 @@ private:
   void on_perception(const ros2_robot_middleware::msg::PerceptionObjects::SharedPtr &objs);
   void on_amcl_pose(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
   void on_fusion_heartbeat(const std_msgs::msg::String::SharedPtr msg);
+  void on_scan(const sensor_msgs::msg::LaserScan::SharedPtr msg);
   void on_goal_response(
     const rclcpp_action::ClientGoalHandle<ros2_robot_middleware::action::MoveToPose>::SharedPtr &goalhdl);
   void on_result(
@@ -73,6 +76,7 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr amcl_pose_sub_;
   mutable std::mutex pose_mutex_;
   amr::domain::planning::Pose current_pose_{0.0F, 0.0F};
+  float current_theta_ = 0.0F;  // robot 朝向（amcl orientation，raytrace 用）
   std::atomic<bool> has_pose_{false};
 
   // map→odom TF (AMCL publishes it). decision plans in the map frame but the
@@ -82,7 +86,11 @@ private:
   std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
   std::unique_ptr<tf2_ros::TransformListener> tf_listener_;
 
-  // Preemption state (ROS2-specific — goal handle lifecycle)
+  // Preemption state (ROS2-specific — goal handle lifecycle). Guarded by
+  // goal_mutex_: on_perception (Reentrant group) reads active_goal_ while
+  // on_goal_response/on_result (default group) write it — a cross-group data
+  // race without a lock (B4, §0 铁律5 UB 零容忍).
+  mutable std::mutex goal_mutex_;
   rclcpp_action::ClientGoalHandle<ros2_robot_middleware::action::MoveToPose>::SharedPtr active_goal_;
   float last_target_x_ = 0.0F;
   float last_target_y_ = 0.0F;
@@ -92,6 +100,16 @@ private:
   // Extraction keeps decision logic unit-testable without ROS2.
   amr::domain::planning::GoalDispatchGate gate_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr fusion_hb_sub_;
+
+  // /scan raytrace（NAV2 ObstacleLayer 对标）— 替代质心 mark_obstacles，
+  // 覆盖 box 表面多点 LETHAL（治撞 box）。
+  amr::domain::planning::ScanToGrid scan_to_grid_;
+  rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
+  std::vector<float> latest_ranges_;
+  float latest_angle_min_ = 0.0F;
+  float latest_angle_inc_ = 0.0F;
+  bool has_scan_ = false;
+  mutable std::mutex scan_mutex_;
 };
 
 #endif

@@ -72,6 +72,12 @@ DecisionNode::on_configure(const rclcpp_lifecycle::State &)
     [this](std_msgs::msg::String::SharedPtr msg) { on_fusion_heartbeat(msg); },
     decision_opts);
 
+  // /scan raytrace（NAV2 ObstacleLayer）— scan 驱动 grid，同 perception 组。
+  scan_sub_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
+    "/scan", rclcpp::QoS(10).best_effort(),
+    [this](sensor_msgs::msg::LaserScan::SharedPtr msg) { on_scan(msg); },
+    decision_opts);
+
   heartbeat_pub_ = this->create_publisher<std_msgs::msg::String>(
     "/decision/heartbeat", rclcpp::QoS(10).reliable());
 
@@ -85,7 +91,7 @@ DecisionNode::on_configure(const rclcpp_lifecycle::State &)
   demo_grid_.height = 400;
   demo_grid_.resolution = 0.05F;
   demo_grid_.origin = {0.0F, 0.0F};
-  demo_grid_.cells.assign(400 * 400, false);
+  demo_grid_.cells.assign(400 * 400, amr::domain::planning::OccupancyGrid::FREE);
 
   return CallbackReturn::SUCCESS;
 }
@@ -158,39 +164,50 @@ void DecisionNode::on_perception(const PerceptionObjects::SharedPtr& objs)
   //    (Regression: objects[0] was picked as the navigation goal via
   //    TargetSelector, so in a static scene the robot chased the nearest
   //    wall/rack forever. The goal now comes from the task layer below.)
-  std::fill(demo_grid_.cells.begin(), demo_grid_.cells.end(), false);
-  amr::domain::planning::PerceivedObject obstacles[8];
-  std::size_t n_obs = 0;
-  for (std::size_t i = 0; i < objs->objects.size() && n_obs < 8; ++i) {
-    // Obstacles arrive in the body frame (amr/chassis); the A* grid is in the
-    // map frame. Transform via TF — otherwise obstacle coordinates go stale
-    // relative to a moving robot and A* plans straight through the obstacle.
-    const float ox = objs->objects[i].x;
-    const float oy = objs->objects[i].y;
-    float wx = ox, wy = oy;
-    if (tf_buffer_) {
-      try {
-        const auto t = tf_buffer_->lookupTransform(
-            "map", "amr/chassis", rclcpp::Time(0),
-            rclcpp::Duration::from_seconds(0.1));
-        const double yaw = 2.0 * std::atan2(t.transform.rotation.z,
-                                            t.transform.rotation.w);
-        const double c = std::cos(yaw), s = std::sin(yaw);
-        wx = static_cast<float>(t.transform.translation.x + c * ox - s * oy);
-        wy = static_cast<float>(t.transform.translation.y + s * ox + c * oy);
-      } catch (const tf2::TransformException &e) {
-        // Fallback: keep body-frame coordinates (valid when map≡body, e.g.
-        // robot at origin). Do NOT block the decision — transform is best-effort.
-        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-                             "chassis→map TF unavailable, using body coords: %s",
-                             e.what());
-      }
-    }
-    obstacles[n_obs++] = {wx, wy, objs->objects[i].id.c_str()};
+  // /scan raytrace（NAV2 ObstacleLayer 对标）替代质心 mark_obstacles：
+  // scan 射线覆盖障碍表面多点 LETHAL（治撞 box）+ 射线 clearing（替代每帧全清）。
+  float rx = 0.0F, ry = 0.0F, rtheta = 0.0F;
+  {
+    std::lock_guard<std::mutex> lk(pose_mutex_);
+    rx = current_pose_.x;
+    ry = current_pose_.y;
+    rtheta = current_theta_;
   }
-  if (n_obs > 0) {
-    grid_updater_.mark_obstacles(demo_grid_, obstacles, n_obs,
-                                 std::numeric_limits<std::size_t>::max());
+  std::vector<float> ranges;
+  float amin = 0.0F, ainc = 0.0F;
+  bool has_scan = false;
+  {
+    std::lock_guard<std::mutex> lk(scan_mutex_);
+    ranges = latest_ranges_;
+    amin = latest_angle_min_;
+    ainc = latest_angle_inc_;
+    has_scan = has_scan_;
+  }
+  if (has_scan && !ranges.empty()) {
+    // lidar 在 chassis 前 0.25m（chassis→lidar TF）— raytrace 必须从 lidar
+    // 发射，否则 hit 坐标整体偏前 0.25m，障碍本体漏标（box 本体在 hit 后）。
+    const float lx = rx + 0.25F * std::cos(rtheta);
+    const float ly = ry + 0.25F * std::sin(rtheta);
+    scan_to_grid_.raytrace(demo_grid_, ranges.data(), ranges.size(),
+                           amin, ainc, lx, ly, rtheta);
+    // 诊断：grid box 位置 cost（box (8,0) → cell (160,0)，origin 0,0 res 0.05）
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+        "raytrace: ranges=%zu robot=(%.2f,%.2f,%.0fdeg) box_cell(160,0)=%d",
+        ranges.size(), rx, ry, rtheta * 180.0F / M_PI,
+        demo_grid_.cost_at(160, 0));
+  } else {
+    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+        "raytrace SKIP: has_scan=%d ranges=%zu", has_scan, ranges.size());
+  }
+
+  // fusion objects 标 grid（质心 LETHAL + 指数 inflation）— 补 /scan 盲区：
+  // depth 检出的低矮障碍 lidar 扫不到，须进 grid 才能 A*/VFH 绕。
+  // objects 在 amr/chassis frame（fusion_node:258），用 robot map 位姿旋/平移到 map 再标。
+  const float oc = std::cos(rtheta), os = std::sin(rtheta);
+  for (const auto &obj : objs->objects) {
+    const float mx = rx + oc * obj.x - os * obj.y;
+    const float my = ry + os * obj.x + oc * obj.y;
+    grid_updater_.inflate(demo_grid_, mx, my);
   }
 
   // 2. Task-derived goal (launch param / fleet manager), NOT perception.
@@ -228,7 +245,14 @@ void DecisionNode::on_perception(const PerceptionObjects::SharedPtr& objs)
   }
 
   // 4. Goal lock: perception noise must not preempt an executing goal.
-  if (active_goal_) return;
+  // active_goal_ 跨 callback group 共享（on_perception 在 Reentrant 组读，
+  // on_goal_response/on_result 在默认组写）—— 锁内快照后立即释放（B4）。
+  bool has_active_goal = false;
+  {
+    std::lock_guard<std::mutex> lk(goal_mutex_);
+    has_active_goal = static_cast<bool>(active_goal_);
+  }
+  if (has_active_goal) return;
 
   { AMR_PERF_PHASE("decision:astar");
     auto smooth = smoother_.smooth(path);
@@ -273,7 +297,19 @@ void DecisionNode::on_amcl_pose(
   std::lock_guard<std::mutex> lock(pose_mutex_);
   current_pose_.x = static_cast<float>(msg->pose.pose.position.x);
   current_pose_.y = static_cast<float>(msg->pose.pose.position.y);
+  // quaternion → yaw（scan raytrace 把 lidar 角向转到 map 角向用）
+  const auto &q = msg->pose.pose.orientation;
+  current_theta_ = static_cast<float>(std::atan2(
+      2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z)));
   has_pose_.store(true, std::memory_order_release);
+}
+
+void DecisionNode::on_scan(const sensor_msgs::msg::LaserScan::SharedPtr msg) {
+  std::lock_guard<std::mutex> lk(scan_mutex_);
+  latest_ranges_ = msg->ranges;
+  latest_angle_min_ = msg->angle_min;
+  latest_angle_inc_ = msg->angle_increment;
+  has_scan_ = true;
 }
 
 void DecisionNode::on_fusion_heartbeat(const std_msgs::msg::String::SharedPtr msg)
@@ -290,6 +326,10 @@ void DecisionNode::on_fusion_heartbeat(const std_msgs::msg::String::SharedPtr ms
 }
 
 // ── Action client wiring (ROS2-specific, stays in Node) ─────────────────────
+// goal_mutex_ 保护 active_goal_/retry_count_/last_target_（B4）：on_perception
+// (Reentrant 组) 与 on_goal_response/on_result (默认组) 跨组并发。锁内绝不调
+// ROS 异步接口（async_send_goal/async_cancel_goal）——在锁外调用，避免回调
+// 重入死锁。
 
 void DecisionNode::send_goal(float target_x, float target_y)
 {
@@ -299,8 +339,11 @@ void DecisionNode::send_goal(float target_x, float target_y)
     return;
   }
 
-  last_target_x_ = target_x;
-  last_target_y_ = target_y;
+  {
+    std::lock_guard<std::mutex> lk(goal_mutex_);
+    last_target_x_ = target_x;
+    last_target_y_ = target_y;
+  }
 
   auto goal         = MoveToPose::Goal{};
   goal.target_x     = target_x;
@@ -314,41 +357,64 @@ void DecisionNode::send_goal(float target_x, float target_y)
   opts.result_callback =
     [this](const ClientGoalHandle::WrappedResult& r) { on_result(r); };
 
-  client_->async_send_goal(goal, opts);
+  client_->async_send_goal(goal, opts);  // 锁外：回调可能重入
 }
 
 void DecisionNode::cancel_active_goal()
 {
-  if (!active_goal_) return;
+  ClientGoalHandle::SharedPtr gh;
+  {
+    std::lock_guard<std::mutex> lk(goal_mutex_);
+    gh = active_goal_;
+    active_goal_.reset();
+    retry_count_ = 0;
+  }
+  if (!gh) return;
   RCLCPP_INFO(this->get_logger(), "Preempting previous goal");
-  client_->async_cancel_goal(active_goal_);
-  active_goal_.reset();
-  retry_count_ = 0;
+  client_->async_cancel_goal(gh);  // 锁外：避免回调重入死锁
 }
 
 void DecisionNode::on_goal_response(const ClientGoalHandle::SharedPtr& goal_handle)
 {
   if (!goal_handle) {
-    if (selector_.should_retry(retry_count_)) {
-      retry_count_++;
+    // 被拒：锁内原子地判定 retry + 累加 + 取 last_target，锁外再 send_goal。
+    bool retry = false;
+    float tx = 0.0F, ty = 0.0F;
+    int attempt = 0;
+    {
+      std::lock_guard<std::mutex> lk(goal_mutex_);
+      retry = selector_.should_retry(retry_count_);
+      tx = last_target_x_;
+      ty = last_target_y_;
+      if (retry) {
+        attempt = ++retry_count_;
+      } else {
+        retry_count_ = 0;
+      }
+    }
+    if (retry) {
       RCLCPP_WARN(this->get_logger(), "Goal rejected, retrying %d/%d (%.2f, %.2f)",
-                   retry_count_, amr::domain::planning::TargetSelector::kMaxRetries,
-                   last_target_x_, last_target_y_);
-      send_goal(last_target_x_, last_target_y_);
+                   attempt, amr::domain::planning::TargetSelector::kMaxRetries, tx, ty);
+      send_goal(tx, ty);  // 锁外：send_goal 内部自带短锁，不重入
     } else {
       RCLCPP_ERROR(this->get_logger(), "Goal rejected after retries, giving up");
-      retry_count_ = 0;
     }
     return;
   }
-  active_goal_ = goal_handle;
-  retry_count_ = 0;
+  {
+    std::lock_guard<std::mutex> lk(goal_mutex_);
+    active_goal_ = goal_handle;
+    retry_count_ = 0;
+  }
   RCLCPP_INFO(this->get_logger(), "Goal accepted by motor_ctrl");
 }
 
 void DecisionNode::on_result(const ClientGoalHandle::WrappedResult& result)
 {
-  active_goal_.reset();
+  {
+    std::lock_guard<std::mutex> lk(goal_mutex_);
+    active_goal_.reset();
+  }
   switch (result.code) {
     case rclcpp_action::ResultCode::SUCCEEDED:
       RCLCPP_INFO(this->get_logger(), "MoveToPose succeeded: reached (%.2f, %.2f)",

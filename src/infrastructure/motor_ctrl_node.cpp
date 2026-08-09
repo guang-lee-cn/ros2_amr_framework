@@ -72,9 +72,14 @@ MotorCtrlNode::on_configure(const rclcpp_lifecycle::State &)
     scan_opts);
 
   // A* global path from the decision layer (obstacle avoidance route).
+  // 必须在独立 callback group（与 odom/scan 同组）——否则 execute 的阻塞
+  // 循环在默认组里会饿死 on_path，latest_path_ 永不更新（B11）。
+  rclcpp::SubscriptionOptions path_opts;
+  path_opts.callback_group = odom_cb_group_;
   path_sub_ = this->create_subscription<geometry_msgs::msg::PoseArray>(
     "/planning/path", rclcpp::QoS(10).reliable(),
-    [this](geometry_msgs::msg::PoseArray::SharedPtr msg) { on_path(msg); });
+    [this](geometry_msgs::msg::PoseArray::SharedPtr msg) { on_path(msg); },
+    path_opts);
 
   return CallbackReturn::SUCCESS;
 }
@@ -206,11 +211,18 @@ void MotorCtrlNode::execute(const std::shared_ptr<ServerGoalHandle> goal_handle)
     current = current_pose_;
   }
   Waypoint target{goal->target_x, goal->target_y};
+  tracker_.reset();  // 新 goal：重置 PurePursuit path 进度，避免沿用旧进度
 
-  // 2-point path: current position → goal. (A* global path tracking is
-  // disabled — TODO: smooth the planned path; lookahead jumps on sharp
-  // bends cause oscillation. VFH handles local avoidance.)
-  std::vector<Waypoint> path = {{current.x, current.y}, target};
+  // 全局路径跟踪：优先用 decision 的 A* 平滑路径（已绕障），无则 fallback
+  // 2 点直线。map≡odom（demo），map 帧 path 直接用于 odom 帧跟踪（B11）。
+  std::vector<Waypoint> path;
+  {
+    std::lock_guard<std::mutex> lock(path_mutex_);
+    path = latest_path_;
+  }
+  if (path.size() < 2) {
+    path = {{current.x, current.y}, target};  // 无全局路径 → 直线
+  }
   float total_dist = std::sqrt(goal->target_x * goal->target_x + goal->target_y * goal->target_y);
 
   rclcpp::Rate rate(20);  // 20 Hz control loop
@@ -225,6 +237,9 @@ void MotorCtrlNode::execute(const std::shared_ptr<ServerGoalHandle> goal_handle)
     }
 
     if (goal_handle->is_canceling()) {
+      // 停车归零：base 保留最后速度直到收到新指令，cancel 必须显式发零速
+      // （B5）。SceneSimulator 用 cmd_ 缓存积分，不归零会按最后速度持续滑行。
+      publish_twist(0.0F, 0.0F);
       auto result = std::make_shared<MoveToPose::Result>();
       result->reached = false;
       result->final_x = current.x;
@@ -266,6 +281,10 @@ void MotorCtrlNode::execute(const std::shared_ptr<ServerGoalHandle> goal_handle)
       const auto scan = guard_.snapshot();
       const float goal_angle = tracker_.lookahead_bearing(path, current);
       const auto avoid = vhf_.steer(scan, goal_angle, twist.linear);
+      RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 800,
+          "VFH blocked=%d steer=%.2f goal_a=%.2f cmd_v=%.2f nearest=%.2f",
+          avoid.blocked, avoid.steering, goal_angle, twist.linear,
+          guard_.nearest_distance());
       if (!avoid.blocked && avoid.steering != 0.0F) {
         twist.angular = avoid.steering;
         twist.linear *= 0.7F;  // shed speed while turning around
@@ -277,7 +296,11 @@ void MotorCtrlNode::execute(const std::shared_ptr<ServerGoalHandle> goal_handle)
     // still steer around. An obstacle holding the robot stopped >3s fails
     // the goal so the decision layer replans (anti-deadlock, not a crash).
     const auto guard_now = std::chrono::steady_clock::now();
+    const float pre_guard = twist.linear;
     twist.linear = guard_.clamp(twist.linear, guard_now);
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 800,
+        "guard: nearest=%.2fm pre=%.2f post=%.2f",
+        guard_.nearest_distance(), pre_guard, twist.linear);
     if (guard_.stopped(guard_now) &&
         guard_.blocked_for(guard_now) > std::chrono::seconds(3)) {
       publish_twist(0.0F, 0.0F);

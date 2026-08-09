@@ -54,7 +54,9 @@ public:
 
     if (lidar_ok && tf_) {
       amr::hal::sensor::LidarScan transformed;
-      if (tf_->transform_scan(lidar_scan, transformed, "base_link")) {
+      // 目标帧 = amr/chassis（TF 树帧）。曾用 "base_link"（TF 树无此帧）
+      // 导致 transform_scan 永远失败、scan 透传 —— B2。
+      if (tf_->transform_scan(lidar_scan, transformed, "amr/chassis")) {
         lidar_scan = transformed;
       }
     }

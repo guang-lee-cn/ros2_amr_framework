@@ -3,14 +3,9 @@
      帧名与 amr.sdf / TF 对齐（amr/chassis, amr/chassis/lidar）
      只含视觉几何，不做仿真 -->
 <robot name="amr">
-  <!-- 根坐标系（无几何，rsp 通过固定 joint 发 amr/odom→amr/chassis） -->
-  <link name="amr/odom"/>
-  <joint name="base_joint" type="fixed">
-    <parent link="amr/odom"/>
-    <child link="amr/chassis"/>
-  </joint>
-
-  <!-- 底盘 -->
+  <!-- 根 = amr/chassis。SceneSim 动态发 amr/odom→amr/chassis（车移动），
+       URDF 不再用 base_joint 重复该段 —— 否则 RSP 发 tf_static 身份阵与
+       动态 TF 双重权威冲突，Foxglove 用静态身份阵让车模型停在原点（B8）。-->
   <link name="amr/chassis">
     <visual>
       <geometry><box size="0.6 0.4 0.2"/></geometry>

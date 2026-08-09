@@ -14,10 +14,12 @@ SceneSimulatorNode::SceneSimulatorNode() : Node("scene_simulator") {
   amcl_pub_ =
       create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
           "/amcl_pose", 10);
-  // Robot body marker (CUBE in amr/chassis frame) — reliable visualization in
-  // Foxglove without URDF loading / frame matching issues.
-  marker_pub_ = create_publisher<visualization_msgs::msg::Marker>(
-      "/robot_marker", 10);
+  // 车体 MarkerArray（底盘+lidar+双轮）— Foxglove/RViz 原生渲染，不依赖 URDF。
+  marker_pub_ = create_publisher<visualization_msgs::msg::MarkerArray>(
+      "/robot_model", 10);
+  // 环境 MarkerArray（墙+box）— box 是抽象障碍无实体，发 marker 让可视化可见。
+  obstacle_pub_ = create_publisher<visualization_msgs::msg::MarkerArray>(
+      "/obstacles", 10);
   tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
 
   timer_ = create_wall_timer(std::chrono::milliseconds(50),
@@ -98,21 +100,70 @@ void SceneSimulatorNode::tick() {
   t.transform.rotation.w = 1.0;
   tf_broadcaster_->sendTransform(t);
 
-  // ── Robot body marker (anchored to amr/chassis — follows the robot) ──
-  visualization_msgs::msg::Marker m;
-  m.header.stamp = now;
-  m.header.frame_id = "amr/chassis";
-  m.ns = "robot";
-  m.id = 0;
-  m.type = visualization_msgs::msg::Marker::CUBE;
-  m.action = visualization_msgs::msg::Marker::ADD;
-  m.pose.orientation.w = 1.0;
-  m.scale.x = 0.6F;
-  m.scale.y = 0.4F;
-  m.scale.z = 0.2F;
-  m.color.r = 0.2F;
-  m.color.g = 0.35F;
-  m.color.b = 0.9F;
-  m.color.a = 1.0F;
-  marker_pub_->publish(m);
+  // ── 车体 MarkerArray（底盘+lidar+双轮，锚定 amr/chassis 跟随车移动）──
+  marker_pub_->publish(build_robot_markers(now));
+  // ── 环境 MarkerArray（墙+box，锚定 map 静态）──
+  obstacle_pub_->publish(build_obstacle_markers(now));
+}
+
+visualization_msgs::msg::MarkerArray SceneSimulatorNode::build_obstacle_markers(
+    const rclcpp::Time &now) {
+  visualization_msgs::msg::MarkerArray ma;
+  auto add_box = [&](int id, double x, double y, double z,
+                     double sx, double sy, double sz,
+                     double r, double g, double b) {
+    visualization_msgs::msg::Marker m;
+    m.header.stamp = now;
+    m.header.frame_id = "map";
+    m.ns = "obstacles";
+    m.id = id;
+    m.type = visualization_msgs::msg::Marker::CUBE;
+    m.action = visualization_msgs::msg::Marker::ADD;
+    m.pose.position.x = x; m.pose.position.y = y; m.pose.position.z = z;
+    m.pose.orientation.w = 1.0;
+    m.scale.x = sx; m.scale.y = sy; m.scale.z = sz;
+    m.color.r = r; m.color.g = g; m.color.b = b; m.color.a = 0.6;
+    ma.markers.push_back(std::move(m));
+  };
+  // 仓库墙（灰，x∈[0,19] y∈[-2,2]）
+  add_box(0, 0.0, 0.0, 0.5, 0.1, 4.0, 1.0, 0.5, 0.5, 0.5);     // west
+  add_box(1, 19.0, 0.0, 0.5, 0.1, 4.0, 1.0, 0.5, 0.5, 0.5);    // east
+  add_box(2, 9.5, -2.0, 0.5, 19.0, 0.1, 1.0, 0.5, 0.5, 0.5);   // south
+  add_box(3, 9.5, 2.0, 0.5, 19.0, 0.1, 1.0, 0.5, 0.5, 0.5);    // north
+  // box 障碍（红，0.5×0.5×0.5 @ (8,0)）
+  add_box(4, 8.0, 0.0, 0.25, 0.5, 0.5, 0.5, 0.9, 0.2, 0.2);
+  return ma;
+}
+
+visualization_msgs::msg::MarkerArray SceneSimulatorNode::build_robot_markers(
+    const rclcpp::Time &now) {
+  using visualization_msgs::msg::Marker;
+  visualization_msgs::msg::MarkerArray ma;
+  auto add = [&](int id, int type, double x, double y, double z,
+                 double sx, double sy, double sz,
+                 double r, double g, double b,
+                 tf2::Quaternion q = tf2::Quaternion(0, 0, 0, 1)) {
+    Marker m;
+    m.header.stamp = now;
+    m.header.frame_id = "amr/chassis";
+    m.ns = "robot";
+    m.id = id;
+    m.type = type;
+    m.action = Marker::ADD;
+    m.pose.position.x = x; m.pose.position.y = y; m.pose.position.z = z;
+    m.pose.orientation.x = q.x(); m.pose.orientation.y = q.y();
+    m.pose.orientation.z = q.z(); m.pose.orientation.w = q.w();
+    m.scale.x = sx; m.scale.y = sy; m.scale.z = sz;
+    m.color.r = r; m.color.g = g; m.color.b = b; m.color.a = 1.0;
+    ma.markers.push_back(std::move(m));
+  };
+  // 底盘 box 0.6×0.4×0.2（中心离地 0.1m，底部贴地）蓝色
+  add(0, Marker::CUBE, 0, 0, 0.10, 0.6, 0.4, 0.2, 0.20, 0.35, 0.90);
+  // lidar 圆柱 r0.05 h0.05，挂点 (0.25,0,0.30) 黑色
+  add(1, Marker::CYLINDER, 0.25, 0, 0.30, 0.10, 0.10, 0.05, 0.15, 0.15, 0.15);
+  // 双轮 r0.075 宽0.04，挂点 (0,±0.25,-0.05)，轴沿 y（绕 x 转 π/2）黑色
+  tf2::Quaternion wheel; wheel.setRPY(M_PI / 2, 0, 0);
+  add(2, Marker::CYLINDER, 0, 0.25, -0.05, 0.15, 0.15, 0.04, 0.10, 0.10, 0.10, wheel);
+  add(3, Marker::CYLINDER, 0, -0.25, -0.05, 0.15, 0.15, 0.04, 0.10, 0.10, 0.10, wheel);
+  return ma;
 }

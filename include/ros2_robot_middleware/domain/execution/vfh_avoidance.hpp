@@ -52,17 +52,22 @@ public:
   VfhAvoidance() = default;
   explicit VfhAvoidance(const Params &p) : params_(p) {}
 
+  /// Clear the hysteresis gap memory (call on new goal / replan).
+  void reset() { last_gap_center_ = std::numeric_limits<float>::infinity(); }
+
   /// Compute the avoidance steering for a scan + goal bearing (robot frame).
   /// Returns zero when no near obstacle blocks the goal direction, or when
-  /// the robot is stationary.
-  SteerResult steer(const ScanData &scan, float goal_angle, float cmd_v) const {
+  /// the robot is stationary. Stateful: locks onto a passable gap across
+  /// calls (hysteresis) so the robot does not oscillate between two candidate
+  /// gaps as the scan shifts frame to frame.
+  SteerResult steer(const ScanData &scan, float goal_angle, float cmd_v) {
     // Stationary: never rotate in place from avoidance — let PurePursuit
     // handle orientation while stopped.
     if (cmd_v <= params_.min_linear) return {0.0F, false};
 
     // Intervention gate: only act when an obstacle is near the goal bearing.
     if (nearest_in_goal_fov(scan, goal_angle) > params_.active_range) {
-      return {0.0F, false};
+      return {0.0F, false};  // path clear — keep last gap memory
     }
 
     // Sector histogram over the scan.
@@ -72,13 +77,25 @@ public:
                             std::numeric_limits<float>::infinity());
     build_histogram(scan, bins, bin_width);
 
-    const float gap_center = best_gap_center(bins, bin_width, goal_angle);
-    if (!std::isfinite(gap_center)) {
+    const float fresh = best_gap_center(bins, bin_width, goal_angle);
+    if (!std::isfinite(fresh)) {
+      last_gap_center_ = std::numeric_limits<float>::infinity();
       return {0.0F, true};  // surrounded — collision guard takes over
     }
 
-    // Steer toward the gap center (robot frame): ω = 2·θgap, clamped.
-    const float steer = std::clamp(2.0F * gap_center,
+    // Hysteresis: stick to the previously chosen gap while it is still
+    // passable, instead of chasing the freshly-closest one each frame —
+    // the original stateless VFH oscillated between left/right gaps.
+    float chosen = fresh;
+    if (std::isfinite(last_gap_center_) &&
+        gap_passable_at(bins, bin_width, last_gap_center_)) {
+      chosen = last_gap_center_;
+    } else {
+      last_gap_center_ = fresh;
+    }
+
+    // Steer toward the chosen gap center (robot frame): ω = 2·θgap, clamped.
+    const float steer = std::clamp(2.0F * chosen,
                                    -params_.max_steering, params_.max_steering);
     return {steer, false};
   }
@@ -145,12 +162,28 @@ private:
     return best_center;
   }
 
+  /// Is the sector at `angle` (±1 bin tolerance) still passable?
+  /// Used by hysteresis to decide whether to keep the last chosen gap.
+  bool gap_passable_at(const std::vector<float> &bins,
+                       float bin_width, float angle) const {
+    int bin = static_cast<int>((wrap(angle) + static_cast<float>(M_PI))
+                               / bin_width);
+    for (int off = -1; off <= 1; ++off) {
+      int b = std::clamp(bin + off, 0, static_cast<int>(bins.size()) - 1);
+      if (bins[static_cast<std::size_t>(b)] <= params_.passable_threshold) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   /// Wrap an angle to [-π, π].
   static float wrap(float a) {
     return std::atan2(std::sin(a), std::cos(a));
   }
 
   Params params_;
+  float last_gap_center_ = std::numeric_limits<float>::infinity();
 };
 
 }  // namespace execution

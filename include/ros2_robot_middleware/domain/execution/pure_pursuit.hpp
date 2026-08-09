@@ -58,6 +58,10 @@ public:
   PurePursuit() = default;
   explicit PurePursuit(const Params &p) : params_(p) {}
 
+  /// Reset path progress — call when starting a new goal/path so the
+  /// tracker re-anchors to the path start instead of the old progress.
+  void reset() { progress_ = 0; }
+
   /// Track a multi-waypoint path from current pose.
   /// Returns zero velocities when the final goal is reached.
   Twist2D track(const std::vector<Waypoint> &path, const Pose2D &current) const {
@@ -121,15 +125,18 @@ private:
   /// never chases a point behind the robot.
   Waypoint find_lookahead(const std::vector<Waypoint> &path,
                           const Pose2D &current) const {
-    // 1. Nearest path point to the robot (path index reference).
-    size_t nearest = 0;
+    // 1. 从上次进度 progress_ 沿 path 前进找最近点（单调，不回头）。
+    //    全局最近会在车偏离时跳到 path 弯曲/后段，导致 lookahead 飘、
+    //    车原地转圈（B11 跟踪振荡根因）。
+    size_t nearest = progress_;
     float min_dist = std::numeric_limits<float>::max();
-    for (size_t i = 0; i < path.size(); ++i) {
+    for (size_t i = progress_; i < path.size(); ++i) {
       float d = dist2d(path[i], current);
       if (d < min_dist) { min_dist = d; nearest = i; }
     }
+    progress_ = nearest;  // 只前进，永不回头
 
-    // 2. Walk forward accumulating path length from `nearest`.
+    // 2. 从 nearest 沿 path 累积到 lookahead 距离。
     float accumulated = min_dist;  // robot-to-nearest segment
     for (size_t i = nearest + 1; i < path.size(); ++i) {
       accumulated += dist2d(path[i], path[i - 1]);
@@ -138,7 +145,7 @@ private:
       }
     }
 
-    // 3. Whole remaining path within lookahead → the final goal.
+    // 3. 剩余 path 不足 lookahead → 终点。
     return path.back();
   }
 
@@ -174,6 +181,7 @@ private:
   }
 
   Params params_;
+  mutable size_t progress_ = 0;  // path 跟踪进度（单调前进，跨 track 调用）
 };
 
 }  // namespace execution

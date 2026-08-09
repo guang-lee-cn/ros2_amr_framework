@@ -9,8 +9,13 @@ using amr::domain::simulation::Pose;
 
 namespace {
 
-// Index of the 0° beam (robot heading). Beam i → angle = heading + i·(2π/360).
-constexpr int kZero = 0;
+// Beam i → lidar-frame angle = -π + i·(2π/beam_count). The heading beam (0°)
+// sits at i = beam_count/2 = 180; ranges[0] is the rear (-π) beam. This matches
+// the ROS LaserScan convention (angle_min=-π, forward centred) that consumers
+// rely on — collision_guard's forward FOV (|a|<fov_half) and cluster_detector
+// both read forward at the centred index (B3).
+constexpr int kBeamCount = 360;
+constexpr int kForward = kBeamCount / 2;  // 0° (heading) beam index
 
 float beam(const std::vector<float> &r, int idx) { return r[idx]; }
 
@@ -21,25 +26,26 @@ protected:
   SimulatedScene scene_;
 };
 
-// ── GivenRobotFacingEast_WhenGenerateScan_ZeroDegreeBeamHitsEastWall ────
+// ── GivenRobotFacingEast_WhenGenerateScan_HeadingBeamHitsEastWall ───────
 // Robot at (10,-1.5) heading +x (clear of box at y=0; east wall within
-// range_max=10). 0° beam from lidar (10.4,-1.5) hits east wall x=19 → 8.6.
+// range_max=10). Heading beam (i=180) from lidar (10.4,-1.5) hits east wall
+// x=19 → 8.6.
 
 TEST_F(SimulatedSceneTest,
-       GivenRobotFacingEast_WhenGenerateScan_ZeroDegreeBeamHitsEastWall) {
+       GivenRobotFacingEast_WhenGenerateScan_HeadingBeamHitsEastWall) {
   auto r = scene_.generate_scan(10.0F, -1.5F, 0.0F);
   ASSERT_EQ(r.size(), 360u);
-  EXPECT_NEAR(beam(r, kZero), 8.6F, 0.1F);
+  EXPECT_NEAR(beam(r, kForward), 8.6F, 0.1F);
 }
 
-// ── GivenRobotFacingWest_WhenGenerateScan_PiBeamHitsWestWall ────────────
-// Robot at (5,0) heading -x. The beam at heading (180°) from lidar (4.6,0)
-// westward hits the west wall x=0 → range ≈ 4.6.
+// ── GivenRobotFacingWest_WhenGenerateScan_HeadingBeamHitsWestWall ───────
+// Robot at (5,0) heading -x. Heading beam (i=180) from lidar (4.6,0) westward
+// hits the west wall x=0 → range ≈ 4.6.
 
 TEST_F(SimulatedSceneTest,
        GivenRobotFacingWest_WhenGenerateScan_HeadingBeamHitsWestWall) {
   auto r = scene_.generate_scan(5.0F, 0.0F, static_cast<float>(M_PI));
-  EXPECT_NEAR(beam(r, kZero), 4.6F, 0.1F);
+  EXPECT_NEAR(beam(r, kForward), 4.6F, 0.1F);
 }
 
 // ── GivenObstacleEast_WhenGenerateScan_HeadingBeamShort ─────────────────
@@ -49,7 +55,18 @@ TEST_F(SimulatedSceneTest,
 TEST_F(SimulatedSceneTest,
        GivenObstacleEast_WhenGenerateScan_HeadingBeamIsShort) {
   auto r = scene_.generate_scan(0.0F, 0.0F, 0.0F);
-  EXPECT_NEAR(beam(r, kZero), 7.35F, 0.1F);
+  EXPECT_NEAR(beam(r, kForward), 7.35F, 0.1F);
+}
+
+// ── GivenRobotAtOrigin_WhenGenerateScan_RearBeamHitsWestWall ────────────
+// ranges[0] is the rear (-π) beam: robot at origin heading +x, rear beam
+// points -x → hits the west wall x=0. Lidar at (0.4,0) → range ≈ 0.4.
+// Locks the angle_min=-π contract (B3): forward is NOT at index 0.
+
+TEST_F(SimulatedSceneTest,
+       GivenRobotAtOrigin_WhenGenerateScan_RearBeamHitsWestWall) {
+  auto r = scene_.generate_scan(0.0F, 0.0F, 0.0F);
+  EXPECT_NEAR(beam(r, 0), 0.4F, 0.1F);
 }
 
 // ── GivenOpenDirection_WhenGenerateScan_BeamIsAtRangeMax ────────────────

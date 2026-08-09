@@ -20,7 +20,7 @@
 #include <geometry_msgs/msg/twist.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <sensor_msgs/msg/laser_scan.hpp>
-#include <visualization_msgs/msg/marker.hpp>
+#include <visualization_msgs/msg/marker_array.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <tf2_ros/transform_broadcaster.h>
 
@@ -30,6 +30,12 @@ public:
 
 private:
   void tick();
+  /// 构造车体 MarkerArray（底盘+lidar+双轮），frame=amr/chassis。
+  /// Marker 是 Foxglove/RViz 原生类型，100% 渲染，不依赖 URDF 加载。
+  visualization_msgs::msg::MarkerArray build_robot_markers(const rclcpp::Time &now);
+  /// 构造环境 MarkerArray（仓库墙 + box 障碍），frame=map。box 是 ray-cast
+  /// 抽象障碍无实体，发 marker 让 rviz2/Foxglove 可见。
+  visualization_msgs::msg::MarkerArray build_obstacle_markers(const rclcpp::Time &now);
 
   // Start mid-warehouse (not pressed against the west wall x=0) so the robot
   // can steer without the guard tripping on the wall during the first turn.
@@ -41,7 +47,8 @@ private:
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
   rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr scan_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr amcl_pub_;
-  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr marker_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr obstacle_pub_;
   std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
   rclcpp::TimerBase::SharedPtr timer_;
 };

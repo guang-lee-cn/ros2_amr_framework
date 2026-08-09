@@ -121,3 +121,32 @@ TEST(PurePursuitTest, Given_FarFromPath_Then_StillMoves) {
 
   EXPECT_GT(twist.linear, 0.0F);
 }
+
+// ── Given_ProgressAdvanced_WhenRobotBacktracks_NoLookBehind ───────────
+// 车推进到 path 后段再后退，progress 单调不回头 → lookahead 仍在前方，
+// 不回头追早期 path 点（修复全局最近导致的车转圈）。
+
+TEST(PurePursuitTest, Given_ProgressAdvanced_WhenRobotBacktracks_NoLookBehind) {
+  PurePursuit pp(Params{0.5F, 0.5F, 1.5F, 1.0F, 0.1F, 0.5F, 1.0F});
+  std::vector<Waypoint> path = {{0,0},{1,0},{2,0},{3,0},{4,0}};
+
+  // 帧1: 车在 path 末段 → progress 推进
+  pp.track(path, {3.0F, 0.0F, 0.0F});
+
+  // 帧2: 车退回起点 —— progress 不回头，lookahead 仍朝 path[3+] 前方
+  auto twist = pp.track(path, {0.5F, 0.0F, 0.0F});
+  EXPECT_GT(twist.linear, 0.0F);  // 仍前进（不原地转追后方 path）
+}
+
+// ── Given_Reset_Then_ProgressRestarts ──────────────────────────────────
+
+TEST(PurePursuitTest, Given_Reset_Then_ProgressRestarts) {
+  PurePursuit pp(Params{0.5F, 0.5F, 1.5F, 1.0F, 0.1F, 0.5F, 1.0F});
+  std::vector<Waypoint> path = {{0,0},{1,0},{2,0},{3,0}};
+
+  pp.track(path, {3.0F, 0.0F, 0.0F});  // progress → 末段
+  pp.reset();                           // progress → 0
+
+  auto twist = pp.track(path, {0.0F, 0.0F, 0.0F});
+  EXPECT_GT(twist.linear, 0.0F);  // reset 后正常跟踪
+}

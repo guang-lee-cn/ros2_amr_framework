@@ -150,3 +150,50 @@ TEST_F(VfhAvoidanceTest, GivenRobotStationary_WhenSteer_DoesNotTurn) {
   EXPECT_FLOAT_EQ(r.steering, 0.0F);
   EXPECT_FALSE(r.blocked);
 }
+
+// ── GivenLastGapStillOpen_WhenGoalFlips_SticksToLast (hysteresis) ──────
+// 帧1 障碍前 + 左右 gap，goal 偏左 → 选左 gap。帧2 同布局 goal 翻右，
+// 无滞后会切右 gap；滞后沿用 last（左 gap 仍 passable）→ steer 仍朝左。
+
+TEST_F(VfhAvoidanceTest, GivenLastGapStillOpen_WhenGoalFlips_SticksToLast) {
+  const auto set_block = [](ScanData &s, float deg_lo, float deg_hi, float r) {
+    for (int d = static_cast<int>(deg_lo); d <= static_cast<int>(deg_hi); ++d) {
+      int b = static_cast<int>((d * 0.0174533F + static_cast<float>(M_PI))
+                               / s.angle_increment);
+      s.ranges[static_cast<std::size_t>(std::clamp(b, 0, 359))] = r;
+    }
+  };
+  ScanData s = scan_with_obstacles({});
+  set_block(s, -30.0F, 30.0F, 0.3F);  // 障碍正前，左右各留大 gap
+
+  auto r1 = vfh_.steer(s, 0.5F, 0.5F);   // goal 偏左 → 选左 gap
+  ASSERT_GT(r1.steering, 0.0F) << "帧1 应转向左 gap";
+
+  auto r2 = vfh_.steer(s, -0.5F, 0.5F);  // goal 翻右，但左 gap 仍 passable
+  EXPECT_GT(r2.steering, 0.0F) << "滞后应沿用左 gap，不因 goal 翻转切右";
+}
+
+// ── GivenLastGapGone_WhenSteer_SwitchesToFreshGap ───────────────────────
+// 上次选的 gap 在新 scan 被堵 → 放弃滞后，选新 gap。
+
+TEST_F(VfhAvoidanceTest, GivenLastGapGone_WhenSteer_SwitchesToFreshGap) {
+  const auto set_block = [](ScanData &s, float deg_lo, float deg_hi, float r) {
+    for (int d = static_cast<int>(deg_lo); d <= static_cast<int>(deg_hi); ++d) {
+      int b = static_cast<int>((d * 0.0174533F + static_cast<float>(M_PI))
+                               / s.angle_increment);
+      s.ranges[static_cast<std::size_t>(std::clamp(b, 0, 359))] = r;
+    }
+  };
+  // 帧1：前 + 左半全堵（-30..180°），仅右 gap → 选右
+  ScanData s1 = scan_with_obstacles({});
+  set_block(s1, -30.0F, 180.0F, 0.3F);
+  auto r1 = vfh_.steer(s1, 0.0F, 0.5F);
+  ASSERT_LT(r1.steering, 0.0F) << "帧1 应转向右 gap（唯一）";
+
+  // 帧2：右 gap 被堵（-180..-30° 堵），左 gap 开 → last(右) 不 passable，切左
+  ScanData s2 = scan_with_obstacles({});
+  set_block(s2, -180.0F, -30.0F, 0.3F);
+  set_block(s2, -30.0F, 30.0F, 0.3F);  // 前也堵，左 gap(30..180) 开
+  auto r2 = vfh_.steer(s2, 0.0F, 0.5F);
+  EXPECT_GT(r2.steering, 0.0F) << "last 右 gap 被堵 → 切左 gap";
+}

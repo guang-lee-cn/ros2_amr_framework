@@ -229,6 +229,7 @@ if(BUILD_TESTING)
   add_amr_test(test_integration_scenario quality/src/test_integration_scenario.cpp)
   add_amr_test(test_depth_obstacle_detector quality/src/test_depth_obstacle_detector.cpp)
   add_amr_test(test_degradation_policy quality/src/test_degradation_policy.cpp)
+  add_amr_test(test_scan_to_grid quality/src/test_scan_to_grid.cpp)
 endif()
 
 ament_package()

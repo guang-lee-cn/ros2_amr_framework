@@ -29,10 +29,12 @@ public:
                        amr::hal::sensor::LidarScan &out,
                        const std::string &target_frame) override
   {
-    // Look up static transform: source → target
+    // Look up static transform: amr/chassis/lidar → target.
+    // 源帧与 TF 树一致（曾硬编码 "lidar_frame" 导致 lookup 永远失败、
+    // tf2 持续报 "lidar_frame 到 map/base_link 找不到变换" —— B2）。
     geometry_msgs::msg::TransformStamped tf;
     try {
-      tf = buffer_->lookupTransform(target_frame, "lidar_frame",
+      tf = buffer_->lookupTransform(target_frame, "amr/chassis/lidar",
                                      tf2::TimePointZero, tf2::Duration(0));
     } catch (const tf2::TransformException &) {
       // Transform unavailable — pass through untransformed data

@@ -58,16 +58,21 @@ public:
     };
   }
 
-  /// Ray-cast a full scan from the robot pose. Beam i points at
-  /// heading + i·(2π/beam_count). Lidar sits lidar_offset_x ahead of origin.
+  /// Ray-cast a full scan from the robot pose. Beam i points at lidar-frame
+  /// angle (-π + i·(2π/beam_count)): ranges[0] is the rear beam, the heading
+  /// beam (0°) sits at i=beam_count/2. This matches angle_min=-π so consumers
+  /// (collision_guard forward FOV, cluster_detector) read forward at the
+  /// centred index — fixes the 180° misalignment (B3). Lidar sits
+  /// lidar_offset_x ahead of origin.
   std::vector<float> generate_scan(float x, float y, float theta) const {
     const float step = 2.0F * static_cast<float>(M_PI) / params_.beam_count;
+    const float start = theta - static_cast<float>(M_PI);  // rear beam first
     const float ox = x + params_.lidar_offset_x * std::cos(theta);
     const float oy = y + params_.lidar_offset_x * std::sin(theta);
     std::vector<float> ranges(static_cast<std::size_t>(params_.beam_count),
                               params_.range_max);
     for (int i = 0; i < params_.beam_count; ++i) {
-      const float angle = theta + static_cast<float>(i) * step;
+      const float angle = start + static_cast<float>(i) * step;
       ranges[static_cast<std::size_t>(i)] = cast(ox, oy, angle);
     }
     return ranges;

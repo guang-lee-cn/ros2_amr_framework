@@ -1,8 +1,7 @@
-/// @file test_grid_updater.cpp — Occupancy grid obstacle marking tests (no ROS2)
+/// @file test_grid_updater.cpp — GridUpdater uint8 代价场 + 指数 inflation
 #include "ros2_robot_middleware/domain/planning/astar_planner.hpp"
 #include "ros2_robot_middleware/domain/planning/grid_updater.hpp"
 
-#include <cmath>
 #include <gtest/gtest.h>
 #include <limits>
 
@@ -15,89 +14,101 @@ using amr::domain::planning::Pose;
 namespace {
 
 OccupancyGrid make_grid(int w, int h, float res = 0.1F) {
-  OccupancyGrid grid;
-  grid.width = w;
-  grid.height = h;
-  grid.resolution = res;
-  grid.origin = {0.0F, 0.0F};
-  grid.cells.assign(static_cast<size_t>(w * h), false);
-  return grid;
+  OccupancyGrid g;
+  g.width = w;
+  g.height = h;
+  g.resolution = res;
+  g.origin = {0.0F, 0.0F};
+  g.cells.assign(static_cast<size_t>(w * h), OccupancyGrid::FREE);
+  return g;
 }
 
 }  // namespace
 
-// ── Given_Obstacle_Then_CellsOccupied ────────────────────────────────
-// An obstacle at (0.5, 0.5) with 0.3m inflation covers a 3x3 cell block
-// (0.1m cells → radius 3 cells) around it.
+// ── 旧语义适配 uint8（mark_obstacles / skip_idx / A* 集成）─────────────
 
-TEST(GridUpdaterTest, Given_Obstacle_Then_CellsOccupied) {
-  auto grid = make_grid(20, 20, 0.1F);
-  GridUpdater updater(GridUpdater::Params{0.30F});
-
+TEST(GridUpdaterTest, Given_Obstacle_Then_CenterLethal) {
+  auto g = make_grid(20, 20, 0.1F);
+  GridUpdater gu;
   PerceivedObject obs{0.5F, 0.5F, "o1"};
-  updater.mark_obstacles(grid, &obs, 1, std::numeric_limits<size_t>::max());
-
-  // Center cell (5,5) occupied
-  EXPECT_TRUE(grid.is_free(5, 5) == false);
-  // Edge of inflation (0.8, 0.5) → cell (8,5), dist 0.3 = 3 cells → occupied
-  EXPECT_TRUE(grid.is_free(8, 5) == false);
-  // Outside inflation (0.9, 0.5) → cell (9,5), dist 0.4 → free
-  EXPECT_TRUE(grid.is_free(9, 5));
+  gu.mark_obstacles(g, &obs, 1, std::numeric_limits<size_t>::max());
+  EXPECT_EQ(g.cost_at(5, 5), OccupancyGrid::LETHAL);
 }
-
-// ── Given_TargetExcluded_Then_TargetNotMarked ─────────────────────────
-// skip_idx excludes the navigation target from being marked as obstacle.
 
 TEST(GridUpdaterTest, Given_TargetExcluded_Then_TargetFree) {
-  auto grid = make_grid(20, 20, 0.1F);
-  GridUpdater updater(GridUpdater::Params{0.30F});
-
+  auto g = make_grid(20, 20, 0.1F);
+  GridUpdater gu;
   PerceivedObject objects[2] = {{0.5F, 0.5F, "o0"}, {1.5F, 0.5F, "o1"}};
-  updater.mark_obstacles(grid, objects, 2, 0);  // skip objects[0] (target)
-
-  // Target cell (5,5) stays free
-  EXPECT_TRUE(grid.is_free(5, 5));
-  // Non-target obstacle (1.5,0.5) → cell (15,5) occupied
-  EXPECT_TRUE(grid.is_free(15, 5) == false);
+  gu.mark_obstacles(g, objects, 2, 0);  // skip objects[0]
+  EXPECT_EQ(g.cost_at(5, 5), OccupancyGrid::FREE);
+  EXPECT_EQ(g.cost_at(15, 5), OccupancyGrid::LETHAL);
 }
-
-// ── Given_AllTargets_Then_NothingMarked ──────────────────────────────
-// count == skip_idx+1 effectively marks nothing (single object, is target).
 
 TEST(GridUpdaterTest, Given_SingleTarget_Then_NothingMarked) {
-  auto grid = make_grid(20, 20, 0.1F);
-  GridUpdater updater;
-
+  auto g = make_grid(20, 20, 0.1F);
+  GridUpdater gu;
   PerceivedObject obs{0.5F, 0.5F, "o0"};
-  updater.mark_obstacles(grid, &obs, 1, 0);  // skip the only object
+  gu.mark_obstacles(g, &obs, 1, 0);
+  for (const auto &c : g.cells) EXPECT_EQ(c, OccupancyGrid::FREE);
+}
 
-  for (const auto &occ : grid.cells) {
-    EXPECT_FALSE(occ) << "No cells should be occupied";
+TEST(GridUpdaterTest, Given_ObstacleBlocking_Then_APlansAround) {
+  auto g = make_grid(20, 20, 0.1F);
+  GridUpdater gu;
+  AStarPlanner planner;
+  PerceivedObject obs{1.0F, 0.5F, "blocker"};
+  gu.mark_obstacles(g, &obs, 1, std::numeric_limits<size_t>::max());
+  Pose start{0.5F, 0.5F}, goal{1.5F, 0.5F};
+  auto path = planner.plan(g, start, goal);
+  ASSERT_FALSE(path.empty());
+  for (const auto &wp : path) {
+    int gx = 0, gy = 0;
+    world_to_grid(g, wp.x, wp.y, gx, gy);
+    EXPECT_TRUE(g.is_traversable(gx, gy)) << "path 穿障碍";
   }
 }
 
-// ── Given_ObstacleBlocking_Then_APlansAround ─────────────────────────
-// End-to-end: obstacle on the direct path → A* must route around it.
+// ── 新：指数 inflation（S1，NAV2 InflationLayer 公式）─────────────────
 
-TEST(GridUpdaterTest, Given_ObstacleBlocking_Then_APlansAround) {
-  auto grid = make_grid(20, 20, 0.1F);
-  GridUpdater updater(GridUpdater::Params{0.15F});
-  AStarPlanner planner;
+TEST(GridUpdaterTest, Given_LethalPoint_WhenInflate_CenterIs254) {
+  auto g = make_grid(40, 40, 0.05F);
+  GridUpdater gu;
+  gu.inflate(g, 1.0F, 1.0F);  // 质心 → cell (20,20)
+  EXPECT_EQ(g.cost_at(20, 20), OccupancyGrid::LETHAL);
+}
 
-  // Obstacle at (1.0, 0.5) blocks the straight path from (0.5,0.5) to (1.5,0.5)
-  PerceivedObject obs{1.0F, 0.5F, "blocker"};
-  updater.mark_obstacles(grid, &obs, 1, std::numeric_limits<size_t>::max());
+TEST(GridUpdaterTest, Given_CellAtInscribed_WhenInflate_AtLeastInscribed) {
+  auto g = make_grid(40, 40, 0.05F);
+  GridUpdater gu;
+  gu.inflate(g, 1.0F, 1.0F);
+  // 0.2m (4 cells) ≤ inscribed 0.22m → INSCRIBED
+  EXPECT_GE(g.cost_at(24, 20), OccupancyGrid::INSCRIBED);
+}
 
-  Pose start{0.5F, 0.5F};
-  Pose goal{1.5F, 0.5F};
-  auto path = planner.plan(grid, start, goal);
+TEST(GridUpdaterTest, Given_CellOutsideInflation_WhenInflate_Is0) {
+  auto g = make_grid(40, 40, 0.05F);
+  GridUpdater gu;
+  gu.inflate(g, 1.0F, 1.0F);
+  // 0.75m (15 cells) > inflation 0.55m → FREE
+  EXPECT_EQ(g.cost_at(35, 20), OccupancyGrid::FREE);
+}
 
-  ASSERT_FALSE(path.empty()) << "A* must find an alternative route";
-  // Path must not pass through the blocked corridor (x≈1.0, y≈0.5)
-  for (const auto &wp : path) {
-    int gx = 0, gy = 0;
-    world_to_grid(grid, wp.x, wp.y, gx, gy);
-    bool blocked = !grid.is_free(gx, gy);
-    EXPECT_FALSE(blocked) << "Path passes through obstacle at (" << wp.x << "," << wp.y << ")";
-  }
+TEST(GridUpdaterTest, Given_CellBetweenInscribedAndRadius_WhenInflate_Decreasing) {
+  auto g = make_grid(40, 40, 0.05F);
+  GridUpdater gu;
+  gu.inflate(g, 1.0F, 1.0F);
+  const uint8_t near_c = g.cost_at(24, 20);  // 0.2m
+  const uint8_t mid_c = g.cost_at(28, 20);   // 0.4m
+  const uint8_t far_c = g.cost_at(30, 20);   // 0.5m
+  EXPECT_GT(near_c, mid_c);  // 指数衰减：越远越小
+  EXPECT_GT(mid_c, far_c);
+  EXPECT_GT(far_c, 0);  // 仍在 inflation 内
+}
+
+TEST(GridUpdaterTest, Given_MultipleInflations_WhenOverlap_TakesMax) {
+  auto g = make_grid(40, 40, 0.05F);
+  GridUpdater gu;
+  gu.inflate(g, 1.0F, 1.0F);
+  gu.inflate(g, 1.05F, 1.0F);
+  EXPECT_EQ(g.cost_at(20, 20), OccupancyGrid::LETHAL);
 }

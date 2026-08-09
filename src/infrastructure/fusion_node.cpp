@@ -210,7 +210,7 @@ void FusionNode::timer_callback() {
     // LaserScan（RViz 兼容）
     auto scan_msg = sensor_msgs::msg::LaserScan{};
     scan_msg.header.stamp = now;
-    scan_msg.header.frame_id = "lidar_frame";
+    scan_msg.header.frame_id = "amr/chassis/lidar";
     scan_msg.angle_min = scan.angle_min;
     scan_msg.angle_increment = scan.angle_increment;
     scan_msg.angle_max = scan.angle_min + scan.angle_increment * static_cast<float>(scan.range_count - 1);
@@ -222,7 +222,7 @@ void FusionNode::timer_callback() {
     // PointCloud2（Foxglove 3D 需要，LaserScan 无法直接渲染）
     auto pc_msg = sensor_msgs::msg::PointCloud2{};
     pc_msg.header.stamp = now;
-    pc_msg.header.frame_id = "lidar_frame";
+    pc_msg.header.frame_id = "amr/chassis/lidar";
     pc_msg.height = 1;
     pc_msg.width = static_cast<uint32_t>(scan.range_count);
     pc_msg.is_dense = true;
