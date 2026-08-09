@@ -22,7 +22,7 @@ from launch_ros.actions import Node as RosNode
 
 def generate_launch_description():
     pkg_dir = get_package_share_directory("ros2_robot_middleware")
-    world_path = os.path.join(pkg_dir, "worlds", "warehouse.sdf")
+    world_path = os.path.join(pkg_dir, "worlds", "factory_3c.sdf")
     amr_path = os.path.join(pkg_dir, "worlds", "amr.sdf")
     bridge_yaml = os.path.join(pkg_dir, "config", "gz_bridge.yaml")
     use_sim_time = LaunchConfiguration("use_sim_time", default="true")
@@ -36,7 +36,7 @@ def generate_launch_description():
 
     spawn_amr = RosNode(
         package="ros_gz_sim", executable="create",
-        arguments=["-name", "amr", "-file", amr_path, "-x", "0", "-y", "0", "-z", "0"],
+        arguments=["-name", "amr", "-file", amr_path, "-x", "1", "-y", "0", "-z", "0"],
         output="screen")
 
     # ros_gz bridge（YAML：/scan /odom reliable，/tf，/cmd_vel，/clock）
@@ -48,6 +48,16 @@ def generate_launch_description():
     # mock_amcl：gz /odom → /amcl_pose(map) + TF map→amr/odom（decision A* 起点 + dispatch 变换）
     mock_amcl = RosNode(
         package="ros2_robot_middleware", executable="mock_amcl",
+        parameters=[{"use_sim_time": use_sim_time}], output="screen")
+
+    # factory_markers：发 gz world 障碍 MarkerArray（墙+料架+机台）— Foxglove 可视化
+    factory_markers = RosNode(
+        package="ros2_robot_middleware", executable="factory_markers",
+        parameters=[{"use_sim_time": use_sim_time}], output="screen")
+
+    # robot_markers：车体 MarkerArray（底盘+lidar+轮）— Foxglove 看车在哪
+    robot_markers = RosNode(
+        package="ros2_robot_middleware", executable="robot_markers",
         parameters=[{"use_sim_time": use_sim_time}], output="screen")
 
     # static_tf amr/chassis → amr/chassis/lidar (0.25, 0, 1.00)（对齐 amr.sdf lidar pose）
@@ -65,12 +75,12 @@ def generate_launch_description():
         parameters=[{
             "use_sim_time": use_sim_time,
             "sensors.lidar.type": "sick_tim781", "sensors.lidar.topic": "/scan",
-            "goal_x": 15.0, "goal_y": 0.0,
+            "goal_x": 17.0, "goal_y": 4.0,
         }])
 
     return LaunchDescription([
         ExecuteProcess(cmd=['rm', '-f', '/dev/shm/amr_metrics_registry'], shell=False),
         DeclareLaunchArgument("use_sim_time", default_value="true",
                               description="Use Gazebo /clock"),
-        gazebo, spawn_amr, bridge, mock_amcl, static_tf_lidar, compute,
+        gazebo, spawn_amr, bridge, mock_amcl, factory_markers, robot_markers, static_tf_lidar, compute,
     ])
