@@ -383,7 +383,13 @@ void MotorCtrlNode::publish_twist(float linear, float angular) {
   // Velocity smoother (G2-D): clamp the rate of change vs the last command
   // so the base accelerates/brakes smoothly instead of snapping speeds.
   constexpr float kDt = 0.05F;  // 20Hz control period (rclcpp::Rate(20))
-  last_cmd_ = smoother_.smooth({linear, angular}, last_cmd_, kDt);
+  // 停车命令直接归 0：smoother 限变化率，一次 publish_twist(0,0) 只减一小步，
+  // Goal reached 后 motor idle 不再发 → last_cmd_ 卡非 0 → scene 持续积分漂移。
+  if (linear == 0.0F && angular == 0.0F) {
+    last_cmd_ = {0.0F, 0.0F};
+  } else {
+    last_cmd_ = smoother_.smooth({linear, angular}, last_cmd_, kDt);
+  }
   geometry_msgs::msg::Twist msg;
   msg.linear.x = last_cmd_.linear;
   msg.angular.z = last_cmd_.angular;
