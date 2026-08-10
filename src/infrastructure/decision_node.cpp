@@ -90,7 +90,7 @@ DecisionNode::on_configure(const rclcpp_lifecycle::State &)
   demo_grid_.width = 400;
   demo_grid_.height = 400;
   demo_grid_.resolution = 0.05F;
-  demo_grid_.origin = {0.0F, 0.0F};
+  demo_grid_.origin = {0.0F, -10.0F};  // y∈[-10,10]：覆盖 factory_3c y∈[-6,6]
   demo_grid_.cells.assign(400 * 400, amr::domain::planning::OccupancyGrid::FREE);
 
   return CallbackReturn::SUCCESS;
