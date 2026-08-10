@@ -109,6 +109,7 @@ install(TARGETS scene_simulator DESTINATION lib/${PROJECT_NAME})
 install(PROGRAMS scripts/mock_amcl.py DESTINATION lib/${PROJECT_NAME} RENAME mock_amcl)
 install(PROGRAMS scripts/factory_markers.py DESTINATION lib/${PROJECT_NAME} RENAME factory_markers)
 install(PROGRAMS scripts/robot_markers.py DESTINATION lib/${PROJECT_NAME} RENAME robot_markers)
+install(PROGRAMS scripts/patrol_3c.py DESTINATION lib/${PROJECT_NAME} RENAME patrol_3c)
 
 install(DIRECTORY config launch worlds
   DESTINATION share/${PROJECT_NAME})
