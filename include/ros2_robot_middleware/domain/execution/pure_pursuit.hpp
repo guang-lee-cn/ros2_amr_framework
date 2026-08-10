@@ -46,9 +46,9 @@ struct Waypoint {
 class PurePursuit {
 public:
   struct Params {
-    float lookahead = 1.0F;        // lookahead distance (m)
+    float lookahead = 1.5F;        // lookahead distance (m) — gz 物理惯性需更大平滑
     float max_linear = 0.5F;       // max linear velocity (m/s)
-    float max_angular = 1.5F;      // max angular velocity (rad/s)
+    float max_angular = 1.0F;      // max angular velocity (rad/s) — gz 物理降防猛转震荡
     float accel_limit = 1.0F;      // linear accel (m/s²)
     float goal_tolerance = 0.05F;  // arrived within this distance (m)
     float slow_radius = 0.5F;      // start decelerating within this distance (m)
