@@ -175,3 +175,148 @@ TEST_F(CollisionGuardTest,
   EXPECT_FALSE(guard_.stopped(t_clear));
   EXPECT_LT(guard_.blocked_for(t_clear), ms{50});       // reset
 }
+
+// ── GivenAllInfScanWithMinEchoes_WhenClamp_CommandsFullStop ────────────
+// 2026-08-17 incident regression: gpu_lidar degraded to all-inf while still
+// publishing on time — stale/empty checks never fired and "open field"
+// let a blind robot drive through the racks. With min_valid_echoes set,
+// an omni-directionally echo-less scan is sensor death → hard stop.
+
+TEST_F(CollisionGuardTest,
+       GivenAllInfScanWithMinEchoes_WhenClamp_CommandsFullStop) {
+  CollisionGuard::Params p = kParams;
+  p.min_valid_echoes = 2;
+  guard_.set_params(p);
+
+  ScanData s;
+  s.angle_min = -1.5708F;
+  s.angle_increment = 0.5236F;
+  s.ranges = {std::numeric_limits<float>::infinity(),
+              std::numeric_limits<float>::infinity(),
+              std::numeric_limits<float>::infinity(),
+              std::numeric_limits<float>::infinity(),
+              std::numeric_limits<float>::infinity(),
+              std::numeric_limits<float>::infinity(),
+              std::numeric_limits<float>::infinity()};
+  guard_.set_scan(std::move(s), t0_);
+  EXPECT_FLOAT_EQ(guard_.clamp(0.5F, t0_), 0.0F);
+  EXPECT_TRUE(guard_.stopped(t0_));
+}
+
+// ── GivenAllInfScanWithoutMinEchoes_WhenClamp_PassesThrough ────────────
+// Real-hardware default (min_valid_echoes = 0): a legal echo-less open
+// square must keep passing through — the fail-safe is opt-in.
+
+TEST_F(CollisionGuardTest,
+       GivenAllInfScanWithoutMinEchoes_WhenClamp_PassesThrough) {
+  ScanData s;
+  s.angle_min = -1.5708F;
+  s.angle_increment = 0.5236F;
+  s.ranges.assign(7, std::numeric_limits<float>::infinity());
+  guard_.set_scan(std::move(s), t0_);
+  EXPECT_FLOAT_EQ(guard_.clamp(0.5F, t0_), 0.5F);
+  EXPECT_FALSE(guard_.stopped(t0_));
+}
+
+// ── GivenFilteredPipelineEchoAt035_WhenStopDist040_CommandsFullStop ────
+// Alignment regression: the sim scan_filter drops every echo below its
+// 0.35 m cut, so a filtered pipeline reports "nearest = 0.35" while
+// grinding into the rack. stop_dist must sit above the cut for the hard
+// stop to be reachable at all.
+
+TEST_F(CollisionGuardTest,
+       GivenFilteredPipelineEchoAt035_WhenStopDist040_CommandsFullStop) {
+  CollisionGuard::Params p = kParams;
+  p.stop_dist = 0.40F;  // sim launch override (> scan_filter cut 0.35)
+  guard_.set_params(p);
+
+  guard_.set_scan(scan_with_ahead(0.35F), t0_);  // closest the filter can report
+  EXPECT_FLOAT_EQ(guard_.clamp(0.5F, t0_), 0.0F);
+  EXPECT_TRUE(guard_.stopped(t0_));
+}
+
+// ── GivenBorderDitheringCrawl_WhenClamp_BlockedForGrows ────────────────
+// 2026-08-17 rack deadlock regression: nearest sitting just above stop_dist
+// clamps the output to a few mm/s. Those crawling frames used to refresh
+// the hold timer every cycle, so the 3s abort never accumulated and the
+// robot ground into the rack at 4 mm/s forever. A pressed crawl must keep
+// blocked_for() growing.
+
+TEST_F(CollisionGuardTest,
+       GivenBorderDitheringCrawl_WhenClamp_BlockedForGrows) {
+  CollisionGuard::Params p = kParams;
+  p.stop_dist = 0.40F;
+  p.safe_dist = 0.80F;
+  guard_.set_params(p);
+
+  guard_.set_scan(scan_with_ahead(kNoEcho), t0_);
+  guard_.clamp(0.5F, t0_);                     // mobile anchor → last_ok = t0_
+
+  // d = 0.401 → t = 0.0025 → out = 1.25 mm/s < crawl (20 mm/s), pressed.
+  auto t1 = t0_ + ms{100};
+  guard_.set_scan(scan_with_ahead(0.401F), t1);
+  EXPECT_NEAR(guard_.clamp(0.5F, t1), 0.00125F, 1e-4F);  // crawling, not stopped
+  EXPECT_FALSE(guard_.stopped(t1));                       // ... yet blocked:
+
+  auto t2 = t1 + ms{4000};
+  guard_.set_scan(scan_with_ahead(0.401F), t2);           // fresh, still crawling
+  guard_.clamp(0.5F, t2);
+  EXPECT_GE(guard_.blocked_for(t2), ms{3900});            // grew from t0_
+}
+
+// ── GivenTurningInPlaceNoObstacle_WhenClamp_NotBlocked ─────────────────
+// A diff-drive turning in place commands v = 0 legally (PurePursuit heading
+// correction). With no obstacle pressing, those zero-speed frames must NOT
+// grow the hold — only obstacle-pressed slowness is a deadlock signal.
+
+TEST_F(CollisionGuardTest,
+       GivenTurningInPlaceNoObstacle_WhenClamp_NotBlocked) {
+  guard_.set_scan(scan_with_ahead(kNoEcho), t0_);
+  guard_.clamp(0.5F, t0_);  // mobile frame → last_ok_time_ = t0_
+
+  auto t_turn = t0_ + ms{4000};
+  guard_.set_scan(scan_with_ahead(kNoEcho), t_turn);
+  EXPECT_FLOAT_EQ(guard_.clamp(0.0F, t_turn), 0.0F);       // turning in place
+  EXPECT_LT(guard_.blocked_for(t_turn), ms{50});           // timer refreshed
+}
+
+// ── GivenNearObstaclePassingNormally_WhenClamp_NotBlocked ──────────────
+// Slowdown-zone transit at a real speed (0.25 m/s through d = 0.55) is
+// normal negotiation, not a deadlock — the hold must keep refreshing.
+
+TEST_F(CollisionGuardTest,
+       GivenNearObstaclePassingNormally_WhenClamp_NotBlocked) {
+  CollisionGuard::Params p = kParams;
+  p.stop_dist = 0.40F;
+  p.safe_dist = 0.80F;
+  guard_.set_params(p);
+
+  guard_.set_scan(scan_with_ahead(kNoEcho), t0_);
+  guard_.clamp(0.5F, t0_);                     // mobile anchor → last_ok = t0_
+
+  auto t_late = t0_ + ms{4000};
+  guard_.set_scan(scan_with_ahead(0.55F), t_late);
+  EXPECT_NEAR(guard_.clamp(0.5F, t_late), 0.1875F, 1e-4F); // t=0.375
+  EXPECT_LT(guard_.blocked_for(t_late), ms{50});           // mobile, refreshed
+}
+
+// ── GivenFreshGoal_WhenClearHold_TimerRestarts ─────────────────────────
+// Each dispatched goal deserves its own 3s window. Without clear_hold the
+// hold accumulated by the replaced goal made every redispatch abort on its
+// first frame (200 ms abort→dispatch spin with the robot already stopped).
+
+TEST_F(CollisionGuardTest, GivenFreshGoal_WhenClearHold_TimerRestarts) {
+  guard_.set_scan(scan_with_ahead(kNoEcho), t0_);
+  guard_.clamp(0.5F, t0_);                     // mobile anchor → last_ok = t0_
+
+  guard_.set_scan(scan_with_ahead(0.2F), t0_);  // hard-stop obstacle
+  guard_.clamp(0.5F, t0_);                      // hold starts accumulating
+  EXPECT_TRUE(guard_.stopped(t0_));
+
+  auto t_new_goal = t0_ + ms{2000};
+  EXPECT_GE(guard_.blocked_for(t_new_goal), ms{1900});  // still holding…
+
+  guard_.clear_hold(t_new_goal);                 // fresh goal dispatched
+  EXPECT_LT(guard_.blocked_for(t_new_goal), ms{50});    // window restarted
+  EXPECT_FALSE(guard_.stopped(t_new_goal));
+}

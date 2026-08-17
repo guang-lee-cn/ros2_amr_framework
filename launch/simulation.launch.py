@@ -101,6 +101,14 @@ def generate_launch_description():
             "sensors.lidar.type": "sick_tim781", "sensors.lidar.topic": "/scan",
             "goal_x": 17.0, "goal_y": 4.0,
             "vfh_enabled": False,
+            # guard fail-safe（2026-08-17 穿货架事故）：
+            # stop_dist 必须 > scan_filter 滤除阈值(0.35)，否则滤后管道永远
+            # 报不出更近的回波，硬停不可达，车 0.05m/s 顶进货架。
+            "guard_stop_dist": 0.40,
+            # 全向有效回波低于此数 = gpu_lidar 劣化至全盲（消息仍准点发布，
+            # stale/empty 检测拦不住），fail-safe 硬停而非按"空旷场地"放行。
+            # 健康 ~300 回波 / 扇区失明 ~160 / 全盲 0；0 = 禁用（真机默认）。
+            "guard_min_valid_echoes": 50,
         }])
 
     return LaunchDescription([

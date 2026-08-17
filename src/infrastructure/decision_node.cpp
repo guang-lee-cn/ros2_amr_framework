@@ -475,6 +475,12 @@ void DecisionNode::on_result(const ClientGoalHandle::WrappedResult& result)
       RCLCPP_INFO(this->get_logger(), "MoveToPose canceled");
       break;
     default:
+      // ABORTED (collision-guard anti-deadlock, track-error stop, …):
+      // clear the same-goal dedup so the next perception cycle re-dispatches
+      // and A* replans around the now-marked obstacle. Without this the gate
+      // kept denying the goal forever after a single abort (2026-08-17:
+      // abort → "gate blocked" loop right after the rack incident).
+      gate_.reset();
       RCLCPP_ERROR(this->get_logger(), "MoveToPose failed");
       break;
   }

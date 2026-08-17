@@ -17,15 +17,22 @@
 ///   - no scan yet (pre-first-echo)  → pass through (sensor boot race)
 ///   - scan stale (> stale_timeout)  → hard stop (protection expired)
 ///   - empty scan (0 ranges)         → hard stop (sensor gave nothing)
-///   - all inf/NaN (open field)      → pass through (no echoes ≠ obstacle)
+///   - all inf/NaN (open field)      → pass through (no echoes ≠ obstacle),
+///     UNLESS min_valid_echoes > 0: an omni-directionally echo-less scan is
+///     then a sensor failure → hard stop. WSL2 gpu_lidar degrades to all-inf
+///     while still publishing on time, so stale/empty checks never fire and
+///     the "open field" reading let a blind robot drive straight through
+///     the racks (2026-08-17 incident). 0 disables (real-hardware default:
+///     a genuinely empty square is legal there).
 ///
 /// Thread safety: set_scan() runs on the sensor callback thread while
 /// clamp()/blocked_for() run on the motor control thread — all state access
 /// is guarded by an internal mutex (data race between on_scan and execute
 /// caused the guard to miss obstacles in the sim).
 ///
-/// Anti-deadlock: an obstacle holding the robot stopped grows blocked_for();
-/// the motor layer fails the goal beyond a timeout so the decision layer
+/// Anti-deadlock: an obstacle pressing the robot below crawl speed grows
+/// blocked_for() — including border dithering that never fully stops it —
+/// and the motor layer fails the goal beyond a timeout so the decision layer
 /// replans (see docs/design/20260806-g2-collision-guard.md).
 ///
 /// Pure domain logic — no ROS2.
@@ -56,6 +63,12 @@ public:
     float fov_half = 0.7854F;   // forward FOV half-angle (rad) ≈ 45°
     float range_max = 20.0F;    // ranges beyond = no echo (m)
     std::chrono::milliseconds stale_timeout{500};  // protection expiry
+    int min_valid_echoes = 0;   // omni echoes below this = sensor failure →
+                                // hard stop; 0 disables (real-hw default)
+    float crawl_speed = 0.02F;  // anti-deadlock: obstacle-pressed output below
+                                // this counts as blocked (border dithering
+                                // at nearest ≈ stop_dist outputs ~4 mm/s and
+                                // used to reset the hold timer forever)
   };
 
   CollisionGuard() = default;
@@ -63,6 +76,13 @@ public:
 
   /// Store the latest scan. `now` timestamps it for staleness checks.
   void set_scan(ScanData scan, const std::chrono::steady_clock::time_point &now);
+
+  /// Replace tuning parameters (ROS params at configure time; the mutex
+  /// member makes the class non-copyable so assignment is not an option).
+  void set_params(const Params &p) {
+    std::lock_guard<std::mutex> lock(mtx_);
+    params_ = p;
+  }
 
   /// Clamp the commanded forward velocity by the nearest FOV obstacle.
   /// Returns the clamped linear velocity (angular is caller-owned).
@@ -72,10 +92,21 @@ public:
   /// empty scan). Start-up pass-through (no scan yet) is not a stop.
   bool stopped(const std::chrono::steady_clock::time_point &now) const;
 
-  /// How long the robot has been held stopped by the guard (anti-deadlock
-  /// timeout source). 0 when never stopped / never clamped.
+  /// How long the robot has been obstacle-pressed below crawl speed (the
+  /// anti-deadlock timeout source; hard stops count as the deepest crawl).
+  /// 0 when mobile / never clamped.
   std::chrono::milliseconds blocked_for(
       const std::chrono::steady_clock::time_point &now) const;
+
+  /// Reset the anti-deadlock hold. Call at the start of each goal's execute
+  /// loop: a freshly dispatched goal deserves its own 3s window instead of
+  /// inheriting the hold accumulated by the goal it replaces (which made
+  /// abort→redispatch cycle at 200 ms with the robot already stopped).
+  void clear_hold(const std::chrono::steady_clock::time_point &now) {
+    std::lock_guard<std::mutex> lock(mtx_);
+    last_ok_time_ = now;
+    last_stop_ = false;
+  }
 
   /// Nearest obstacle distance inside the FOV (m); +inf when none.
   float nearest_distance() const;
@@ -97,6 +128,7 @@ private:
 
   bool stale_locked(const std::chrono::steady_clock::time_point &now) const;
   float nearest_in_fov_locked() const;
+  int count_valid_locked() const;  // omni-directional finite echoes (sensor liveness)
 
   Params params_;
   Snapshot scan_;
@@ -135,6 +167,14 @@ inline float CollisionGuard::nearest_in_fov_locked() const {
   return best;
 }
 
+inline int CollisionGuard::count_valid_locked() const {
+  int n = 0;
+  for (const float r : scan_.ranges) {
+    if (std::isfinite(r) && r > 0.0F && r <= params_.range_max) ++n;
+  }
+  return n;
+}
+
 inline float CollisionGuard::clamp(
     float cmd_v, const std::chrono::steady_clock::time_point &now) {
   std::lock_guard<std::mutex> lock(mtx_);
@@ -142,22 +182,39 @@ inline float CollisionGuard::clamp(
   const bool have_scan = scan_.recv_time !=
       std::chrono::steady_clock::time_point::min();
   const float d = nearest_in_fov_locked();
+  // min_valid_echoes = 0 (real hw) keeps the legacy "all inf = open field"
+  // pass-through; > 0 (sim) treats an echo-less scan as sensor death.
+  const bool sensor_blind = params_.min_valid_echoes > 0
+                          && count_valid_locked() < params_.min_valid_echoes;
   last_stop_ = have_scan && (stale_locked(now) || scan_.ranges.empty()
-                             || d <= params_.stop_dist);
-  if (last_stop_) {
-    // last_ok_time_ held → blocked_for() grows from the last un-stopped clamp.
-    return 0.0F;
-  }
-  last_ok_time_ = now;
+                             || d <= params_.stop_dist || sensor_blind);
 
-  // d > stop_dist is guaranteed here (last_stop_ was false). Linear slowdown
-  // from safe_dist down to just above stop_dist.
-  if (std::isfinite(d) && d <= params_.safe_dist) {
+  float out;
+  if (last_stop_) {
+    out = 0.0F;
+  } else if (std::isfinite(d) && d <= params_.safe_dist) {
+    // d > stop_dist is guaranteed here (last_stop_ was false). Linear
+    // slowdown from safe_dist down to just above stop_dist.
     const float t = (d - params_.stop_dist)
                   / (params_.safe_dist - params_.stop_dist);
-    return cmd_v * std::clamp(t, 0.0F, 1.0F);
+    out = cmd_v * std::clamp(t, 0.0F, 1.0F);
+  } else {
+    out = cmd_v;
   }
-  return cmd_v;
+
+  // Anti-deadlock bookkeeping. A frame only refreshes the hold timer when the
+  // robot is genuinely mobile (output at/above crawl speed) or slow for its
+  // own reasons (e.g. turning in place with no obstacle pressing). An
+  // obstacle-pressed crawl below crawl_speed — the border-dithering case
+  // where nearest sits just above stop_dist and the clamp outputs ~4 mm/s —
+  // keeps the timer running so the 3s abort actually accumulates
+  // (2026-08-17 rack deadlock: timer reset every dithering frame).
+  const bool pressed = last_stop_
+                     || (std::isfinite(d) && d <= params_.safe_dist);
+  if (!pressed || out >= params_.crawl_speed) {
+    last_ok_time_ = now;
+  }
+  return out;
 }
 
 inline bool CollisionGuard::stopped(

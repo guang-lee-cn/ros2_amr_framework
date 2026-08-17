@@ -25,6 +25,18 @@ MotorCtrlNode::CallbackReturn
 MotorCtrlNode::on_configure(const rclcpp_lifecycle::State &)
 {
   vfh_enabled_ = this->declare_parameter("vfh_enabled", true);
+  // Guard tuning: sim overrides both via launch (real hw keeps the defaults).
+  // guard_stop_dist must exceed the sim scan_filter cut (0.35 m) — a filtered
+  // pipeline can never report nearer than that, so stop_dist below it made
+  // the hard stop unreachable and the robot ground into racks at 0.05 m/s.
+  // guard_min_valid_echoes > 0 (sim) treats an echo-less scan as gpu_lidar
+  // death instead of "open field" (2026-08-17 blind-drive-through incident).
+  amr::domain::execution::CollisionGuard::Params guard_params{};
+  guard_params.stop_dist =
+      static_cast<float>(this->declare_parameter("guard_stop_dist", 0.30));
+  guard_params.min_valid_echoes =
+      static_cast<int>(this->declare_parameter("guard_min_valid_echoes", 0));
+  guard_.set_params(guard_params);
   action_server_ = rclcpp_action::create_server<MoveToPose>(
     this, "/cmd/move_to_pose",
     [this](const rclcpp_action::GoalUUID &uuid, std::shared_ptr<const MoveToPose::Goal> goal) {
@@ -221,6 +233,9 @@ void MotorCtrlNode::execute(const std::shared_ptr<ServerGoalHandle> goal_handle)
   }
   Waypoint target{goal->target_x, goal->target_y};
   tracker_.reset();  // 新 goal：重置 PurePursuit path 进度，避免沿用旧进度
+  guard_.clear_hold(std::chrono::steady_clock::now());
+  // ↑ 新 goal 重置 anti-deadlock 计时：不继承被替换 goal 的 hold 积累，
+  // 否则 abort→redispatch 以 200ms 频率空转（每个新 goal 首帧即 abort）。
 
   // 全局路径跟踪：优先用 decision 的 A* 平滑路径（已绕障），无则 fallback
   // 2 点直线。map≡odom（demo），map 帧 path 直接用于 odom 帧跟踪（B11）。
@@ -302,16 +317,18 @@ void MotorCtrlNode::execute(const std::shared_ptr<ServerGoalHandle> goal_handle)
 
     // Collision guard (G2-C): clamp forward velocity by the nearest obstacle
     // in the forward FOV. Angular velocity is untouched — the diff-drive can
-    // still steer around. An obstacle holding the robot stopped >3s fails
-    // the goal so the decision layer replans (anti-deadlock, not a crash).
+    // still steer around. An obstacle pressing the robot below crawl speed
+    // for >3s fails the goal so the decision layer replans (anti-deadlock).
+    // blocked_for() alone is the trigger: guard.hard-stop frames and the
+    // border-dithering crawl (~4 mm/s at nearest ≈ stop_dist) both keep the
+    // timer running, so no stopped() conjunction is needed.
     const auto guard_now = std::chrono::steady_clock::now();
     const float pre_guard = twist.linear;
     twist.linear = guard_.clamp(twist.linear, guard_now);
     RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 800,
         "guard: nearest=%.2fm pre=%.2f post=%.2f",
         guard_.nearest_distance(), pre_guard, twist.linear);
-    if (guard_.stopped(guard_now) &&
-        guard_.blocked_for(guard_now) > std::chrono::seconds(3)) {
+    if (guard_.blocked_for(guard_now) > std::chrono::seconds(3)) {
       publish_twist(0.0F, 0.0F);
       auto result = std::make_shared<MoveToPose::Result>();
       result->reached = false;
