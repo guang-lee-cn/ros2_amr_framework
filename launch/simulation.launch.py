@@ -83,6 +83,14 @@ def generate_launch_description():
                    "amr/chassis", "amr/chassis/lidar"],
         output="screen")
 
+    # foxglove_bridge：随仿真起（t=0 就在）—— 否则启动间隙 Studio 连不上，
+    # 表现为"刚开始看不到环境和小车"（2026-08-17 用户反馈）
+    foxglove = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([
+            os.path.join(get_package_share_directory("foxglove_bridge"),
+                         "launch", "foxglove_bridge_launch.xml")]),
+        launch_arguments={"port": "8765"}.items())
+
     # compute_container（goal=15，绕障；不设 name=：会重命名三节点冲突）
     compute = RosNode(
         package="ros2_robot_middleware", executable="compute_container",
@@ -98,5 +106,5 @@ def generate_launch_description():
         ExecuteProcess(cmd=['rm', '-f', '/dev/shm/amr_metrics_registry'], shell=False),
         DeclareLaunchArgument("use_sim_time", default_value="true",
                               description="Use Gazebo /clock"),
-        gazebo, spawn_amr, bridge, scan_filter, mock_amcl, factory_markers, robot_markers, static_tf_lidar, compute, patrol_3c,
+        gazebo, spawn_amr, bridge, scan_filter, mock_amcl, factory_markers, robot_markers, static_tf_lidar, compute, patrol_3c, foxglove,
     ])

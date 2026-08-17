@@ -35,6 +35,7 @@ class FactoryMarkers(Node):
 
     def _publish(self) -> None:
         ma = MarkerArray()
+        _now = self.get_clock().now().to_msg()
         # 墙（灰）— 车间边界 20×12
         ma.markers.append(_box(0, 0, 0, 0.2, 12, 2, 0.5, 0.5, 0.5))      # west x=0
         ma.markers.append(_box(1, 20, 0, 0.2, 12, 2, 0.5, 0.5, 0.5))     # east x=20
@@ -47,6 +48,8 @@ class FactoryMarkers(Node):
         # 机台（蓝）— 东墙旁，对接 goal 在西侧
         ma.markers.append(_box(7, 18, 4, 1, 1, 1, 0.2, 0.4, 0.6))        # machine1
         ma.markers.append(_box(8, 18, -4, 1, 1, 1, 0.2, 0.4, 0.6))       # machine2
+        for _mk in ma.markers:
+            _mk.header.stamp = _now
         self.pub.publish(ma)
 
 

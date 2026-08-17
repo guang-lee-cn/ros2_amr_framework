@@ -62,8 +62,8 @@ for try in $(seq 1 "$MAX_TRIES"); do
     sleep 25
     V=$(probe)
     if [ "${V:-0}" -ge "$MIN_VALID" ]; then
-        echo "[run_sim] ✅ 健康(有效回波 $V ≥ $MIN_VALID), PID=$(cat /tmp/sim_run.pid)"
-        echo "[run_sim] Foxglove: ros2 launch foxglove_bridge foxglove_bridge_launch.xml 后连 ws://localhost:8765"
+        echo "[run_sim] ✅ Healthy (valid echoes $V ≥ $MIN_VALID), PID=$(cat /tmp/sim_run.pid)"
+        echo "[run_sim] Foxglove: bridge starts with simulation, connect directly to ws://localhost:8765"
         exit 0
     fi
     echo "[run_sim] ❌ 不健康(有效回波 $V < $MIN_VALID), 清场重试..."
