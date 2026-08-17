@@ -18,7 +18,7 @@
 
 DecisionNode::DecisionNode()
   : rclcpp_lifecycle::LifecycleNode("decision"),
-    astar_(amr::domain::planning::AStarPlanner::Params{50000, 1.0F})
+    astar_(amr::domain::planning::AStarPlanner::Params{200000, 1.0F})
 {
   // Task-derived navigation goal (from launch params / fleet manager).
   // Perception objects are obstacles, NOT the goal — see on_perception.
@@ -28,7 +28,7 @@ DecisionNode::DecisionNode()
 
 DecisionNode::DecisionNode(const rclcpp::NodeOptions &options)
   : rclcpp_lifecycle::LifecycleNode("decision", options),
-    astar_(amr::domain::planning::AStarPlanner::Params{50000, 1.0F}) {
+    astar_(amr::domain::planning::AStarPlanner::Params{200000, 1.0F}) {
   this->declare_parameter<float>("goal_x", 0.0F);
   this->declare_parameter<float>("goal_y", 0.0F);
 }
@@ -70,6 +70,11 @@ DecisionNode::on_configure(const rclcpp_lifecycle::State &)
   fusion_hb_sub_ = this->create_subscription<std_msgs::msg::String>(
     "/sensor/fusion/heartbeat", rclcpp::QoS(10).reliable(),
     [this](std_msgs::msg::String::SharedPtr msg) { on_fusion_heartbeat(msg); },
+    decision_opts);
+  // patrol_3c publish /goal_pose（替代 ros2 param set，lifecycle node param 不暴露）
+  goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+    "/goal_pose", rclcpp::QoS(10).reliable(),
+    [this](geometry_msgs::msg::PoseStamped::SharedPtr msg) { on_goal_pose(msg); },
     decision_opts);
 
   // /scan raytrace（NAV2 ObstacleLayer）— scan 驱动 grid，同 perception 组。
@@ -190,11 +195,13 @@ void DecisionNode::on_perception(const PerceptionObjects::SharedPtr& objs)
     const float ly = ry + 0.25F * std::sin(rtheta);
     scan_to_grid_.raytrace(demo_grid_, ranges.data(), ranges.size(),
                            amin, ainc, lx, ly, rtheta);
-    // 诊断：grid box 位置 cost（box (8,0) → cell (160,0)，origin 0,0 res 0.05）
+    // 诊断：grid box 位置 cost。box (8,0) → cell (160,200)：
+    // gx=(8-0)/0.05, gy=(0-(-10))/0.05（origin {0,-10}）。原 (160,0) 查错 cell
+    // （世界 8,-10 空旷区），恒 0，曾误导以为 box 没进 grid。
     RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
-        "raytrace: ranges=%zu robot=(%.2f,%.2f,%.0fdeg) box_cell(160,0)=%d",
+        "raytrace: ranges=%zu robot=(%.2f,%.2f,%.0fdeg) box_cell(160,200)=%d",
         ranges.size(), rx, ry, rtheta * 180.0F / M_PI,
-        demo_grid_.cost_at(160, 0));
+        demo_grid_.cost_at(160, 200));
   } else {
     RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
         "raytrace SKIP: has_scan=%d ranges=%zu", has_scan, ranges.size());
@@ -203,10 +210,16 @@ void DecisionNode::on_perception(const PerceptionObjects::SharedPtr& objs)
   // fusion objects 标 grid（质心 LETHAL + 指数 inflation）— 补 /scan 盲区：
   // depth 检出的低矮障碍 lidar 扫不到，须进 grid 才能 A*/VFH 绕。
   // objects 在 amr/chassis frame（fusion_node:258），用 robot map 位姿旋/平移到 map 再标。
+  // fusion object 标 grid。跳过 robot inscribed 内的 object：这些是 lidar 自命中/
+  // 噪点（real lidar 扫不到 robot 体内），inflate 会把 robot 自己的 cell 标 INSCRIBED
+  // → A* start 不可走 → path_pts=0（曾让 inscribed 0.55 看似"A* 找不到路"）。
+  // 贴 robot 的真实障碍由 collision_guard(stop_dist) 兜底，decision 不必再 inflate。
   const float oc = std::cos(rtheta), os = std::sin(rtheta);
+  const float inscribed = grid_updater_.params().inscribed_radius;
   for (const auto &obj : objs->objects) {
     const float mx = rx + oc * obj.x - os * obj.y;
     const float my = ry + os * obj.x + oc * obj.y;
+    if (std::hypot(mx - rx, my - ry) < inscribed) continue;
     grid_updater_.inflate(demo_grid_, mx, my);
   }
 
@@ -234,10 +247,15 @@ void DecisionNode::on_perception(const PerceptionObjects::SharedPtr& objs)
   // the odom-frame dispatched value — with a real map→odom offset they never
   // matched and the robot re-dispatched the same goal forever (spin at goal).
   if (!gate_.should_dispatch(gx, gy)) {
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+        "plan: gate blocked fusion_ready=%d gx=%.1f gy=%.1f", gate_.fusion_ready(), gx, gy);
     return;
   }
 
   auto path = astar_.plan(demo_grid_, start, goal_pose);
+  RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+      "plan: start=(%.1f,%.1f) goal=(%.1f,%.1f) inscribed=%.2f path_pts=%zu",
+      start.x, start.y, gx, gy, grid_updater_.params().inscribed_radius, path.size());
   if (path.empty()) {
     // Goal blocked: no useless dispatch; re-plan on the next perception
     // cycle once the obstacle clears. An in-flight goal is kept.
@@ -314,15 +332,24 @@ void DecisionNode::on_scan(const sensor_msgs::msg::LaserScan::SharedPtr msg) {
 
 void DecisionNode::on_fusion_heartbeat(const std_msgs::msg::String::SharedPtr msg)
 {
-  // Only "alive" (FULL) unlocks dispatch. Degraded states (no_lidar, critical,
-  // no_camera, no_imu) mean the grid may be untrustworthy — do NOT dispatch
-  // (cold-start A* through an empty grid / partial sensing is exactly the
-  // wall-penetration class of bug this gate exists to stop).
   using amr::domain::perception::DegradationLevel;
   using amr::domain::perception::DegradationPolicy;
   DegradationLevel level;
   const bool parsed = DegradationPolicy::from_heartbeat_string(msg->data, level);
-  gate_.set_fusion_ready(parsed && DegradationPolicy::is_nominal(level));
+  const bool ready = parsed && DegradationPolicy::is_nominal(level);
+  gate_.set_fusion_ready(ready);
+  RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 3000,
+      "fusion_hb: data=%s parsed=%d ready=%d", msg->data.c_str(), parsed, ready);
+}
+
+void DecisionNode::on_goal_pose(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
+{
+  // patrol_3c 发 /goal_pose（替代 ros2 param set /decision，lifecycle 不暴露 param）。
+  // 内部 set_parameter → plan loop get_parameter 读新 goal。
+  this->set_parameter(rclcpp::Parameter("goal_x", static_cast<double>(msg->pose.position.x)));
+  this->set_parameter(rclcpp::Parameter("goal_y", static_cast<double>(msg->pose.position.y)));
+  RCLCPP_INFO(this->get_logger(), "goal_pose: (%.1f, %.1f)",
+      msg->pose.position.x, msg->pose.position.y);
 }
 
 // ── Action client wiring (ROS2-specific, stays in Node) ─────────────────────

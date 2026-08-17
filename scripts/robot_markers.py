@@ -40,6 +40,7 @@ class RobotMarkers(Node):
 
     def _publish(self) -> None:
         ma = MarkerArray()
+        _now = self.get_clock().now().to_msg()
         # 底盘 box 0.6×0.4×0.2（中心离地 0.1m）蓝
         ma.markers.append(_m(0, Marker.CUBE, 0, 0, 0.10, 0.6, 0.4, 0.2, 0.20, 0.35, 0.90))
         # lidar 圆柱 r0.05 h0.05，挂点 (0.25,0,0.30) 黑
@@ -47,6 +48,8 @@ class RobotMarkers(Node):
         # 双轮 r0.075 宽0.04，挂点 (0,±0.25,-0.05)，轴沿 y 黑
         ma.markers.append(_m(2, Marker.CYLINDER, 0, 0.25, -0.05, 0.15, 0.15, 0.04, 0.10, 0.10, 0.10, qx=_C, qw=_S))
         ma.markers.append(_m(3, Marker.CYLINDER, 0, -0.25, -0.05, 0.15, 0.15, 0.04, 0.10, 0.10, 0.10, qx=_C, qw=_S))
+        for _mk in ma.markers:
+            _mk.header.stamp = _now
         self.pub.publish(ma)
 
 

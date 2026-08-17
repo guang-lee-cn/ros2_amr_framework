@@ -13,6 +13,7 @@
 #include "std_msgs/msg/string.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
 #include "geometry_msgs/msg/pose_array.hpp"
+#include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
 #include "tf2_ros/buffer.h"
 #include "tf2_ros/transform_listener.h"
@@ -44,6 +45,7 @@ private:
   void on_perception(const ros2_robot_middleware::msg::PerceptionObjects::SharedPtr &objs);
   void on_amcl_pose(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
   void on_fusion_heartbeat(const std_msgs::msg::String::SharedPtr msg);
+  void on_goal_pose(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
   void on_scan(const sensor_msgs::msg::LaserScan::SharedPtr msg);
   void on_goal_response(
     const rclcpp_action::ClientGoalHandle<ros2_robot_middleware::action::MoveToPose>::SharedPtr &goalhdl);
@@ -59,7 +61,11 @@ private:
   amr::domain::planning::PreemptPolicy preempt_;
   amr::domain::planning::AStarPlanner astar_;
   amr::domain::planning::PathSmoother smoother_;
-  amr::domain::planning::GridUpdater grid_updater_;
+  // inscribed 0.55=guard stop_dist(0.30)+lidar_offset(0.25)，让 A* 放行的 path 不被
+  // guard 拦；inflation 0.75>inscribed 外层衰减。配合 fusion 近距 object 过滤
+  //（inflate 跳过 robot inscribed 内的 object，否则 lidar 自命中把 robot cell 标 INSCRIBED）。
+  amr::domain::planning::GridUpdater grid_updater_{
+      amr::domain::planning::GridUpdater::Params{0.55F, 0.75F, 3.0F}};
   amr::domain::planning::OccupancyGrid demo_grid_;
 
   // ROS2 infrastructure
@@ -100,6 +106,8 @@ private:
   // Extraction keeps decision logic unit-testable without ROS2.
   amr::domain::planning::GoalDispatchGate gate_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr fusion_hb_sub_;
+  // patrol_3c publish /goal_pose（替代 ros2 param set，lifecycle node param 不暴露）
+  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr goal_sub_;
 
   // /scan raytrace（NAV2 ObstacleLayer 对标）— 替代质心 mark_obstacles，
   // 覆盖 box 表面多点 LETHAL（治撞 box）。

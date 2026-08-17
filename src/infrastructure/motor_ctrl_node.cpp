@@ -9,6 +9,8 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 
 MotorCtrlNode::MotorCtrlNode()
   : rclcpp_lifecycle::LifecycleNode("motor_ctrl")
@@ -62,8 +64,9 @@ MotorCtrlNode::on_configure(const rclcpp_lifecycle::State &)
     [this](nav_msgs::msg::Odometry::SharedPtr msg) { on_odom(msg); },
     odom_opts);
 
-  // /scan — collision guard input (G2-C). Shares the odom callback group so
-  // the blocking execute() loop cannot starve the guard's laser data.
+  // /scan — the guard's obstacle data (2D lidar ranges on the horizontal
+  // plane). Shares the odom callback group so the blocking execute() loop
+  // cannot starve the laser data.
   rclcpp::SubscriptionOptions scan_opts;
   scan_opts.callback_group = odom_cb_group_;
   scan_sub_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
@@ -171,8 +174,14 @@ void MotorCtrlNode::on_odom(const nav_msgs::msg::Odometry::SharedPtr msg)
 
 void MotorCtrlNode::on_scan(const sensor_msgs::msg::LaserScan::SharedPtr msg)
 {
+  // 2D lidar (amr.sdf vertical 0°, single layer): ranges are real obstacle
+  // echoes on the horizontal plane. Feed them straight to the guard — no
+  // ground filter. The old scan_filter assumed a 3D lidar with z≈0 ground
+  // echoes, but this sensor is 2D so every point's z is 0 and the filter
+  // discarded all real obstacles. Shares the odom callback group so the
+  // blocking execute() loop cannot starve the laser data.
   amr::domain::execution::ScanData scan;
-  scan.ranges = msg->ranges;  // std::vector<float> copy — 360 beams, cheap
+  scan.ranges = msg->ranges;
   scan.angle_min = static_cast<float>(msg->angle_min);
   scan.angle_increment = static_cast<float>(msg->angle_increment);
   guard_.set_scan(std::move(scan), std::chrono::steady_clock::now());

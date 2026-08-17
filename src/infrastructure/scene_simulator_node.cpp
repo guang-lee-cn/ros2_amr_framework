@@ -5,6 +5,12 @@
 #include <cmath>
 
 SceneSimulatorNode::SceneSimulatorNode() : Node("scene_simulator") {
+  // 从 ROS param 读 scene_name（rack_4box | rack_3c | warehouse_open）
+  amr::domain::simulation::SceneParams params;
+  this->declare_parameter<std::string>("scene_name", "rack_3c");
+  params.scene_name = this->get_parameter("scene_name").as_string();
+  scene_ = amr::domain::simulation::SimulatedScene(params);
+
   cmd_sub_ = create_subscription<geometry_msgs::msg::Twist>(
       "/cmd_vel", 10,
       [this](geometry_msgs::msg::Twist::SharedPtr m) { cmd_ = *m; });
@@ -125,13 +131,29 @@ visualization_msgs::msg::MarkerArray SceneSimulatorNode::build_obstacle_markers(
     m.color.r = r; m.color.g = g; m.color.b = b; m.color.a = 0.6;
     ma.markers.push_back(std::move(m));
   };
-  // 仓库墙（灰，x∈[0,19] y∈[-2,2]）
-  add_box(0, 0.0, 0.0, 0.5, 0.1, 4.0, 1.0, 0.5, 0.5, 0.5);     // west
-  add_box(1, 19.0, 0.0, 0.5, 0.1, 4.0, 1.0, 0.5, 0.5, 0.5);    // east
-  add_box(2, 9.5, -2.0, 0.5, 19.0, 0.1, 1.0, 0.5, 0.5, 0.5);   // south
-  add_box(3, 9.5, 2.0, 0.5, 19.0, 0.1, 1.0, 0.5, 0.5, 0.5);    // north
-  // box 障碍（红，0.5×0.5×0.5 @ (8,0)）
-  add_box(4, 8.0, 0.0, 0.25, 0.5, 0.5, 0.5, 0.9, 0.2, 0.2);
+  // 仓库墙（灰，x∈[0,19] y∈[-5,5]）
+  add_box(0, 0.0, 0.0, 0.5, 0.1, 10.0, 1.0, 0.5, 0.5, 0.5);
+  add_box(1, 19.0, 0.0, 0.5, 0.1, 10.0, 1.0, 0.5, 0.5, 0.5);
+  add_box(2, 9.5, -5.0, 0.5, 19.0, 0.1, 1.0, 0.5, 0.5, 0.5);
+  add_box(3, 9.5, 5.0, 0.5, 19.0, 0.1, 1.0, 0.5, 0.5, 0.5);
+  // 障碍（从 SimulatedScene scene_name 推断）
+  const auto &sn = scene_.params().scene_name;
+  int id = 4;
+  if (sn == "rack_3c") {
+    // 4 排料架（棕色长条 6m×0.5m）
+    for (float ry : {-2.5F, -0.8F, 0.8F, 2.5F}) {
+      add_box(id++, 7.0, ry, 0.25, 6.0, 0.5, 1.0, 0.6, 0.5, 0.3);
+    }
+    // 2 机台（蓝）
+    add_box(id++, 17.0, 4.0, 0.5, 1.0, 1.0, 1.0, 0.2, 0.4, 0.6);
+    add_box(id++, 17.0, -4.0, 0.5, 1.0, 1.0, 1.0, 0.2, 0.4, 0.6);
+  } else if (sn != "warehouse_open") {
+    // rack_4box（4 个孤立红 box）
+    add_box(id++, 8.0, 0.0, 0.25, 0.5, 0.5, 0.5, 0.9, 0.2, 0.2);
+    add_box(id++, 5.0, 3.0, 0.25, 0.5, 0.5, 0.5, 0.9, 0.2, 0.2);
+    add_box(id++, 12.0, -3.0, 0.25, 0.5, 0.5, 0.5, 0.9, 0.2, 0.2);
+    add_box(id++, 14.0, 3.0, 0.25, 0.5, 0.5, 0.5, 0.9, 0.2, 0.2);
+  }
   return ma;
 }
 

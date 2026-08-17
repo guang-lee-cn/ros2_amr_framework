@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <string>
 #include <vector>
 
 namespace amr::domain::simulation {
@@ -31,9 +32,11 @@ struct Segment {
 };
 
 struct SceneParams {
-  float range_max = 10.0F;   // max scan range (m)
-  int beam_count = 360;      // beams per full rotation
-  float lidar_offset_x = 0.4F;  // lidar forward of the robot origin (m)
+  float range_max = 10.0F;
+  int beam_count = 360;
+  float lidar_offset_x = 0.25F;
+  // 场景预设：rack_4box（4 个孤立 box）| rack_3c（3C 料架排窄通道）| warehouse_open（空旷）
+  std::string scene_name = "rack_4box";
 };
 
 class SimulatedScene {
@@ -41,21 +44,40 @@ public:
   SimulatedScene() : SimulatedScene(SceneParams{}) {}
 
   explicit SimulatedScene(const SceneParams &p) : params_(p) {
-    // Warehouse boundary walls.
     walls_ = {
-        {0.0F, -2.0F, 0.0F, 2.0F},    // west x=0
-        {19.0F, -2.0F, 19.0F, 2.0F},  // east x=19
-        {0.0F, -2.0F, 19.0F, -2.0F},  // south y=-2
-        {0.0F, 2.0F, 19.0F, 2.0F},    // north y=2
+        {0.0F, -5.0F, 0.0F, 5.0F},    // west x=0
+        {19.0F, -5.0F, 19.0F, 5.0F},  // east x=19
+        {0.0F, -5.0F, 19.0F, -5.0F},  // south y=-5
+        {0.0F, 5.0F, 19.0F, 5.0F},    // north y=5
     };
-    // Box obstacle centered (8,0), 0.5×0.5 → 4 edges.
-    const float h = 0.25F;
-    obstacles_ = {
-        {8.0F - h, -h, 8.0F + h, -h},
-        {8.0F + h, -h, 8.0F + h, h},
-        {8.0F + h, h, 8.0F - h, h},
-        {8.0F - h, h, 8.0F - h, -h},
+    // box helper: center (cx,cy) size (sx,sy) → 4 edges
+    auto box = [](float cx, float cy, float sx, float sy) {
+      float hx = sx * 0.5F, hy = sy * 0.5F;
+      return std::vector<Segment>{
+          {cx - hx, cy - hy, cx + hx, cy - hy}, {cx + hx, cy - hy, cx + hx, cy + hy},
+          {cx + hx, cy + hy, cx - hx, cy + hy}, {cx - hx, cy + hy, cx - hx, cy - hy}};
     };
+    obstacles_.clear();
+    if (params_.scene_name == "rack_3c") {
+      // 3C 半导体车间：4 排料架（6m×0.5m，间距 1.7m，通道 1.2m）+ 2 机台
+      for (float ry : {-2.5F, -0.8F, 0.8F, 2.5F}) {
+        auto segs = box(7.0F, ry, 6.0F, 0.5F);
+        obstacles_.insert(obstacles_.end(), segs.begin(), segs.end());
+      }
+      auto m1 = box(17.0F, 4.0F, 1.0F, 1.0F);
+      auto m2 = box(17.0F, -4.0F, 1.0F, 1.0F);
+      obstacles_.insert(obstacles_.end(), m1.begin(), m1.end());
+      obstacles_.insert(obstacles_.end(), m2.begin(), m2.end());
+    } else if (params_.scene_name == "warehouse_open") {
+      // 空旷，无障碍
+    } else {
+      // rack_4box（默认）：4 个孤立 box
+      for (auto [cx, cy] : std::initializer_list<std::pair<float, float>>{
+               {8.0F, 0.0F}, {5.0F, 3.0F}, {12.0F, -3.0F}, {14.0F, 3.0F}}) {
+        auto segs = box(cx, cy, 0.5F, 0.5F);
+        obstacles_.insert(obstacles_.end(), segs.begin(), segs.end());
+      }
+    }
   }
 
   /// Ray-cast a full scan from the robot pose. Beam i points at lidar-frame

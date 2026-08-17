@@ -23,7 +23,10 @@ namespace planning {
 class GridUpdater {
 public:
   struct Params {
-    float inscribed_radius = 0.35F;     // A* 不可走区半径：≥ guard stop_dist(0.30)，让 A* 绕过物理拦截区
+    // 车体外接圆（物理，默认 0.35）。decision_node 显式用 0.55/0.75：guard 用 lidar
+    // (车前0.25)测距、A* 用车中心规划，参考点差 lidar_offset，inscribed≥stop_dist(0.30)
+    // +lidar_offset(0.25)=0.55 才能让 A* 放行的 path 不被 guard 拦（见 decision_node.hpp）。
+    float inscribed_radius = 0.35F;
     float inflation_radius = 0.55F;     // 膨胀半径（m）
     float cost_scaling_factor = 3.0F;   // 指数衰减陡度（越大越敢贴）
   };

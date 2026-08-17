@@ -2,6 +2,27 @@
 // Zero-copy communication via shared_ptr between nodes (no DDS serialization).
 // Sensor drivers (lidar/imu/camera) remain independent for fault isolation.
 //
+// TODO(zero-copy, 2026-08-15): the claim on line 2 is currently FALSE.
+// The three nodes talk via plain create_publisher/create_subscription topics
+// and no NodeOptions enables use_intra_process_comms, so messages still take
+// the full DDS serialization path. Same-process WITHOUT intra-process comms
+// gives up fault isolation (fusion crash kills decision/motor) for zero
+// performance gain — worst of both layouts.
+//
+// Fix (preferred): construct FusionNode/DecisionNode/MotorCtrlNode with a
+// shared rclcpp::NodeOptions().use_intra_process_comms(true) so the line-2
+// claim becomes true. Requirements:
+//   1. Verify on Jazzy that LifecycleNode pub/sub actually takes the
+//      intra-process path — lifecycle + intra-process had bugs in some
+//      distros; confirm with a latency/throughput measurement, not just
+//      "tests pass".
+//   2. Zero-copy path needs publishers to pass std::unique_ptr and
+//      subscribers to take std::shared_ptr; by-value publishes fall back to
+//      a copy (still no DDS serialization, but not zero-copy).
+// Fallback: if IPC cannot be enabled cleanly, split fusion/decision/motor
+// back into separate processes (restore isolation) and delete the false
+// zero-copy claim.
+//
 // Process layout (production):
 //   compute_container (PID 1) ─── fusion → decision → motor_ctrl (shared memory)
 //   lidar_node          (PID 2) ─── independent, driver fault isolation

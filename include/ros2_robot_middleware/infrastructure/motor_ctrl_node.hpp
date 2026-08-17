@@ -15,6 +15,7 @@
 #include "geometry_msgs/msg/pose_array.hpp"
 
 #include <atomic>
+#include <cmath>
 #include <mutex>
 #include <vector>
 #include <rclcpp/rclcpp.hpp>
@@ -88,9 +89,8 @@ private:
   rclcpp::CallbackGroup::SharedPtr odom_cb_group_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
 
-  // /scan — collision guard input (G2-C). Shares the odom callback group:
-  // both are lightweight non-blocking callbacks that must not be starved by
-  // the blocking execute() loop in the default group.
+  // /scan — the guard's obstacle data (2D lidar ranges). on_scan feeds the
+  // raw ranges straight to the guard (no ground filter — see on_scan).
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
 
   // /planning/path — the decision layer's A* global path. The motor tracks

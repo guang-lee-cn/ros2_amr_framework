@@ -18,11 +18,17 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
 def generate_launch_description():
     pkg_dir = get_package_share_directory("ros2_robot_middleware")
+    scene_name = LaunchConfiguration("scene")
+    declare_scene = DeclareLaunchArgument(
+        "scene", default_value="rack_3c",
+        description="SimulatedScene preset: rack_4box | rack_3c | warehouse_open")
     urdf_path = os.path.join(pkg_dir, "worlds", "amr_visual.urdf")
 
     # scene 是 map→amr/odom 的唯一 TF 发布者，误杀即整棵子树坍塌 →
@@ -49,17 +55,20 @@ def generate_launch_description():
         namespace="",
         output="screen",
         parameters=[{
-            # fusion 用 sick_tim781 适配器：订阅 /scan（SceneSimulator 提供）
             "sensors.lidar.type": "sick_tim781",
             "sensors.lidar.topic": "/scan",
-            # 决策目标：box(8,0) 之后（x=15）。避障：A* 全局绕 inflation 区
-            #（inscribed_radius 0.35 → path 离 box > guard stop_dist 0.30）+ guard 兜底限速。
-            # VFH off：inscribed 0.35 已让 A* 绕够远；多障碍 scene 下 VFH 与 A* 重复避障冲突。
-            # 循环 goal 由外部脚本切换 2↔15，驱动车持续往返绕障。
-            "goal_x": 15.0,
-            "goal_y": 0.0,
+            "goal_x": 17.0,
+            "goal_y": 4.0,
             "vfh_enabled": False,
+            "scene_name": scene_name,
         }],
     )
 
-    return LaunchDescription([scene, robot_state_publisher, compute])
+    # 循环 goal（machine1→machine2→home 往返），订阅 /amcl_pose 到达切 goal
+    patrol = Node(
+        package="ros2_robot_middleware",
+        executable="patrol_3c",
+        output="screen",
+    )
+
+    return LaunchDescription([scene, robot_state_publisher, compute, patrol])
