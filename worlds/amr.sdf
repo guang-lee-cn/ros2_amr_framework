@@ -59,6 +59,10 @@
               <max_angle>0</max_angle>
             </vertical>
           </scan>
+          <!-- 2026-08-16 排障: WSL2 gpu_lidar 输出质量随启动随机(同配置3次复测:
+                 270/345/193 有效回波, 近距伪影 109/0/24, 亦有全 inf 的盲启动)。
+                 改高度(1.5m)与改 min_range(0.35) 两轮"致瞎"观测已被该随机性污染, 归因存疑。
+                 近距(<0.35m)伪影由桥接层 scan_filter 节点滤除(见 simulation.launch.py)。 -->
           <range>
             <min>0.1</min>
             <max>10.0</max>

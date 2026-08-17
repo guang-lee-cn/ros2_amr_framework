@@ -4,8 +4,10 @@
 gz 发 /scan /odom /tf /clock，吃 /cmd_vel；mock_amcl 补 map 帧（decision 要
 /amcl_pose + TF map→amr/odom 才能规划/dispatch）。
 
-GUI 模式必须（gpu_lidar 需渲染上下文；headless WSL2 无 GPU → /scan 全 inf）。
-GUI 窗口在 WSL2 d3d12 下黑屏，但仿真数据正常，可视化交给 Foxglove。
+Server-only headless 必须：gpu_lidar 走 ogre2 EGL 渲染（--headless-rendering），
+绕开 WSLg 的 GLX——GUI 模式下 ogre2 RTT readback 在 Mesa D3D12 静默失败
+（lidar 全 inf）/相机 SIGSEGV（见 amr.sdf 相机注释）。-s 不起 GUI 窗口，
+可视化完全靠 Foxglove。GUI 模式（旧注释）的"GUI 必须/无 GPU"是误判。
 
 检查：ros2 topic hz /scan（~10Hz，ranges 有值）+ /amcl_pose（mock 发）+ cmd_vel → 车动。
 """
@@ -27,12 +29,12 @@ def generate_launch_description():
     bridge_yaml = os.path.join(pkg_dir, "config", "gz_bridge.yaml")
     use_sim_time = LaunchConfiguration("use_sim_time", default="true")
 
-    # gz sim（GUI：gpu_lidar 需渲染；headless WSL2 无 GPU → /scan 全 inf）
+    # gz sim（server-only headless：gpu_lidar 走 ogre2 EGL，绕开 WSLg GLX readback bug）
     gazebo = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
             os.path.join(get_package_share_directory("ros_gz_sim"),
                          "launch", "gz_sim.launch.py")]),
-        launch_arguments={"gz_args": f"-r -v4 {world_path}"}.items())
+        launch_arguments={"gz_args": f"-s -r --headless-rendering -v4 {world_path}"}.items())
 
     spawn_amr = RosNode(
         package="ros_gz_sim", executable="create",
@@ -43,6 +45,14 @@ def generate_launch_description():
     bridge = RosNode(
         package="ros_gz_bridge", executable="parameter_bridge",
         parameters=[{"config_file": bridge_yaml, "use_sim_time": use_sim_time}],
+        output="screen")
+
+    # scan_filter：仿真专用 /scan_raw → /scan 近距伪影滤除(<0.35m, WSL2 gpu_lidar 幻影)。
+    # 传感器参数不可改(min_range/高度改动→渲染静默失效, 2026-08-16 实验), 只能桥后过滤。
+    # 真机 launch 不含此节点; 阈值经 launch 参数可调。
+    scan_filter = RosNode(
+        package="ros2_robot_middleware", executable="scan_filter",
+        parameters=[{"use_sim_time": use_sim_time, "min_valid_range": 0.35}],
         output="screen")
 
     # mock_amcl：gz /odom → /amcl_pose(map) + TF map→amr/odom（decision A* 起点 + dispatch 变换）
@@ -88,5 +98,5 @@ def generate_launch_description():
         ExecuteProcess(cmd=['rm', '-f', '/dev/shm/amr_metrics_registry'], shell=False),
         DeclareLaunchArgument("use_sim_time", default_value="true",
                               description="Use Gazebo /clock"),
-        gazebo, spawn_amr, bridge, mock_amcl, factory_markers, robot_markers, static_tf_lidar, compute, patrol_3c,
+        gazebo, spawn_amr, bridge, scan_filter, mock_amcl, factory_markers, robot_markers, static_tf_lidar, compute, patrol_3c,
     ])
