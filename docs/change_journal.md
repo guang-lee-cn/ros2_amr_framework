@@ -5,6 +5,27 @@
 
 ---
 
+## [2026-08-17 下午] compute_container 启动失败一例：decision 功能性死亡（待查）
+
+- **症状**: 健康抽签局（346 回波、全程 0 扇区告警），patrol 设 goal 后 2 分钟+
+  机器人零速度零位移（/amcl_pose 原点、/cmd_vel 无消息），decision 无任何日志
+  （plan/gate/fusion_hb/raytrace 全无）。【铁证：话题级取证】
+- **证据链**【铁证，原始日志已随 run_sim 清场删除，以下为当时捕获】:
+  1. `/perception/objects` 5Hz 正常、`/sensor/fusion/heartbeat` 1Hz 正常 →
+     fusion 活着（同容器！）
+  2. `/decision/heartbeat` 不发布 → decision 的 lifecycle 激活未完成或 executor 卡死
+  3. compute_container 每 5s 刷 `async flush: thread pool doesn't exist anymore`
+     （spdlog async 池被销毁后 logger 仍引用）——上上局同错误但功能正常，
+     是伴随现象非直接死因
+- **假设（待验证）**: compute_container 启动序列（configure→activate）存在竞态，
+  observability async logger 初始化失败可能与 decision 激活失败相关。
+  20+ 次启动中仅出现 1 次 → 低概率竞态。
+- **改动**: 无（单次出现，先记录；复现后按六元组深挖）。
+- **遗留**: 环境恢复后加 compute_container 启动自检（decision/motor heartbeat
+  缺失 N 秒 → 容器自重启或告警），与"数据质量看门狗"同属健康监控项。
+
+---
+
 ## [2026-08-17] 机台死锁修复落地：A* 端点有界吸附（C1）+ 验证发现 stale 区可超吸附上限
 
 > 上游：docs/design/20260817-machine2-deadlock-review.md（评审通过后实施）
