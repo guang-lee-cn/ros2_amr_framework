@@ -18,6 +18,7 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import ExecuteProcess, DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch_xml.launch_description_sources import XMLLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node as RosNode
 
@@ -86,7 +87,7 @@ def generate_launch_description():
     # foxglove_bridge：随仿真起（t=0 就在）—— 否则启动间隙 Studio 连不上，
     # 表现为"刚开始看不到环境和小车"（2026-08-17 用户反馈）
     foxglove = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([
+        XMLLaunchDescriptionSource([
             os.path.join(get_package_share_directory("foxglove_bridge"),
                          "launch", "foxglove_bridge_launch.xml")]),
         launch_arguments={"port": "8765"}.items())
