@@ -5,6 +5,59 @@
 
 ---
 
+## [2026-08-17] 机台死锁修复落地：A* 端点有界吸附（C1）+ 验证发现 stale 区可超吸附上限
+
+> 上游：docs/design/20260817-machine2-deadlock-review.md（评审通过后实施）
+
+- **症状**: 同 [2026-08-16] 机台2 死锁条目（path_pts=0 死循环）。
+
+- **改动（大脑层，按评审 C1）**:
+  1. `astar_planner.hpp`：Params 增 `endpoint_snap_radius`（默认 0=关闭，零回归）；
+     plan() 端点不可走时吸附到半径内**欧氏最近**可走格（圆盘窗 d²≤R²，非方形窗
+     ——方形窗对角格可超半径 0.99m）。超半径 → 空路径（真被堵语义保留）
+  2. `decision_node.cpp`：snap 0.75 启用（Params{200000,1.0,0.75}）；吸附 >0.1m
+     打 WARN_THROTTLE（防吸附掩盖传感器劣化，评审 R1）；空路径时 dump 端点
+     cost + 起点周边 16×16 cost 窗（区分起点堵/目标堵/不可达三种空因）
+  3. `patrol_3c.py`：ARRIVE_DIST 0.5→1.0（评审 R3：吸附停靠距原 goal ≤0.75m）
+  4. 测试 +6：吸附起点/吸附目标/超半径保留空/默认关闭回归锁/零吸附回归锁/
+     decision 层"单障碍压目标→吸附派发"新契约（原 BlockedGoal 测试改为 3×3
+     障碍堆埋目标——旧"单障碍不派发"契约已被靠泊语义取代）
+
+- **验证**:
+  - 单测 216/216 全绿【铁证】
+  - 集成（run_sim.sh 抽签，266 回波健康局）：完整 **2 圈**巡逻
+    （2 次机台2 停靠→离站，2 次回家），全程 0 次 EMPTY path，
+    机台2 完成后 30ms 内规划出 352 点回家路径【铁证，/tmp/sim_run_105321_try2.log】
+
+- **⚠️ 验证中发现的新事实（run1，同样带修复，死锁仍复现一次）**【铁证】:
+  1. 停靠时 `/perception/objects` 为**空列表**——激光距机台面 0.22m，回波被
+     scan_filter（<0.35m）滤除，机台从感知"消失"：既不重标也无 object 可 skip
+  2. **西向逃逸走廊 6.5m 内无回波**（料架在 y∈[-2.45,2.45]，机器人在 y≈-3.9
+     以南全是空地）→ 全部西向射线 r>max_range → raytrace 视为无效**不清不标**
+     （scan_to_grid.hpp:40）→ stale 膨胀盘永不清除。**不依赖盲扇区**——
+     max_range 语义缺口单独即可致不清障（修正评审 §2.3 第 3 点的归因）
+  3. run1 死锁时 0.75m 吸附窗内无任何可走格 → stale 阻塞区宽度 **>0.75m**，
+     超出吸附上限（推断：接近段多个融合 object 盘叠覆西向条带）。run2 无盘
+     沉积 → 停靠格本就 FREE → 即时离站
+  - 结论：C1 治"盘 ≤0.75m"场景（单测证明）；**盘 >0.75m 仍可死锁**（run1 实证），
+    根治在 D2/C4（代价场清障语义）
+
+- **遗留（C4 立项时一并设计，优先级升至 P1.5）**:
+  1. raytrace 对 max_range/inf 射线应**清障到 max_range**（NAV2 ObstacleLayer
+     语义：无回波=该方向自由空间证明）——一行级改动直接治 run1 场景
+  2. C4 object 层每帧重建（评审原案，治动态障碍留死区）
+  3. 数据质量看门狗（继承 08-16 遗留）：objects 空列表 + scan 持续无回波应告警
+
+- **回滚**:
+  ```bash
+  git checkout -- include/ros2_robot_middleware/domain/planning/astar_planner.hpp \
+    src/infrastructure/decision_node.cpp scripts/patrol_3c.py quality/src/test_astar.cpp \
+    quality/src/test_decision.cpp
+  # 重建: colcon build --packages-select ros2_robot_middleware
+  ```
+
+---
+
 ## [2026-08-16] 仿真小车在起点附近卡死（guard 误停车死锁）
 
 - **症状**: 仿真启动后小车移动约 1m 即停在 (0.75,0.35) 原地缓转，`guard: nearest=0.28m post=0.00` 持续，`decision: gate blocked` 刷屏。**非必现**：同配置多次启动，有的能跑有的卡死。【铁证，复现：重启 simulation.launch.py 数次观察】

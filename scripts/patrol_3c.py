@@ -17,7 +17,9 @@ GOALS = [
     (17.0, -4.0, "machine2"),
     (1.0, 0.0, "home"),
 ]
-ARRIVE_DIST = 0.5
+# 到 goal 判定距离（m）：≥ A* 端点吸附上限 0.75（20260817 评审 R3）——目标格
+# 落膨胀盘内时 motor 停在吸附点（距原 goal ≤0.75m），0.5 会导致 patrol 停等
+ARRIVE_DIST = 1.0
 
 
 class Patrol3C(Node):

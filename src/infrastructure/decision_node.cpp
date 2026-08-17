@@ -18,7 +18,7 @@
 
 DecisionNode::DecisionNode()
   : rclcpp_lifecycle::LifecycleNode("decision"),
-    astar_(amr::domain::planning::AStarPlanner::Params{200000, 1.0F})
+    astar_(amr::domain::planning::AStarPlanner::Params{200000, 1.0F, 0.75F})
 {
   // Task-derived navigation goal (from launch params / fleet manager).
   // Perception objects are obstacles, NOT the goal — see on_perception.
@@ -28,7 +28,7 @@ DecisionNode::DecisionNode()
 
 DecisionNode::DecisionNode(const rclcpp::NodeOptions &options)
   : rclcpp_lifecycle::LifecycleNode("decision", options),
-    astar_(amr::domain::planning::AStarPlanner::Params{200000, 1.0F}) {
+    astar_(amr::domain::planning::AStarPlanner::Params{200000, 1.0F, 0.75F}) {
   this->declare_parameter<float>("goal_x", 0.0F);
   this->declare_parameter<float>("goal_y", 0.0F);
 }
@@ -257,9 +257,33 @@ void DecisionNode::on_perception(const PerceptionObjects::SharedPtr& objs)
       "plan: start=(%.1f,%.1f) goal=(%.1f,%.1f) inscribed=%.2f path_pts=%zu",
       start.x, start.y, gx, gy, grid_updater_.params().inscribed_radius, path.size());
   if (path.empty()) {
+    // 诊断（20260817 死锁排查）：空路径时 dump 端点 cost + 起点周边窗口，
+    // 区分"起点被堵/目标被堵/搜索不可达"三种空因。
+    int scx = 0, scy = 0, gcx = 0, gcy = 0;
+    amr::domain::planning::world_to_grid(demo_grid_, start.x, start.y, scx, scy);
+    amr::domain::planning::world_to_grid(demo_grid_, gx, gy, gcx, gcy);
+    std::string win;
+    for (int dy = -8; dy <= 8; ++dy) {
+      for (int dx = -8; dx <= 8; ++dx)
+        win += std::to_string(demo_grid_.cost_at(scx + dx, scy + dy) > 252 ? '#' :
+                              demo_grid_.cost_at(scx + dx, scy + dy) > 0 ? '+' : '.');
+      win += '\n';
+    }
+    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+        "EMPTY path: start_cost=%d(%d,%d) goal_cost=%d(%d,%d) window16x16[#=inscribed/lthal +=decay . =free]:\n%s",
+        demo_grid_.cost_at(scx, scy), scx, scy, demo_grid_.cost_at(gcx, gcy), gcx, gcy, win.c_str());
     // Goal blocked: no useless dispatch; re-plan on the next perception
     // cycle once the obstacle clears. An in-flight goal is kept.
     return;
+  }
+
+  // 端点吸附可观测性（20260817 评审 §4.2）：持续吸附 = stale 膨胀盘或传感器
+  // 劣化的前兆信号，必须显性暴露，不能被吸附静默吞掉。
+  const float snap_start = std::hypot(path.front().x - start.x, path.front().y - start.y);
+  const float snap_goal = std::hypot(path.back().x - goal_pose.x, path.back().y - goal_pose.y);
+  if (snap_start > 0.1F || snap_goal > 0.1F) {
+    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+        "endpoint snapped: start+%.2fm goal+%.2fm", snap_start, snap_goal);
   }
 
   // 4. Goal lock: perception noise must not preempt an executing goal.

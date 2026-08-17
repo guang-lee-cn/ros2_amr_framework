@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <queue>
 #include <unordered_set>
 #include <vector>
@@ -62,6 +63,10 @@ public:
   struct Params {
     int max_iterations = 50000;
     float heuristic_weight = 1.0F;  // 1.0=A*, >1 加速（曾死代码，现启用）
+    // 端点吸附：start/goal 落不可走格（stale 膨胀盘/靠泊点在膨胀圈内）时，
+    // 半径内最近可走格作虚拟端点；0=关闭（端点不可走→空路径，原行为）。
+    // 机台停靠后 path_pts=0 死锁修复，见 docs/design/20260817-machine2-deadlock-review.md。
+    float endpoint_snap_radius = 0.0F;
   };
   AStarPlanner() = default;
   explicit AStarPlanner(const Params &p) : params_(p) {}
@@ -70,7 +75,7 @@ public:
     int sx = 0, sy = 0, gx = 0, gy = 0;
     world_to_grid(grid, start.x, start.y, sx, sy);
     world_to_grid(grid, goal.x, goal.y, gx, gy);
-    if (!grid.is_traversable(sx, sy) || !grid.is_traversable(gx, gy)) return {};
+    if (!snap_endpoint(grid, sx, sy) || !snap_endpoint(grid, gx, gy)) return {};
     if (sx == gx && sy == gy) return {grid_to_world(grid, sx, sy)};
     return search(grid, sx, sy, gx, gy);
   }
@@ -103,6 +108,31 @@ private:
   static uint64_t key(int x, int y) {
     return (static_cast<uint64_t>(static_cast<uint32_t>(x)) << 32)
          | static_cast<uint64_t>(static_cast<uint32_t>(y));
+  }
+
+  /// 端点不可走时吸附到 snap 半径内欧氏最近的可走格（虚拟端点）。
+  /// 半径内无可走格（真被堵，如目标在墙体深处）→ false，保留空路径语义。
+  /// 圆盘窗（d²≤R²，非方形窗）+ 最近优先（环序会先命中超半径的对角格）。
+  bool snap_endpoint(const OccupancyGrid &grid, int &x, int &y) const {
+    if (grid.is_traversable(x, y)) return true;
+    if (params_.endpoint_snap_radius <= 0.0F) return false;
+    const float r_cells = params_.endpoint_snap_radius / grid.resolution;
+    const float r2 = r_cells * r_cells;
+    int best_d2 = std::numeric_limits<int>::max();
+    int bx = 0, by = 0;
+    bool found = false;
+    for (int dy = -static_cast<int>(r_cells); dy <= static_cast<int>(r_cells); ++dy) {
+      for (int dx = -static_cast<int>(r_cells); dx <= static_cast<int>(r_cells); ++dx) {
+        if (static_cast<float>(dx * dx + dy * dy) > r2) continue;  // 圆盘界
+        if (!grid.is_traversable(x + dx, y + dy)) continue;
+        const int d2 = dx * dx + dy * dy;
+        if (d2 < best_d2) { best_d2 = d2; bx = dx; by = dy; found = true; }
+      }
+    }
+    if (!found) return false;
+    x += bx;
+    y += by;
+    return true;
   }
 
   std::vector<Waypoint> search(const OccupancyGrid &grid, int sx, int sy, int gx, int gy) const {
