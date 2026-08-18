@@ -5,6 +5,34 @@
 
 ---
 
+## [2026-08-18] sim_watchdog 运行时看门狗上线：scan 劣化自动清场重启（90a1a86 承诺的"后续"）
+
+- **症状**: guard fail-safe（min_valid_echoes=50）只负责安全停车+告警等待，
+  gpu_lidar 运行中劣化（扇区失明→全盲）后的恢复仍靠"人盯日志→人跑 run_sim"，
+  长时巡逻/无人值守时即永久停摆。
+- **改动（仿真运维层，大脑零改动）**:
+  1. 新增 `scripts/sim_watchdog.sh`：每 30s 探测 /scan_raw 有效回波，连续 4 轮
+     <50（2min 判定窗，覆盖 run_sim 最坏 3×(25s+6s) 启动窗）→ 调 run_sim.sh
+     清场重启，抽签逻辑复用不重写
+  2. CMakeLists 注册安装（share/，与 run_sim.sh 同级运维脚本）
+- **设计要点**:
+  - 阈值 MIN_VALID=50 与 guard_min_valid_echoes（simulation.launch.py:111）同判据，
+    watchdog 与 brain fail-safe 对"失明"的认定一致
+  - 只看 scan 健康不看车动不动——车停等可能是业务停车，误判重启会杀正常任务；
+    传感器坏了则重启永远是对的
+  - 无 launch 进程时不计数，避免与 run_sim 自身启动抽签叠加误判
+- **验证**【铁证】:
+  - 17:05 run_sim 1 次尝试即健康（仅 try1 日志、无重试），本局 342 有效回波
+    持续稳定（10min+ 后实测探针仍 342）
+  - 17:07 watchdog 上线（PID 4069），至今静默运行 = 无劣化、无重启误触发
+  - bash -n 语法通过；探测逻辑与 run_sim.sh probe 同款
+- **运行规程**: `nohup ./scripts/sim_watchdog.sh >/tmp/sim_watchdog.log 2>&1 &`
+  （停止 `pkill -f sim_watchdog.sh`）；日志只在劣化/恢复/重启时说话
+- **回滚**: `git checkout -- CMakeLists.txt docs/change_journal.md && rm scripts/sim_watchdog.sh`；
+  运行中实例 `pkill -f sim_watchdog.sh`
+
+---
+
 ## [2026-08-17 下午] compute_container 启动失败一例：decision 功能性死亡（待查）
 
 - **症状**: 健康抽签局（346 回波、全程 0 扇区告警），patrol 设 goal 后 2 分钟+

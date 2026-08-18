@@ -111,6 +111,7 @@ install(PROGRAMS scripts/factory_markers.py DESTINATION lib/${PROJECT_NAME} RENA
 install(PROGRAMS scripts/robot_markers.py DESTINATION lib/${PROJECT_NAME} RENAME robot_markers)
 install(PROGRAMS scripts/patrol_3c.py DESTINATION lib/${PROJECT_NAME} RENAME patrol_3c)
 install(PROGRAMS scripts/run_sim.sh DESTINATION share/${PROJECT_NAME})
+install(PROGRAMS scripts/sim_watchdog.sh DESTINATION share/${PROJECT_NAME})
 install(PROGRAMS scripts/scan_filter.py DESTINATION lib/${PROJECT_NAME} RENAME scan_filter)
 
 install(DIRECTORY config launch worlds
