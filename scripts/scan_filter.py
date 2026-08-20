@@ -27,6 +27,13 @@ class ScanFilter(Node):
         # 阈值外置为参数: 仿真/车型变化时改 launch 传参, 不改代码
         self.declare_parameter('min_valid_range', 0.35)
         self.min_valid = self.get_parameter('min_valid_range').value
+        # 死区扇区虚拟近障距离(20260818 穿货架复发根因): 扇区失明恰覆盖
+        # FOV 方向时 nearest=inf → guard 按"空旷"放行全速, 车盲穿货架
+        # (总回波 ~160 绕过 min_valid_echoes 全向检查)。感知不可信的方位
+        # 保守处理: 死区 beams 置 0.30m(< guard stop_dist 0.40 必硬停)。
+        # 必须小于 min_valid_range? 否——此处赋值在滤除之后, 不会被滤掉。
+        self.declare_parameter('dead_sector_range', 0.30)
+        self.dead_range = self.get_parameter('dead_sector_range').value
         self.pub = self.create_publisher(LaserScan, '/scan', 10)
         self.create_subscription(LaserScan, '/scan_raw', self._relay, 10)
         self._blind_streak = 0
@@ -39,7 +46,6 @@ class ScanFilter(Node):
             if r < self.min_valid:          # 含 0.0/近距伪影; inf/nan 比较结果为 False, 不受影响
                 msg.ranges[i] = float('inf')
                 filtered += 1
-        self.pub.publish(msg)
         if filtered:
             self.get_logger().debug(f'filtered {filtered} beams')
         # 盲启动/运行中致盲检测: 连续多帧全 inf 则大声告警(WSL2 gpu_lidar 已知劣化模式)
@@ -52,24 +58,36 @@ class ScanFilter(Node):
                     f'(WSL2 gpu_lidar 劣化, 建议 ./scripts/run_sim.sh 重启抽签)')
         else:
             self._blind_streak = 0
-        self._dead_sector_streak = 0
-        # 扇区死区检测: 8x45° 中存活扇区 <6 → 大范围方位失明(2026-08-16 穿货架事故根因:
-        # 半平面 0 回波但总数仍 ~160, 计数门槛放行 → 车对死区方向障碍完全无视)
+        # 扇区死区处置(20260818): 死区扇区回波置虚拟近障(0.30m)。
+        # 扇区覆盖 FOV 时 guard nearest 恒 inf → "空旷"放行全速穿货架
+        # (总回波 ~160 绕过 min_valid_echoes 全向检查)。虚拟近障 < guard
+        # stop_dist(0.40) 必硬停, 且 raytrace 会标进 grid → A* 不派穿
+        # 死区路径; 扇区恢复自动解除。仅系统性失明(alive<6, 同告警判据)
+        # 时处置 —— alive≥6 的个别自然稀疏扇区(如车间对角 >range_max)
+        # 不误置。全盲时 8 扇区全死 → 全向虚拟墙, 行为=硬停等 watchdog。
         sectors = [0] * 8
+        sector_all_beams = [[] for _ in range(8)]
         for i, r in enumerate(msg.ranges):
-            if 0.01 < r < msg.range_max:
-                a = math.degrees(msg.angle_min + i * msg.angle_increment)
-                sectors[int(((a + 180) % 360) // 45)] += 1
+            a = math.degrees(msg.angle_min + i * msg.angle_increment)
+            s = int(((a + 180) % 360) // 45)
+            sector_all_beams[s].append(i)      # 全 beams 分桶: 死区要整扇区封锁
+            if 0.01 < r < msg.range_max:       # 有效回波才计入存活统计
+                sectors[s] += 1
         alive = sum(1 for v in sectors if v >= 3)
+        dead = [i for i, v in enumerate(sectors) if v < 3]
         if alive < 6:
             self._dead_sector_streak += 1
+            for s in dead:
+                for j in sector_all_beams[s]:  # 含 inf beams: 整扇区封锁,
+                    msg.ranges[j] = self.dead_range  # 否则 A* 从 inf 空隙穿死区
             if self._dead_sector_streak % 50 == 1:
-                dead = [i * 45 - 180 for i, v in enumerate(sectors) if v < 3]
                 self.get_logger().warn(
-                    f'传感器扇区失明: 仅 {alive}/8 方位有回波(死区中心角 {dead}°), '
-                    f'该方向障碍不可见, 建议重启仿真!')
+                    f'传感器扇区失明: 仅 {alive}/8 方位有回波(死区中心角 '
+                    f'{[i * 45 - 180 for i in dead]}°), 已置虚拟近障 {self.dead_range}m '
+                    f'封锁死区方位, 建议重启仿真!')
         else:
             self._dead_sector_streak = 0
+        self.pub.publish(msg)
 
 
 def main() -> None:
