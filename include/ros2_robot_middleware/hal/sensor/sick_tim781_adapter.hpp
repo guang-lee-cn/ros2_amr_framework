@@ -65,6 +65,9 @@ public:
         out.range_count     = n;
         out.angle_min       = latest_msg_->angle_min;
         out.angle_increment = latest_msg_->angle_increment;
+        // 保留上游事件时刻（打戳规范：驱动不得覆盖，只透传真值）
+        out.stamp_ns = static_cast<int64_t>(latest_msg_->header.stamp.sec) * 1000000000LL
+                       + static_cast<int64_t>(latest_msg_->header.stamp.nanosec);
 
         for (size_t i = 0; i < n; ++i) {
             out.ranges[i] = latest_msg_->ranges[i];

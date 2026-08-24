@@ -27,12 +27,17 @@ struct LidarScan {
     size_t range_count              = 0;
     float angle_min                 = 0.0F;
     float angle_increment           = 0.0F;
+    /// 测量时刻（纳秒，节点时钟域）。打戳规则见 docs/design/20260824-timestamp-policy-adr.md：
+    /// 最早可得点打戳；0 = 未盖章（内部合成路径由 infra 在读取边界补）。
+    int64_t stamp_ns                = 0;
 };
 
 struct ImuData {
     float linear_accel_x = 0.0F;
     float linear_accel_y = 0.0F;
     float angular_vel_z  = 0.0F;
+    /// 测量时刻（纳秒，同上）
+    int64_t stamp_ns     = 0;
 };
 
 struct CameraFrame {

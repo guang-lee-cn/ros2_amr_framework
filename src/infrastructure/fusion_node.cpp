@@ -44,6 +44,19 @@ void FusionNode::declare_sensor_parameters() {
   this->declare_parameter("sensors.camera.topic", "/camera/color/image_raw");
   // 演示场景：obstacle / slalom / corridor / empty（默认）
   this->declare_parameter("scenario", "empty");
+  // 打戳规范 v1：新鲜度容差（ms→ns）+ 故障注入钩子（测试用，默认关）
+  this->declare_parameter("stale.lidar_ms", 200);
+  this->declare_parameter("stale.imu_ms", 100);
+  this->declare_parameter("inject.lidar_stamp_age_ms", 0);
+
+  // 读入并装配门控（声明即装配：测试钩子构造函数也走这里）
+  stale_lidar_tol_ns_ =
+      static_cast<int64_t>(this->get_parameter("stale.lidar_ms").as_int()) * 1000000LL;
+  inject_stamp_age_ns_ =
+      static_cast<int64_t>(this->get_parameter("inject.lidar_stamp_age_ms").as_int()) * 1000000LL;
+  stamp_gate_.set_tolerance("lidar", stale_lidar_tol_ns_);
+  stamp_gate_.set_tolerance(
+      "imu", static_cast<int64_t>(this->get_parameter("stale.imu_ms").as_int()) * 1000000LL);
 }
 
 /// 按场景名返回障碍物布局（演示用）。
@@ -205,8 +218,10 @@ void FusionNode::timer_callback() {
   if (!perception_) return;
 
   // 发布模拟 LiDAR 点云（供 Foxglove/RViz 可视化）
+  int64_t lidar_stamp_ns = 0;
   amr::hal::sensor::LidarScan scan;
   if (perception_->lidar_snapshot(scan)) {
+    lidar_stamp_ns = scan.stamp_ns;
     // LaserScan（RViz 兼容）
     auto scan_msg = sensor_msgs::msg::LaserScan{};
     scan_msg.header.stamp = now;
@@ -246,6 +261,19 @@ void FusionNode::timer_callback() {
       std::memcpy(&pc_msg.data[i * 12 + 8], &z, 4);
     }
     pointcloud_pub_->publish(pc_msg);
+  }
+
+  // ── Stamp gate：事件时刻过期 → 拒绝发布本拍（旧数据不得冒充"现在"） ──
+  // lidar_stamp_ns 来源：适配器路径透传 header.stamp；内部合成路径在快照处补 now。
+  if (lidar_stamp_ns == 0) lidar_stamp_ns = now.nanoseconds();  // 内部合成：读取即最早点
+  lidar_stamp_ns -= inject_stamp_age_ns_;                        // 故障注入（默认 0 不生效）
+  if (stamp_gate_.check("lidar", lidar_stamp_ns, now.nanoseconds()) ==
+      amr::domain::perception::StampGate::Verdict::STALE) {
+    ++lidar_stale_rejects_;
+    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+                         "lidar snapshot stale (age %ldms, tol %ldms) - suppress fusion output tick",
+                         (now.nanoseconds() - lidar_stamp_ns) / 1000000L, stale_lidar_tol_ns_ / 1000000L);
+    return;  // 本拍不发布：宁可空一拍，不用旧世界描述现在
   }
 
   auto old_level = current_level_;

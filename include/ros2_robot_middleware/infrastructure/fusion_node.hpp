@@ -7,6 +7,7 @@
 
 #include "ros2_robot_middleware/domain/perception/perception_service.hpp"
 #include "ros2_robot_middleware/domain/perception/degradation_policy.hpp"
+#include "ros2_robot_middleware/domain/perception/stamp_gate.hpp"
 #include "ros2_robot_middleware/hal/sensor/isensor.hpp"
 #include "ros2_robot_middleware/hal/sensor/sensor_factory.hpp"
 #include "ros2_robot_middleware/infrastructure/tf2_transform_provider.hpp"
@@ -70,6 +71,13 @@ private:
   std::optional<amr::domain::perception::PerceptionService> perception_;
 
   amr::domain::perception::DegradationLevel current_level_{};
+
+  // 时间戳新鲜度门控（打戳规范 docs/design/20260824-timestamp-policy-adr.md）：
+  // 事件时刻过期 → 拒绝发布本拍融合输出，防止旧数据冒充「现在」。
+  amr::domain::perception::StampGate stamp_gate_;
+  uint64_t lidar_stale_rejects_ = 0;  // 拒绝计数（测试钩子/可观测）
+  int64_t stale_lidar_tol_ns_ = 200000000;  // 200ms
+  int64_t inject_stamp_age_ns_ = 0;         // 故障注入：人为老化 lidar 戳
 
   // ROS2 infrastructure — DDS pub/sub
   rclcpp_lifecycle::LifecyclePublisher<ros2_robot_middleware::msg::PerceptionObjects>::SharedPtr fusion_pub_;
