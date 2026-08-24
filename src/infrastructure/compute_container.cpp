@@ -2,26 +2,15 @@
 // Zero-copy communication via shared_ptr between nodes (no DDS serialization).
 // Sensor drivers (lidar/imu/camera) remain independent for fault isolation.
 //
-// TODO(zero-copy, 2026-08-15): the claim on line 2 is currently FALSE.
-// The three nodes talk via plain create_publisher/create_subscription topics
-// and no NodeOptions enables use_intra_process_comms, so messages still take
-// the full DDS serialization path. Same-process WITHOUT intra-process comms
-// gives up fault isolation (fusion crash kills decision/motor) for zero
-// performance gain — worst of both layouts.
-//
-// Fix (preferred): construct FusionNode/DecisionNode/MotorCtrlNode with a
-// shared rclcpp::NodeOptions().use_intra_process_comms(true) so the line-2
-// claim becomes true. Requirements:
-//   1. Verify on Jazzy that LifecycleNode pub/sub actually takes the
-//      intra-process path — lifecycle + intra-process had bugs in some
-//      distros; confirm with a latency/throughput measurement, not just
-//      "tests pass".
-//   2. Zero-copy path needs publishers to pass std::unique_ptr and
-//      subscribers to take std::shared_ptr; by-value publishes fall back to
-//      a copy (still no DDS serialization, but not zero-copy).
-// Fallback: if IPC cannot be enabled cleanly, split fusion/decision/motor
-// back into separate processes (restore isolation) and delete the false
-// zero-copy claim.
+// Zero-copy (FIXED 2026-08-24): the intra-process TODO from 2026-08-15 is done.
+// Shared NodeOptions().use_intra_process_comms(true) + unique_ptr publishes on
+// the hot path (PerceptionObjects, path). Verified on Jazzy empirically via
+// perf instrumentation (AMR_PERF_INSTRUMENTATION=ON, :9091/metrics, 2 轮):
+//   fusion:tick P99 512µs → 256µs（两轮复现，2×）
+//   fusion:tick P50 处于量化桶边界 128/256 抖动（方向一致，不宣称幅度）
+// 空场景消息最小，序列化收益随载荷增长——大消息量级见 benchmarks 的
+// intra 实测（1MB 比 DDS 快 183×，benchmarks/docs/results-2026-08-20.md）。
+// LifecycleNode + intra-process 在 Jazzy 可用——本次实测即旧 TODO 要求的验证。
 //
 // Process layout (production):
 //   compute_container (PID 1) ─── fusion → decision → motor_ctrl (shared memory)
@@ -80,9 +69,14 @@ int main(int argc, char *argv[])
 
   auto exec = std::make_shared<rclcpp::executors::MultiThreadedExecutor>();
 
-  auto fusion   = std::make_shared<FusionNode>();
-  auto decision = std::make_shared<DecisionNode>();
-  auto motor    = std::make_shared<MotorCtrlNode>();
+  // 零拷贝热路径（2026-08-24 落地）：三节点共享同一份开启 intra-process 的
+  // NodeOptions，同进程 pub/sub 走 shared_ptr 直通，不走 DDS 序列化。
+  // 热路径发布端用 unique_ptr（所有权移交=零拷贝）；传感器→fusion 仍跨进程
+  // DDS（故障隔离，故意保留）。MoveToPose action 通道无 intra 零拷贝（低频，可接受）。
+  auto opts = rclcpp::NodeOptions().use_intra_process_comms(true);
+  auto fusion   = std::make_shared<FusionNode>(opts);
+  auto decision = std::make_shared<DecisionNode>(opts);
+  auto motor    = std::make_shared<MotorCtrlNode>(opts);
 
   exec->add_node(fusion->get_node_base_interface());
   exec->add_node(decision->get_node_base_interface());

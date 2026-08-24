@@ -279,11 +279,12 @@ void FusionNode::timer_callback() {
   auto old_level = current_level_;
   current_level_ = perception_->evaluate_degradation();
 
-  auto msg            = ros2_robot_middleware::msg::PerceptionObjects{};
-  msg.header.stamp    = this->now();
+  // 零拷贝：unique_ptr 发布（1:1 订阅者=decision，所有权移交无拷贝）
+  auto msg            = std::make_unique<ros2_robot_middleware::msg::PerceptionObjects>();
+  msg->header.stamp    = this->now();
   // 障碍在车体帧发布；decision 用 TF 变换到 map 帧标记 A* 网格。
   // 用 "amr/chassis"（TF 树帧）而非 "base_link"（TF 树无此帧）。
-  msg.header.frame_id = "amr/chassis";
+  msg->header.frame_id = "amr/chassis";
 
   // 用 tracker 输出（带持久 track_id + KF 速度估计 + IMU 运动补偿），
   // 而非原始 DBSCAN 簇。id 用 track_id（跨帧稳定），供 decision 关联。
@@ -293,15 +294,15 @@ void FusionNode::timer_callback() {
     obj.id = "trk_" + std::to_string(c.track_id);
     obj.x = c.x; obj.y = c.y; obj.z = 0.0F;
     obj.category = c.category;  // 深度低矮障碍="low"；识别接入后为语义类别
-    msg.objects.push_back(obj);
+    msg->objects.push_back(obj);
   }
 
-  fusion_pub_->publish(msg);
+  fusion_pub_->publish(std::move(msg));
 
   // ── Observability ────────────────────────────────────────────────
   auto &m = amr::observability::shared_metrics();
   m.fusion_cycle_count.fetch_add(1, std::memory_order_relaxed);
-  m.object_count.store(static_cast<int32_t>(msg.objects.size()), std::memory_order_relaxed);
+  m.object_count.store(static_cast<int32_t>(msg->objects.size()), std::memory_order_relaxed);
   m.degradation_level.store(static_cast<int32_t>(current_level_), std::memory_order_relaxed);
 
   if (current_level_ != old_level) {
@@ -319,15 +320,15 @@ void FusionNode::timer_callback() {
   }
   RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
                        "PerceptionObjects published: %zu object(s) [level=%d]",
-                       msg.objects.size(), static_cast<int>(current_level_));
+                       msg->objects.size(), static_cast<int>(current_level_));
 }
 
 void FusionNode::update_heartbeat_status() {
   auto msg = std_msgs::msg::String{};
   if (perception_) {
-    msg.data = amr::domain::perception::DegradationPolicy::to_heartbeat_string(current_level_);
+    msg->data = amr::domain::perception::DegradationPolicy::to_heartbeat_string(current_level_);
   } else {
-    msg.data = "inactive";
+    msg->data = "inactive";
   }
   heartbeat_pub_->publish(msg);
 }

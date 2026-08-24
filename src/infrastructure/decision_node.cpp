@@ -107,7 +107,7 @@ DecisionNode::on_activate(const rclcpp_lifecycle::State &)
   using namespace std::chrono_literals;
   heartbeat_timer_ = this->create_wall_timer(1s, [this]() {
     auto msg = std_msgs::msg::String{};
-    msg.data = "alive";
+    msg->data = "alive";
     heartbeat_pub_->publish(msg);
   });
   heartbeat_pub_->on_activate();
@@ -487,18 +487,18 @@ void DecisionNode::on_result(const ClientGoalHandle::WrappedResult& result)
 }
 
 void DecisionNode::publish_path(const std::vector<amr::domain::planning::Waypoint> &path) {
-  auto msg = geometry_msgs::msg::PoseArray{};
-  msg.header.stamp = this->now();
-  msg.header.frame_id = "map";
+  auto msg = std::make_unique<geometry_msgs::msg::PoseArray>();  // 零拷贝发布
+  msg->header.stamp = this->now();
+  msg->header.frame_id = "map";
   for (const auto &wp : path) {
     auto pose = geometry_msgs::msg::Pose{};
     pose.position.x = wp.x;
     pose.position.y = wp.y;
     pose.position.z = 0.0;
     pose.orientation.w = 1.0;
-    msg.poses.push_back(pose);
+    msg->poses.push_back(pose);
   }
-  path_pub_->publish(msg);
+  path_pub_->publish(std::move(msg));
 }
 
 RCLCPP_COMPONENTS_REGISTER_NODE(DecisionNode)
