@@ -15,7 +15,7 @@
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <std_msgs/msg/string.hpp>
 
-#include <rclcpp/rclcpp.hpp>
+#include "ros2_robot_middleware/infrastructure/amr_node.hpp"
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
 
 // Thin ROS2 adapter — delegates domain logic to PerceptionService.
@@ -26,7 +26,10 @@
 // Switch simulated→real without recompilation:
 //   config/sensors.yaml:  lidar.type = simulated → sick_tim781
 
-class FusionNode : public rclcpp_lifecycle::LifecycleNode {
+// 继承 AmrNode：QoS 词汇表/指标/时钟由基类托管。
+// 注：心跳保留自管——fusion 心跳携带降级等级语义（update_heartbeat_status），
+// 非 AmrNode 的 "alive" 均一格式；stamp_gate_ 保留（ns 级精度 + imu 双注册）。
+class FusionNode : public amr::infrastructure::AmrNode {
 public:
   FusionNode();
 

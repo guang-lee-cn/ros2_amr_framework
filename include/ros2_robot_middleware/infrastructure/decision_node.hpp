@@ -21,13 +21,13 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
-#include <rclcpp/rclcpp.hpp>
+#include "ros2_robot_middleware/infrastructure/amr_node.hpp"
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
 
 // Thin ROS2 adapter — delegates planning logic to PlanningService.
 // Handles only DDS subscription + Action client + lifecycle callbacks.
-class DecisionNode : public rclcpp_lifecycle::LifecycleNode {
+class DecisionNode : public amr::infrastructure::AmrNode {
 public:
   DecisionNode();
 

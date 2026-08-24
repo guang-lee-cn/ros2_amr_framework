@@ -18,14 +18,14 @@
 #include <cmath>
 #include <mutex>
 #include <vector>
-#include <rclcpp/rclcpp.hpp>
+#include "ros2_robot_middleware/infrastructure/amr_node.hpp"
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
 
 // MotorCtrlNode — Pure Pursuit path tracking with /odom feedback.
 // Closed loop: current pose comes from /odom (robot_localization EKF).
 // Falls back to kinematic integration when odom not yet available.
-class MotorCtrlNode : public rclcpp_lifecycle::LifecycleNode {
+class MotorCtrlNode : public amr::infrastructure::AmrNode {
 public:
   MotorCtrlNode();
 

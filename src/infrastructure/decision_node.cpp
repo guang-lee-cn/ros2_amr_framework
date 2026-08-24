@@ -17,7 +17,7 @@
 // ── Constructors ────────────────────────────────────────────────────────────
 
 DecisionNode::DecisionNode()
-  : rclcpp_lifecycle::LifecycleNode("decision"),
+  : amr::infrastructure::AmrNode("decision"),
     astar_(amr::domain::planning::AStarPlanner::Params{200000, 1.0F, 0.75F})
 {
   // Task-derived navigation goal (from launch params / fleet manager).
@@ -27,7 +27,7 @@ DecisionNode::DecisionNode()
 }
 
 DecisionNode::DecisionNode(const rclcpp::NodeOptions &options)
-  : rclcpp_lifecycle::LifecycleNode("decision", options),
+  : amr::infrastructure::AmrNode("decision", options),
     astar_(amr::domain::planning::AStarPlanner::Params{200000, 1.0F, 0.75F}) {
   this->declare_parameter<float>("goal_x", 0.0F);
   this->declare_parameter<float>("goal_y", 0.0F);
@@ -83,11 +83,7 @@ DecisionNode::on_configure(const rclcpp_lifecycle::State &)
     [this](sensor_msgs::msg::LaserScan::SharedPtr msg) { on_scan(msg); },
     decision_opts);
 
-  heartbeat_pub_ = this->create_publisher<std_msgs::msg::String>(
-    "/decision/heartbeat", rclcpp::QoS(10).reliable());
-
-  path_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>(
-    "/planning/path", rclcpp::QoS(10).reliable());
+  path_pub_ = create_pub<geometry_msgs::msg::PoseArray>("/planning/path");
 
   // Initialize OccupancyGrid (400×400 grid, 5cm resolution, 20m×20m).
   // G1c: A* now plans in the map frame — warehouse obstacles sit at
@@ -105,12 +101,7 @@ DecisionNode::CallbackReturn
 DecisionNode::on_activate(const rclcpp_lifecycle::State &)
 {
   using namespace std::chrono_literals;
-  heartbeat_timer_ = this->create_wall_timer(1s, [this]() {
-    auto msg = std_msgs::msg::String{};
-    msg.data = "alive";
-    heartbeat_pub_->publish(msg);
-  });
-  heartbeat_pub_->on_activate();
+  start_heartbeat("/decision/heartbeat");
   path_pub_->on_activate();
   return CallbackReturn::SUCCESS;
 }
@@ -118,8 +109,7 @@ DecisionNode::on_activate(const rclcpp_lifecycle::State &)
 DecisionNode::CallbackReturn
 DecisionNode::on_deactivate(const rclcpp_lifecycle::State &)
 {
-  heartbeat_timer_.reset();
-  heartbeat_pub_->on_deactivate();
+  stop_heartbeat();
   path_pub_->on_deactivate();
   return CallbackReturn::SUCCESS;
 }
@@ -131,7 +121,6 @@ DecisionNode::on_cleanup(const rclcpp_lifecycle::State &)
   amcl_pose_sub_.reset();
   fusion_hb_sub_.reset();
   client_.reset();
-  heartbeat_pub_.reset();
   path_pub_.reset();
   tf_listener_.reset();
   tf_buffer_.reset();
@@ -141,12 +130,11 @@ DecisionNode::on_cleanup(const rclcpp_lifecycle::State &)
 DecisionNode::CallbackReturn
 DecisionNode::on_shutdown(const rclcpp_lifecycle::State &)
 {
-  heartbeat_timer_.reset();
+  stop_heartbeat();
   decision_sub_.reset();
   amcl_pose_sub_.reset();
   fusion_hb_sub_.reset();
   client_.reset();
-  heartbeat_pub_.reset();
   path_pub_.reset();
   tf_listener_.reset();
   tf_buffer_.reset();

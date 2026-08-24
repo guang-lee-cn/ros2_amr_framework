@@ -13,12 +13,12 @@
 #include <cstring>
 
 MotorCtrlNode::MotorCtrlNode()
-  : rclcpp_lifecycle::LifecycleNode("motor_ctrl")
+  : amr::infrastructure::AmrNode("motor_ctrl")
 {
 }
 
 MotorCtrlNode::MotorCtrlNode(const rclcpp::NodeOptions &options)
-  : rclcpp_lifecycle::LifecycleNode("motor_ctrl", options) {
+  : amr::infrastructure::AmrNode("motor_ctrl", options) {
 }
 
 MotorCtrlNode::CallbackReturn

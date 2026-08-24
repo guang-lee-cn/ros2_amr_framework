@@ -13,18 +13,18 @@
 
 // ── Constructors ─────────────────────────────────────────────────────
 
-FusionNode::FusionNode() : rclcpp_lifecycle::LifecycleNode("fusion") {
+FusionNode::FusionNode() : amr::infrastructure::AmrNode("fusion") {
   declare_sensor_parameters();
 }
 
 FusionNode::FusionNode(const rclcpp::NodeOptions &options)
-  : rclcpp_lifecycle::LifecycleNode("fusion", options) {
+  : amr::infrastructure::AmrNode("fusion", options) {
   declare_sensor_parameters();
 }
 
 FusionNode::FusionNode(const rclcpp::NodeOptions &options,
                        const amr::domain::perception::DegradationPolicy::Config &deg_config)
-  : rclcpp_lifecycle::LifecycleNode("fusion", options) {
+  : amr::infrastructure::AmrNode("fusion", options) {
   declare_sensor_parameters();
   // Create sensors immediately for test hook (skips on_configure lifecycle)
   create_sensors();
