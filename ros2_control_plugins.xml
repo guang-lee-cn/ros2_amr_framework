@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<library path="diff_drive_system">
+  <class name="ros2_robot_middleware/DiffDriveSystem"
+         type="amr::hal::ros2_control::DiffDriveSystem"
+         base_class_type="hardware_interface::SystemInterface">
+    <description>
+      AMR 差速底盘仿真硬件插件：velocity 命令 + position/velocity 状态，
+      演示 ros2_control 与 HAL 层的桥接（固定节拍锁步 / claim 独占 / 激活接管）。
+    </description>
+  </class>
+</library>

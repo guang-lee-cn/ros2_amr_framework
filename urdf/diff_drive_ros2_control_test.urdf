@@ -1,0 +1,55 @@
+<?xml version="1.0"?>
+<!-- 最小差速底盘 URDF：仅用于 ros2_control 集成验证（非 Gazebo 视觉模型）。
+     关节名与 worlds/amr_visual.urdf 保持一致（left/right_wheel_joint）。 -->
+<robot name="amr_diff_drive_test">
+  <link name="amr/chassis">
+    <visual>
+      <geometry><box size="0.45 0.34 0.12"/></geometry>
+      <origin xyz="0 0 0.09"/>
+    </visual>
+  </link>
+
+  <link name="amr/left_wheel">
+    <visual>
+      <geometry><cylinder radius="0.08" length="0.04"/></geometry>
+      <origin rpy="1.5707963 0 0"/>
+    </visual>
+  </link>
+  <joint name="left_wheel_joint" type="continuous">
+    <parent link="amr/chassis"/>
+    <child link="amr/left_wheel"/>
+    <origin xyz="0 0.19 0.08" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <link name="amr/right_wheel">
+    <visual>
+      <geometry><cylinder radius="0.08" length="0.04"/></geometry>
+      <origin rpy="1.5707963 0 0"/>
+    </visual>
+  </link>
+  <joint name="right_wheel_joint" type="continuous">
+    <parent link="amr/chassis"/>
+    <child link="amr/right_wheel"/>
+    <origin xyz="0 -0.19 0.08" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <ros2_control name="AmrDiffDriveSim" type="system">
+    <hardware>
+      <plugin>ros2_robot_middleware/DiffDriveSystem</plugin>
+      <param name="max_wheel_vel">20.0</param>
+      <param name="cmd_accel">40.0</param>
+    </hardware>
+    <joint name="left_wheel_joint">
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <command_interface name="velocity"/>
+    </joint>
+    <joint name="right_wheel_joint">
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <command_interface name="velocity"/>
+    </joint>
+  </ros2_control>
+</robot>

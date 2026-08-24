@@ -1,0 +1,39 @@
+# ros2_control 集成验证配置：controller_manager + 原厂控制器（零自研控制器）
+# 用法见 scripts/verify_ros2_control.sh
+controller_manager:
+  ros__parameters:
+    update_rate: 100  # Hz
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    diff_drive_controller:
+      type: diff_drive_controller/DiffDriveController
+
+    # 独占性(claim)实证专用：与 diff_drive_controller 抢同一批 velocity 命令接口。
+    # verify 脚本在 diff_drive 已激活时 spawn 它，预期被 cm 拒绝激活。
+    claim_conflict_controller:
+      type: velocity_controllers/JointGroupVelocityController
+
+diff_drive_controller:
+  ros__parameters:
+    left_wheel_names: ["left_wheel_joint"]
+    right_wheel_names: ["right_wheel_joint"]
+    wheel_separation: 0.38
+    wheel_radius: 0.08
+    publish_rate: 50.0
+    odom_frame_id: odom
+    base_frame_id: amr/chassis
+    enable_odom_tf: true
+    open_loop: false
+
+joint_state_broadcaster:
+  ros__parameters:
+    use_local_topics: false
+
+# ── 独占性(claim)实证专用：与 diff_drive_controller 抢同一批 velocity 命令接口 ──
+# verify 脚本会在 diff_drive_controller 已激活时尝试加载它，预期被 cm 拒绝。
+claim_conflict_controller:
+  ros__parameters:
+    joints: ["left_wheel_joint"]
+    interface_name: velocity
