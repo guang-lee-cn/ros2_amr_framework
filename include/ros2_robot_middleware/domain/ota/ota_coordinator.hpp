@@ -56,6 +56,8 @@ class OtaCoordinator
 public:
   /// 槽位物理操作（infra 注入；Domain 只决策不执行）
   struct SlotOps {
+    /// 下载新版本镜像（一键门面用；空 = 镜像已就位，跳过下载阶段）
+    std::function<bool(int64_t version)> fetch;
     /// 刷写指定槽（只应收到非活动槽）——返回 false 视为安装失败
     std::function<bool(char slot, int64_t version)> write;
     /// 原子切换引导标记到指定槽
@@ -70,6 +72,25 @@ public:
     security_counter_(security_counter), ops_(std::move(ops)) {}
 
   static char other_slot(char s) { return s == 'A' ? 'B' : 'A'; }
+
+  /// 一键门面（porcelain）：驱动到 HEALTH_GATE——「参数注入一键升级」的 API 形态。
+  /// plumbing 五方法保留给高级用法/可观测；门面内部仍走全状态机+全部不变量。
+  /// 返回后 state()==HEALTH_GATE 表示已切标记，重启生效；重启后调 on_health()。
+  /// 注意重启是物理边界，任何 API 都不可能跨越——门面把复杂度压缩到「两个调用」：
+  /// 升级前 run_update()，重启后 on_health()。
+  Result run_update(int64_t candidate_version, bool signature_valid)
+  {
+    Result r = request_update(candidate_version, signature_valid);
+    if (r != Result::ACCEPTED) return r;             // I2：拒绝先于触碰
+    if (ops_.fetch && !ops_.fetch(candidate_version)) {
+      state_ = State::IDLE;
+      return Result::ABORTED;                        // 下载失败，旧系统未动
+    }
+    if ((r = on_download_complete()) != Result::ACCEPTED) return r;
+    if ((r = begin_install()) != Result::ACCEPTED) return r;    // 只写非活动槽
+    if ((r = on_install_complete()) != Result::ACCEPTED) return r;
+    return switch_boot_target();                     // 原子切标记 → HEALTH_GATE
+  }
 
   /// 发起升级：签名 + 防降级检查通过才进入 DOWNLOADING（I2）
   Result request_update(int64_t candidate_version, bool signature_valid)

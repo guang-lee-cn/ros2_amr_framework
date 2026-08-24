@@ -16,14 +16,14 @@ struct Harness {
 
   dot::OtaCoordinator make(char active = 'A', int64_t ver = 10, int64_t sec = 8)
   {
-    return dot::OtaCoordinator(active, ver, sec,
-      dot::OtaCoordinator::SlotOps{
-        [this](char slot, int64_t v) {
-          writes.push_back({slot, v});
-          return write_ok;
-        },
-        [this](char slot) { boot_targets.push_back(slot); return true; },
-        [this]() { ++rollbacks; }});
+    dot::OtaCoordinator::SlotOps ops;
+    ops.write = [this](char slot, int64_t v) {
+      writes.push_back({slot, v});
+      return write_ok;
+    };
+    ops.set_boot_target = [this](char slot) { boot_targets.push_back(slot); return true; };
+    ops.rollback_marker = [this]() { ++rollbacks; };
+    return dot::OtaCoordinator(active, ver, sec, std::move(ops));
   }
 };
 }  // namespace

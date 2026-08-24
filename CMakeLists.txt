@@ -47,6 +47,7 @@ add_library(robot_middleware_lib STATIC
   src/infrastructure/motor_ctrl_node.cpp
   src/infrastructure/health_monitor_node.cpp
   src/infrastructure/prometheus_http_server.cpp
+  src/infrastructure/ota_agent_node.cpp
   src/infrastructure/fleet_manager_node.cpp
   src/observability/metrics_registry.cpp
 )
@@ -89,6 +90,11 @@ ament_target_dependencies(compute_container rclcpp rclcpp_components spdlog)
 target_link_libraries(compute_container fmt::fmt)
 install(TARGETS compute_component DESTINATION lib)
 install(TARGETS compute_container DESTINATION lib/${PROJECT_NAME})
+
+# OTA 一键代理（参数注入形态：param set ota.target_version → run_update）
+add_executable(ota_agent src/infrastructure/ota_agent_main.cpp)
+target_link_libraries(ota_agent robot_middleware_lib)
+install(TARGETS ota_agent DESTINATION lib/${PROJECT_NAME})
 
 # Standalone fusion entry (verification/debug; production runs in compute_container)
 add_executable(fusion_standalone src/infrastructure/fusion_main.cpp)
@@ -241,6 +247,8 @@ if(BUILD_TESTING)
   add_amr_test(test_ota_coordinator quality/src/test_ota_coordinator.cpp)
   add_amr_test(test_qos_profiles  quality/src/test_qos_profiles.cpp)
   add_amr_test(test_lightweight_rpc quality/src/test_lightweight_rpc.cpp)
+  add_amr_test(test_sched_device   quality/src/test_sched_device.cpp)
+  add_amr_test(test_ota_agent     quality/src/test_ota_agent.cpp)
   add_amr_test(test_fusion         quality/src/test_fusion.cpp)
   add_amr_test(test_observability  quality/src/test_observability.cpp)
   add_amr_test(test_kalman_filter quality/src/test_kalman_filter.cpp)
