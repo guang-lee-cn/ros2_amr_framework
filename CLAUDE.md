@@ -31,8 +31,12 @@ observability）。C++17 · colcon · gtest · cppcheck 门禁 · 双 RMW CI 矩
 
 ## 节点形态
 
-- 新节点 = `rclcpp_lifecycle::LifecycleNode`，参数在 `on_configure` 声明；
-  从现有节点（如 `imu_node`）复制结构起步，不自创形态。
+- **新节点继承 `amr::infrastructure::AmrNode`**（心跳/QoS/门控/指标/时钟由基类
+  托管），参照实现见 `imu_node`；参数在 `on_configure` 声明。
+- **QoS 一律 `amr::qos::` 词汇表**（sensor_stream / reliable_stream /
+  latched_state / control_stream），**禁止手搓 `rclcpp::QoS(10)` 散设**。
+- compute 容器组合由 `pipeline.nodes` 参数声明；新节点入管线 = 注册表一行 +
+  配置一个名字，不改 main() 逻辑。
 
 ## 测试与 CI
 
@@ -51,6 +55,7 @@ observability）。C++17 · colcon · gtest · cppcheck 门禁 · 双 RMW CI 矩
 
 - ❌ Domain 层出现任何 ROS 头文件
 - ❌ 用 `now()` 覆盖上游时间戳真值
-- ❌ 绕过现有基类/模板手搓平行实现
+- ❌ 绕过 AmrNode/SensorBase 模板手搓平行实现
+- ❌ 手搓 `rclcpp::QoS(10)`——必须走 `amr::qos::` 词汇表
 - ❌ 修改 `benchmarks/results/` 历史数据
 - ❌ 在编排脚本里 `pkill -f` 匹配含自身命令行的模式（用 `pkill -x` 或方括号技巧）

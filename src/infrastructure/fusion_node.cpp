@@ -297,12 +297,15 @@ void FusionNode::timer_callback() {
     msg->objects.push_back(obj);
   }
 
+  // 先取计数再 move——publish 后 unique_ptr 已置空（use-after-move 教训，
+  // Debug 构建下 segfault 捕获：UB 在 Release 下不显形≠不存在）
+  const auto n_objects = static_cast<int32_t>(msg->objects.size());
   fusion_pub_->publish(std::move(msg));
 
   // ── Observability ────────────────────────────────────────────────
   auto &m = amr::observability::shared_metrics();
   m.fusion_cycle_count.fetch_add(1, std::memory_order_relaxed);
-  m.object_count.store(static_cast<int32_t>(msg->objects.size()), std::memory_order_relaxed);
+  m.object_count.store(n_objects, std::memory_order_relaxed);
   m.degradation_level.store(static_cast<int32_t>(current_level_), std::memory_order_relaxed);
 
   if (current_level_ != old_level) {
@@ -319,16 +322,16 @@ void FusionNode::timer_callback() {
                  static_cast<int>(old_level), static_cast<int>(current_level_));
   }
   RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-                       "PerceptionObjects published: %zu object(s) [level=%d]",
-                       msg->objects.size(), static_cast<int>(current_level_));
+                       "PerceptionObjects published: %d object(s) [level=%d]",
+                       n_objects, static_cast<int>(current_level_));
 }
 
 void FusionNode::update_heartbeat_status() {
   auto msg = std_msgs::msg::String{};
   if (perception_) {
-    msg->data = amr::domain::perception::DegradationPolicy::to_heartbeat_string(current_level_);
+    msg.data = amr::domain::perception::DegradationPolicy::to_heartbeat_string(current_level_);
   } else {
-    msg->data = "inactive";
+    msg.data = "inactive";
   }
   heartbeat_pub_->publish(msg);
 }

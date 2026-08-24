@@ -5,18 +5,14 @@
 #include <chrono>
 
 ImuNode::ImuNode()
-  : rclcpp_lifecycle::LifecycleNode("imu")
+  : amr::infrastructure::AmrNode("imu")
 {
 }
 
 ImuNode::CallbackReturn
 ImuNode::on_configure(const rclcpp_lifecycle::State &)
 {
-  publisher_ = this->create_publisher<sensor_msgs::msg::Imu>(
-    "/sensor/imu", rclcpp::QoS(10).reliable());
-
-  heartbeat_pub_ = this->create_publisher<std_msgs::msg::String>(
-    "/sensor/imu/heartbeat", rclcpp::QoS(10).reliable());
+  publisher_ = create_pub<sensor_msgs::msg::Imu>("/sensor/imu");
 
   return CallbackReturn::SUCCESS;
 }
@@ -27,14 +23,8 @@ ImuNode::on_activate(const rclcpp_lifecycle::State &)
   using namespace std::chrono_literals;
   timer_ = this->create_wall_timer(10ms, [this]() { timer_callback(); });
 
-  heartbeat_timer_ = this->create_wall_timer(1s, [this]() {
-    auto msg = std_msgs::msg::String{};
-    msg.data = "alive";
-    heartbeat_pub_->publish(msg);
-  });
-
+  start_heartbeat("/sensor/imu/heartbeat");
   publisher_->on_activate();
-  heartbeat_pub_->on_activate();
 
   return CallbackReturn::SUCCESS;
 }
@@ -43,10 +33,9 @@ ImuNode::CallbackReturn
 ImuNode::on_deactivate(const rclcpp_lifecycle::State &)
 {
   timer_.reset();
-  heartbeat_timer_.reset();
+  stop_heartbeat();
 
   publisher_->on_deactivate();
-  heartbeat_pub_->on_deactivate();
 
   return CallbackReturn::SUCCESS;
 }
@@ -55,7 +44,6 @@ ImuNode::CallbackReturn
 ImuNode::on_cleanup(const rclcpp_lifecycle::State &)
 {
   publisher_.reset();
-  heartbeat_pub_.reset();
 
   return CallbackReturn::SUCCESS;
 }
@@ -64,9 +52,8 @@ ImuNode::CallbackReturn
 ImuNode::on_shutdown(const rclcpp_lifecycle::State &)
 {
   timer_.reset();
-  heartbeat_timer_.reset();
+  stop_heartbeat();
   publisher_.reset();
-  heartbeat_pub_.reset();
 
   return CallbackReturn::SUCCESS;
 }

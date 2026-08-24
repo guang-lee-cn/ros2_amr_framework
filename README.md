@@ -6,7 +6,7 @@
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=c%2B%2B)](https://en.cppreference.com/w/cpp/17)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
-AMR **感知-决策-执行全链路自研**参考架构。基于 ROS 2 Jazzy，展示生产级 ROS2 应用的 DDD 分层、HAL 抽象、可观测性、降级管理与工程化实践。不是一个可安装的通用中间件，而是一个可学习、可复制的架构模板。
+AMR **感知-决策-执行全链路自研**参考架构。基于 ROS 2 Jazzy，展示生产级 ROS2 应用的 DDD 分层、HAL 抽象、可观测性、降级管理与工程化实践。分层应用架构 + 平台收敛层（`amr::qos` QoS 词汇表 · `AmrNode` 基类 · `pipeline.nodes` 声明式组合），不是一个可安装的通用中间件——收敛层让「正确的用法成为最省力的用法」。
 
 > **定位**：感知、决策、控制全链路自研（对标 MiR/OTTO 等成熟 AMR 厂商路线），开源用于：① ROS2 传感器标准接入层 ② 工程规范演示 ③ 可扩展架构模板。
 

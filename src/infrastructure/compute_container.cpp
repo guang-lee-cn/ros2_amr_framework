@@ -28,6 +28,9 @@
 #include "ros2_robot_middleware/observability/spdlog_adapter.hpp"
 
 #include <memory>
+#include <map>
+#include <functional>
+#include <vector>
 #include <sstream>
 #include <rclcpp/rclcpp.hpp>
 
@@ -73,21 +76,36 @@ int main(int argc, char *argv[])
   // NodeOptions，同进程 pub/sub 走 shared_ptr 直通，不走 DDS 序列化。
   // 热路径发布端用 unique_ptr（所有权移交=零拷贝）；传感器→fusion 仍跨进程
   // DDS（故障隔离，故意保留）。MoveToPose action 通道无 intra 零拷贝（低频，可接受）。
+  // ── 声明式组合（收敛件之三）：管线成员与顺序由 pipeline.nodes 参数声明 ──
+  // 组合长在配置里，不长在代码里。默认顺序 = 数据流依赖序（fusion→decision→motor），
+  // 新节点入管线 = 注册表加一行 + 配置加一个名字。
+  auto supervisor = std::make_shared<rclcpp::Node>("pipeline_supervisor");
+  supervisor->declare_parameter<std::vector<std::string>>(
+    "pipeline.nodes", std::vector<std::string>{"fusion", "decision", "motor"});
+  const auto pipeline = supervisor->get_parameter("pipeline.nodes").as_string_array();
+
   auto opts = rclcpp::NodeOptions().use_intra_process_comms(true);
-  auto fusion   = std::make_shared<FusionNode>(opts);
-  auto decision = std::make_shared<DecisionNode>(opts);
-  auto motor    = std::make_shared<MotorCtrlNode>(opts);
+  const std::map<std::string,
+    std::function<std::shared_ptr<rclcpp_lifecycle::LifecycleNode>(const rclcpp::NodeOptions &)>>
+  registry = {
+    {"fusion",   [](const auto &o) { return std::make_shared<FusionNode>(o); }},
+    {"decision", [](const auto &o) { return std::make_shared<DecisionNode>(o); }},
+    {"motor",    [](const auto &o) { return std::make_shared<MotorCtrlNode>(o); }},
+  };
 
-  exec->add_node(fusion->get_node_base_interface());
-  exec->add_node(decision->get_node_base_interface());
-  exec->add_node(motor->get_node_base_interface());
-
-  fusion->configure();
-  fusion->activate();
-  decision->configure();
-  decision->activate();
-  motor->configure();
-  motor->activate();
+  std::vector<std::shared_ptr<rclcpp_lifecycle::LifecycleNode>> nodes;
+  for (const auto &name : pipeline) {
+    auto it = registry.find(name);
+    if (it == registry.end()) {
+      RCLCPP_ERROR(supervisor->get_logger(), "pipeline.nodes 未知成员: %s", name.c_str());
+      return 1;
+    }
+    nodes.push_back(it->second(opts));
+  }
+  for (auto &n : nodes) exec->add_node(n->get_node_base_interface());
+  // 依声明顺序 configure + activate（依赖序保证：上游先就绪）
+  for (auto &n : nodes) n->configure();
+  for (auto &n : nodes) n->activate();
 
   exec->spin();
   rclcpp::shutdown();

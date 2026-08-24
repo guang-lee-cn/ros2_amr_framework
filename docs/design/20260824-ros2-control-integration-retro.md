@@ -77,6 +77,34 @@ for (i : kWheels) {
 
 ---
 
+## 增补：基准验证与仓库整合阶段问题清单（2026-08-24 下午）
+
+ros2_control 集成之外，同日基准工程与仓库整合阶段踩到的问题，按「现象→根因→修复」归档：
+
+| # | 现象 | 根因 | 修复/预防 |
+|---|------|------|----------|
+| 5 | benchmarks/ 并入后 colcon 发现不了 bench_ipc | colcon 把包目录视为叶子，不向包内递归；仓库根即主包 | `benchmarks/build.sh` 显式 `--base-paths benchmarks/bench_ipc` |
+| 6 | cyclictest 结果为 null | `-m`(mlockall) 需 root，失败时 stderr 被吞静默退出；WSL2 上另有 `RLIMIT_RTPRIO=0`，非 root 完全不可运行 | 脚本显式检测 root/sudo 免密并报错；裸机用 sudo 跑；WSL2 结论=平台限制，数据列记 n/a |
+| 7 | 脚本 `set -u` 后 source ROS setup.bash 即崩 | `AMENT_TRACE_SETUP_FILES` 未定义触发 unbound | ROS 生态脚本一律不用 `set -u`（source 之后再严格模式亦可） |
+| 8 | pkill 命令自杀（整条 Bash 无输出退出） | `pkill -f "xxx"` 模式匹配到了包含同样文本的自身 shell 命令行 | 方括号技巧 `pkill -f "xx[x]"` 或按进程名 `pkill -x`；编排脚本入口清场 + pid 全量追踪 |
+| 9 | zenoh 吞吐测试收发双零 | recv 以管道前台运行（`cmd | tee` 阻塞到 recv 超时），sender 从未启动；`$!` 拿到的是 tee 的 pid | 后台化 recv 直接落盘 `>> $OUT &`；后台+管道的组合要显式验证 `$!` 指向谁 |
+| 10 | 故障恢复基准首轮全「无效」 | 判据要求 ≥400ms 静默后的首帧，而真实恢复（~300ms）快于阈值——判据与被测量自相矛盾 | 改物理判据：串行乒乓 RTT 亚毫秒 → kill 后 20ms 内的帧=在途回声，之后首帧=真恢复 |
+| 11 | CI 隐患：U4 引入 hardware_interface 后 CI 必挂 | ci.yml apt 列表未含新依赖 | 补 hardware-interface/pluginlib + RMW 矩阵一并升级，首推即绿 |
+
+## 增补 2：零拷贝迁移的 use-after-move（2026-08-24 夜，收敛件改造时捕获）
+
+**现象**：声明式容器改造后 compute_container 段错误；Debug 构建定位到
+fusion timer_callback 中 `publish(std::move(msg))` 之后的两处 `msg->objects.size()`。
+
+**根因**：值语义改移动语义时，函数内**所有** post-publish 的 msg 使用点都要审——
+第一处（metrics 行）当轮修复，第二处（20 行外的节流日志）因扫描只查了 publish 后
+3 行而漏网，Release 下 UB 未显形、Debug 显形，二次捕获。
+
+**教训三条**：
+1. UB 在 Release 不显形 ≠ 不存在——换优化级别是免费的可疑代码探测器；
+2. move 语义迁移的审查单位是「整个函数的 msg 生命周期」，不是「改动行 ±3 行」；
+3. 更优解是** move 前把要用的值全部物化**（n_objects 提前取），而不是 move 后补救。
+
 ## 复盘结论（可迁移的条目）
 
 1. **「接管」是个双动词**：命令取自当前状态 + 状态显式初始化，缺一半就是 NaN；

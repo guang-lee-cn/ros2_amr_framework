@@ -107,7 +107,7 @@ DecisionNode::on_activate(const rclcpp_lifecycle::State &)
   using namespace std::chrono_literals;
   heartbeat_timer_ = this->create_wall_timer(1s, [this]() {
     auto msg = std_msgs::msg::String{};
-    msg->data = "alive";
+    msg.data = "alive";
     heartbeat_pub_->publish(msg);
   });
   heartbeat_pub_->on_activate();

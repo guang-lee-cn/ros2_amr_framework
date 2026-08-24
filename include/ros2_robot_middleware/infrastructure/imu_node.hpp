@@ -1,12 +1,12 @@
 #ifndef ROS2_ROBOT_MIDDLEWARE_IMU_NODE_HPP_
 #define ROS2_ROBOT_MIDDLEWARE_IMU_NODE_HPP_
 
-#include <rclcpp/rclcpp.hpp>
-#include <rclcpp_lifecycle/lifecycle_node.hpp>
+#include "ros2_robot_middleware/infrastructure/amr_node.hpp"
 #include <sensor_msgs/msg/imu.hpp>
-#include <std_msgs/msg/string.hpp>
 
-class ImuNode : public rclcpp_lifecycle::LifecycleNode {
+/// 参照实现：继承 AmrNode——心跳/QoS/门控/指标样板由基类托管，
+/// 节点本体只剩业务逻辑（timer_callback 的数据合成）。
+class ImuNode : public amr::infrastructure::AmrNode {
 public:
   ImuNode();
 
@@ -23,8 +23,7 @@ private:
 
   rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::Imu>::SharedPtr publisher_;
   rclcpp::TimerBase::SharedPtr timer_;
-  rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::String>::SharedPtr heartbeat_pub_;
-  rclcpp::TimerBase::SharedPtr heartbeat_timer_;
+  // 心跳 pub/timer 已由基类托管（start/stop_heartbeat）
 };
 
 #endif  // ROS2_ROBOT_MIDDLEWARE_IMU_NODE_HPP_
