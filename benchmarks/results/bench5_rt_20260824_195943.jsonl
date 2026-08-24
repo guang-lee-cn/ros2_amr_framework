@@ -1,0 +1,6 @@
+{"bench":"meta","kernel":"6.6.87.2-microsoft-standard-WSL2","preempt_rt":false,"host":"guang","rmw":"rmw_cyclonedds_cpp"}
+{"bench":"cyclictest","duration_s":30,"max_latency_us":null,"loaded":true}
+{"bench":"ipc_inter","reliability":"reliable","rmw":"rmw_cyclonedds_cpp","fastdds_transport":"default","payload_bytes":1024,"samples":2000,"rtt_us":{"min":73.1,"p50":263.0,"p90":426.5,"p99":617.3,"p999":1819.2,"max":3123.2,"mean":289.2},"one_way_us":{"p50":131.5,"p99":308.7}}
+{"bench":"ipc_inter","reliability":"reliable","rmw":"rmw_cyclonedds_cpp","fastdds_transport":"default","payload_bytes":1048576,"samples":800,"rtt_us":{"min":850.5,"p50":3648.6,"p90":113592.3,"p99":315296.4,"p999":531408.3,"max":531408.3,"mean":42718.3},"one_way_us":{"p50":1824.3,"p99":157648.2}}
+{"bench":"ipc_inter","reliability":"best_effort","rmw":"rmw_cyclonedds_cpp","fastdds_transport":"default","payload_bytes":1048576,"samples":684,"rtt_us":{"min":836.4,"p50":3174.4,"p90":4420.6,"p99":5067.6,"p999":5569.5,"max":5569.5,"mean":3273.6},"one_way_us":{"p50":1587.2,"p99":2533.8}}
+{"bench":"ipc_intra","payload_bytes":1048576,"samples":800,"rtt_us":{"min":35.4,"p50":119.3,"p90":248.2,"p99":320.9,"p999":353.6,"max":353.6,"mean":137.5},"one_way_us":{"p50":59.6,"p99":160.4}}

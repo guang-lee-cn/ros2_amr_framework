@@ -16,13 +16,22 @@ KVER=$(uname -r)
 if uname -v | grep -q "PREEMPT_RT"; then RT_FLAG=true; else RT_FLAG=false; fi
 echo "{\"bench\":\"meta\",\"kernel\":\"$KVER\",\"preempt_rt\":$RT_FLAG,\"host\":\"$(hostname)\",\"rmw\":\"$RMW_IMPLEMENTATION\"}" | tee -a "$OUT"
 
-# ── cyclictest：调度延迟（无 rt-tests 则跳过并记录） ──
+# ── cyclictest：调度延迟（-m mlockall 需 root——非 root 且 sudo 免密不可用时记录错误） ──
 if command -v cyclictest >/dev/null 2>&1; then
-  echo "--- cyclictest 30s（加载背景: hackbench 若可用） ---"
-  if command -v hackbench >/dev/null 2>&1; then hackbench -l 10000 & HB=$!; fi
-  CYC_OUT=$(cyclictest -m -Sp95 -i1000 -h400 -q -D 30s 2>/dev/null | awk '/Max/ {for(i=1;i<=NF;i++) if($i=="Max:") print $(i+1)}' | sort -n | tail -1)
-  [ -n "${HB:-}" ] && kill $HB 2>/dev/null
-  echo "{\"bench\":\"cyclictest\",\"duration_s\":30,\"max_latency_us\":${CYC_OUT:-null},\"loaded\":${HB:+true}}" | tee -a "$OUT"
+  CYC_PREFIX=""
+  if [ "$(id -u)" -ne 0 ]; then
+    if sudo -n true 2>/dev/null; then CYC_PREFIX="sudo -n"; else CYC_PREFIX=""; fi
+  fi
+  if [ "$(id -u)" -ne 0 ] && [ -z "$CYC_PREFIX" ]; then
+    echo "{\"bench\":\"cyclictest\",\"error\":\"cyclictest -m 需要 root（sudo 跑本脚本或 sudo -n 可用）\"}" | tee -a "$OUT"
+  else
+    echo "--- cyclictest 30s（加载背景: hackbench 若可用） prefix='$CYC_PREFIX' ---"
+    if command -v hackbench >/dev/null 2>&1; then hackbench -l 100000 & HB=$!; fi
+    CYC_OUT=$($CYC_PREFIX cyclictest -m -Sp95 -i1000 -h400 -q -D 30s 2>/dev/null \
+      | awk '/Max/ {for(i=1;i<=NF;i++) if($i=="Max:") print $(i+1)}' | sort -n | tail -1)
+    [ -n "${HB:-}" ] && kill $HB 2>/dev/null; wait $HB 2>/dev/null
+    echo "{\"bench\":\"cyclictest\",\"duration_s\":30,\"max_latency_us\":${CYC_OUT:-null},\"loaded\":${HB:+true}\"}" | tee -a "$OUT"
+  fi
 else
   echo "{\"bench\":\"cyclictest\",\"error\":\"rt-tests not installed (apt install rt-tests)\"}" | tee -a "$OUT"
 fi
