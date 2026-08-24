@@ -1,0 +1,1 @@
+{"bench": "fault_recovery", "rmw": "rmw_cyclonedds_cpp", "rounds": 5, "recovery_ms": {"min": 102.4, "median": 102.5, "max": 104.4}, "note": "下界口径: exec重启+DDS重发现+重匹配; 不含心跳检测时延(实际supervisor需加检测周期)"}

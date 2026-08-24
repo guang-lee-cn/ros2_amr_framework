@@ -1,0 +1,10 @@
+{"bench": "zenoh_latency", "payload_bytes": 256, "samples": 3000, "rtt_us": {"min": 56.5, "p50": 62.3, "p90": 117.6, "p99": 212.2, "p999": 280.2, "max": 317.4, "mean": 77.6}, "one_way_us": {"p50": 31.2, "p99": 106.1}}
+{"bench": "zenoh_latency", "payload_bytes": 16384, "samples": 2000, "rtt_us": {"min": 76.2, "p50": 153.3, "p90": 233.3, "p99": 350.6, "p999": 559.0, "max": 754.3, "mean": 166.1}, "one_way_us": {"p50": 76.6, "p99": 175.3}}
+recv ready
+{"bench": "zenoh_throughput", "payload_bytes": 65536, "duration_s": 14.99, "recv_frames": 1169262, "sent_frames": 1448316, "loss_pct": 19.267, "goodput_MBps": 5111.78, "goodput_Mbps": 40894.2}
+recv ready
+{"bench": "zenoh_throughput", "payload_bytes": 1048576, "duration_s": 14.99, "recv_frames": 49130, "sent_frames": 60641, "loss_pct": 18.982, "goodput_MBps": 3435.71, "goodput_Mbps": 27485.6}
+recv ready
+{"bench": "zenoh_throughput", "mode": "block", "payload_bytes": 65536, "duration_s": 15.0, "recv_frames": 985578, "sent_frames": 985578, "loss_pct": 0.0, "goodput_MBps": 4304.74, "goodput_Mbps": 34437.9}
+recv ready
+{"bench": "zenoh_throughput", "mode": "block", "payload_bytes": 1048576, "duration_s": 14.99, "recv_frames": 50789, "sent_frames": 50800, "loss_pct": 0.022, "goodput_MBps": 3553.5, "goodput_Mbps": 28428.0}

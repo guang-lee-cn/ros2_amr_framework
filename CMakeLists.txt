@@ -11,6 +11,8 @@ find_package(rclcpp_action REQUIRED)
 find_package(PCL QUIET)  # optional — for PCL cluster backend + benchmark
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(rclcpp_components REQUIRED)
+find_package(hardware_interface REQUIRED)  # ros2_control 硬件插件
+find_package(pluginlib REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
@@ -88,6 +90,11 @@ target_link_libraries(compute_container fmt::fmt)
 install(TARGETS compute_component DESTINATION lib)
 install(TARGETS compute_container DESTINATION lib/${PROJECT_NAME})
 
+# Standalone fusion entry (verification/debug; production runs in compute_container)
+add_executable(fusion_standalone src/infrastructure/fusion_main.cpp)
+target_link_libraries(fusion_standalone robot_middleware_lib)
+install(TARGETS fusion_standalone DESTINATION lib/${PROJECT_NAME})
+
 # Thin executables — independent processes for sensor drivers + monitoring
 set(INDEPENDENT_NODES lidar imu camera health_monitor fleet_manager)
 foreach(node ${INDEPENDENT_NODES})
@@ -105,6 +112,17 @@ target_link_libraries(scene_simulator robot_middleware_lib)
 ament_target_dependencies(scene_simulator visualization_msgs)
 install(TARGETS scene_simulator DESTINATION lib/${PROJECT_NAME})
 
+# ── ros2_control hardware plugin ────────────────────────────────────
+# DiffDriveSystem: AMR HAL 的第一个 ros2_control 落地（对标强脑 JD U4 单元）。
+# 接口内存由框架持有（Jazzy on_export/set_state 风格），插件零序列化直通。
+add_library(diff_drive_system SHARED src/hal/diff_drive_system.cpp)
+target_compile_features(diff_drive_system PUBLIC cxx_std_17)
+target_include_directories(diff_drive_system PUBLIC include)
+ament_target_dependencies(diff_drive_system
+  hardware_interface pluginlib rclcpp rclcpp_lifecycle)
+install(TARGETS diff_drive_system DESTINATION lib)
+pluginlib_export_plugin_description_file(hardware_interface ros2_control_plugins.xml)
+
 # mock_amcl — gz /odom → /amcl_pose(map) + TF map→amr/odom，仿真补 map 帧
 install(PROGRAMS scripts/mock_amcl.py DESTINATION lib/${PROJECT_NAME} RENAME mock_amcl)
 install(PROGRAMS scripts/factory_markers.py DESTINATION lib/${PROJECT_NAME} RENAME factory_markers)
@@ -114,8 +132,9 @@ install(PROGRAMS scripts/run_sim.sh DESTINATION share/${PROJECT_NAME})
 install(PROGRAMS scripts/sim_watchdog.sh DESTINATION share/${PROJECT_NAME})
 install(PROGRAMS scripts/scan_filter.py DESTINATION lib/${PROJECT_NAME} RENAME scan_filter)
 
-install(DIRECTORY config launch worlds
+install(DIRECTORY config launch worlds urdf
   DESTINATION share/${PROJECT_NAME})
+install(PROGRAMS scripts/verify_ros2_control.sh DESTINATION share/${PROJECT_NAME})
 
 # ── Performance instrumentation option ──────────────────────────────
 # cmake -DAMR_PERF_INSTRUMENTATION=ON .. → AMR_PERF_PHASE() real timers
@@ -218,6 +237,7 @@ if(BUILD_TESTING)
   add_amr_test(test_sensor_nodes   quality/src/test_sensor_nodes.cpp)
   add_amr_test(test_motor_ctrl     quality/src/test_motor_ctrl.cpp)
   add_amr_test(test_decision       quality/src/test_decision.cpp)
+  add_amr_test(test_stamp_gate     quality/src/test_stamp_gate.cpp)
   add_amr_test(test_fusion         quality/src/test_fusion.cpp)
   add_amr_test(test_observability  quality/src/test_observability.cpp)
   add_amr_test(test_kalman_filter quality/src/test_kalman_filter.cpp)

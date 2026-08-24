@@ -82,6 +82,15 @@ curl localhost:9091/metrics   # AMR_PERF_PHASE 阶段延迟 (ON 构建)
 # Grafana: 导入 config/grafana/amr_dashboard.json
 ```
 
+## Benchmarks & DDS 快速切换（benchmarks/）
+
+- `./benchmarks/build.sh` 编译基准包（colcon 不向包目录内递归，须显式 base-path）
+- `scripts/rmw_matrix.sh` —— **同一份代码双 DDS 一键对比**（CycloneDDS vs FastDDS）；
+  CI 同步跑双 RMW 矩阵，「DDS 可替换」是被持续验证的事实
+- 基准矩阵：IPC 时延 / 进程内零拷贝 / QoS（reliable vs best_effort）/ durability 晚加入 /
+  故障恢复时间 / zenoh 端云（DROP/BLOCK）——方法见 `benchmarks/docs/ADR-001`
+- JD 技能点全地图：`mdDoc/JD技能点地图-brainco.md`
+
 ## Tech Stack
 
 | Component | Choice |

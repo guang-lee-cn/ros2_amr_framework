@@ -25,6 +25,12 @@ jobs:
   build-test-coverage:
     runs-on: ubuntu-24.04
     container: ros:jazzy-ros-base
+    strategy:
+      fail-fast: false
+      matrix:
+        rmw: [fastrtps, cyclonedds]   # 防腐层持续验证: 同一份代码双 DDS 实现跑 CI
+    env:
+      RMW_IMPL: ${{ matrix.rmw == 'cyclonedds' && 'rmw_cyclonedds_cpp' || 'rmw_fastrtps_cpp' }}
 
     steps:
       - name: Install system deps
@@ -44,6 +50,9 @@ jobs:
             ros-jazzy-ament-cmake-gtest \
             ros-jazzy-rosidl-default-generators \
             ros-jazzy-diagnostic-msgs \
+            ros-jazzy-hardware-interface \
+            ros-jazzy-pluginlib \
+            ros-jazzy-rmw-cyclonedds-cpp \
             python3-colcon-common-extensions \
             cppcheck lcov \
             && rm -rf /var/lib/apt/lists/*
@@ -59,9 +68,10 @@ jobs:
           cd src/ros2_robot_middleware
           ./quality/scripts/static_analysis.sh
 
-      - name: Build + Test + Coverage
+      - name: Build + Test + Coverage (${{ matrix.rmw }})
         shell: bash
         run: |
           . /opt/ros/jazzy/setup.sh
+          export RMW_IMPLEMENTATION=$RMW_IMPL
           cd src/ros2_robot_middleware
           ./quality/quality.sh
