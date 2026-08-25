@@ -1,7 +1,7 @@
 # ROS2 AMR Framework
 
 [![CI](https://github.com/guang-lee-cn/ros2_amr_framework/actions/workflows/ci.yml/badge.svg)](https://github.com/guang-lee-cn/ros2_amr_framework/actions)
-[![Coverage](https://img.shields.io/badge/coverage-78.8%25-green)](quality/data/coverage.txt)
+[![Coverage](https://img.shields.io/badge/coverage-84.5%25-brightgreen)](quality/data/coverage.txt)
 [![ROS2](https://img.shields.io/badge/ROS%202-Jazzy-22303C?logo=ros)](https://docs.ros.org/en/jazzy/)
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=c%2B%2B)](https://en.cppreference.com/w/cpp/17)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
@@ -129,7 +129,7 @@ curl localhost:9091/metrics   # AMR_PERF_PHASE 阶段延迟 (ON 构建)
 | Metric | Value |
 |--------|-------|
 | Build | [![CI](https://github.com/guang-lee-cn/ros2_amr_framework/actions/workflows/ci.yml/badge.svg)](https://github.com/guang-lee-cn/ros2_amr_framework/actions) |
-| Coverage | 78.8% — [quality/data/](quality/data/coverage.txt) |
+| Coverage | 84.5% — [quality/data/](quality/data/coverage.txt) |
 | Tests | 261 cases, 32 modules（2026-08-25 本地全绿） |
 | 控制层 | 自研闭环：规划/避障/执行/自感知 |
 | HAL | 插件注册，加传感器零改框架 |
