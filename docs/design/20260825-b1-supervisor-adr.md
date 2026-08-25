@@ -99,6 +99,11 @@ supervisor.<name>.max_restarts / window_s / backoff_base_ms /
 
 - 单测：`test_supervisor_policy.cpp` ——拓扑序（链/菱形/环拒绝/未知依赖拒绝）、
   退避曲线、预算→FATAL、稳定窗清零、oneshot、迟到 EXITED 免疫、级联停止
-- 集成：3 真实子进程（scan_filter + compute_container + patrol_3c）——
-  kill -9 compute → 级联停 patrol → 退避重启 compute → patrol 跟随重生；
-  连杀超预算 → FATAL（见 change journal 当日条目）
+- 集成（3 子进程轻量栈）：kill -9 compute → 1.0s 级联恢复；连杀超预算 → FATAL
+- **rollout（supervised_sim.launch.py，11 子进程全栈）**：
+  - kill -9 compute → **1.75s** 恢复且 scan 无恙（soak compute 注入解锁）
+  - kill -9 gz → 逆拓扑级联 + spawn_amr 重放车 + **2.3s** 全链回位，
+    新抽签 254 回波（秒级重抽替代 watchdog 2-4min 全栈重启）
+  - rollout 轮暴露并修复：oneshot 完成标记缺失、级联清序、
+    run_sim 清场孤儿（foxglove 占 8765）+ SHM 锁无效 glob——详见
+    change journal 2026-08-25 晚条目

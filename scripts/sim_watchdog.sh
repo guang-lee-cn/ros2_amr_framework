@@ -46,7 +46,8 @@ fails=0
 echo "[watchdog] 上线: 每${INTERVAL}s 探测, 连续${FAIL_TRIES}轮回波<${MIN_VALID}则重启 (日志 /tmp/sim_watchdog.log)"
 while true; do
     sleep "$INTERVAL"
-    V=$(probe)
+    # 只取纯数字行：FastDDS C++ 日志走 stdout 会污染 probe 输出
+    V=$(probe | grep -E '^[0-9]+$' | tail -n1); V=${V:-0}
     if [ "${V:-0}" -ge "$MIN_VALID" ]; then
         [ "$fails" -gt 0 ] && echo "[watchdog] $(date +%H:%M:%S) 恢复健康 (V=$V), 计数清零"
         fails=0

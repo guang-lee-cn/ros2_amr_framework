@@ -6,12 +6,14 @@
 #   soak 报告：吞吐/时延曲线、恢复次数=注入次数、RSS 平稳。
 #
 # 架构角色（复用现有运维件，不重写）：
-#   负载    patrol_3c（simulation.launch.py 自带，无需另起）
+#   负载    patrol_3c（栈自带，无需另起）
 #   注入    本脚本 kill -9 受害进程（VICTIMS 轮换，默认 bridge,gz）
-#   恢复    sim_watchdog.sh（/scan_raw 断流 2min → run_sim 清场重启）——
-#           本 launch 形态下的自动恢复链。compute_container 注入需栈跑在
-#           amr_supervisor 之下（B1 已落地，supervised_sim launch rollout 后
-#           白名单即可扩 compute，见 docs/design/20260825-b1-supervisor-adr.md）
+#   恢复    LAUNCH_FILE=supervised_sim.launch.py 时: amr_supervisor 秒级按策略
+#           恢复（B1）；legacy simulation.launch.py 时: sim_watchdog 全栈重启
+#           （/scan_raw 断流 2min → run_sim 清场）。compute victim 仅 supervised
+#           形态可用（前置校验拦）。
+#   判定    恢复 = scan 探针 ≥ MIN_VALID 且 注入后出现新 /goal_pose 事件
+#           （soak_monitor.py 跨栈重启存活，patrol 重启即重发首 goal）
 #   判定    恢复 = scan 探针 ≥ MIN_VALID 且 注入后出现新 /goal_pose 事件
 #           （soak_monitor.py 跨栈重启存活，patrol 重启即重发首 goal）
 #   采样    samples.csv(scan) / rss.csv(进程内存) / monitor.csv(位姿·速度)
@@ -55,16 +57,22 @@ echo "ts,goal_x,goal_y" > "$OUT/goals.csv"
 echo "ts,pose_x,pose_y,cmd_vel_hz,amcl_hz" > "$OUT/monitor.csv"
 echo "event,ts,detail,downtime_s" > "$OUT/inject_log.csv"
 
-# ── 前置校验: victim 白名单（compute 等 B1 缺口外对象拒跑, 防 soak 自陷）──
+# ── 前置校验: victim 白名单（compute 需栈跑在 amr_supervisor 下）────────
 IFS=',' read -ra VICTIM_ARR <<< "$VICTIMS"
 for v in "${VICTIM_ARR[@]}"; do
     case "$v" in
         bridge|gz) ;;
-        *) echo "[soak] ⛔ 不支持 victim '$v'（无自动恢复链, 见头部注释 B1）"; exit 1 ;;
+        compute)
+            if [ "${LAUNCH_FILE:-simulation.launch.py}" != "supervised_sim.launch.py" ]; then
+                echo "[soak] ⛔ victim 'compute' 需要 LAUNCH_FILE=supervised_sim.launch.py（否则无人拉起）"
+                exit 1
+            fi ;;
+        *) echo "[soak] ⛔ 不支持 victim '$v'（无自动恢复链）"; exit 1 ;;
     esac
 done
 
 probe() {  # /scan_raw 有效回波数（0=无消息/全盲），判据与 run_sim/watchdog 同源
+             # 只取纯数字行：FastDDS C++ 日志走 stdout 会污染输出
 python3 - <<'PYEOF'
 import rclpy, time, math
 from sensor_msgs.msg import LaserScan
@@ -87,6 +95,10 @@ print(len(valid) if alive >= 6 else 0)
 rclpy.shutdown()
 PYEOF
 }
+probe_val() {  # probe 的数字安全包装（bash 算术比较用）
+    local v; v=$(probe | grep -E '^[0-9]+$' | tail -n1)
+    echo "${v:-0}"
+}
 
 rss_sample() {  # 全进程 RSS 快照（ps 一次, 按名聚合多 pid）
     local ts; ts=$(date +%s)
@@ -107,8 +119,9 @@ rss_sample() {  # 全进程 RSS 快照（ps 一次, 按名聚合多 pid）
 inject() {  # $1=victim → kill -9, 输出命中 pid 列表（空=没找到目标）
     local pat
     case "$1" in
-        bridge) pat='parameter_bridge' ;;
-        gz)     pat='gz sim|gz-sim-server' ;;
+        bridge)  pat='parameter_bridge' ;;
+        gz)      pat='gz sim|gz-sim-server' ;;
+        compute) pat='compute_container' ;;
     esac
     local pids; pids=$(pgrep -f "$pat" | paste -sd' ' -)
     [ -n "$pids" ] && kill -9 $pids 2>/dev/null
@@ -116,7 +129,7 @@ inject() {  # $1=victim → kill -9, 输出命中 pid 列表（空=没找到目�
 }
 
 # ── 就绪: 栈健康（直接附着）或 run_sim 抽签拉起 ─────────────────────────
-V=$(probe)
+V=$(probe_val)
 if [ "${V:-0}" -lt "$MIN_VALID" ]; then
     echo "[soak] 栈不在/不健康(V=$V) → run_sim 拉起"
     "$SCRIPT_DIR/run_sim.sh" || { echo "[soak] ⛔ run_sim 失败, 放弃"; exit 1; }
@@ -160,7 +173,7 @@ echo "[soak] 开始: $DURATION_MIN 分钟, 每 $INJECT_INTERVAL_MIN 分钟注入
 while [ "$(date +%s)" -lt "$end_ts" ]; do
     now=$(date +%s)
     tick=$((tick + 1))
-    V=$(probe)
+    V=$(probe_val)
     echo "$now,$V" >> "$OUT/samples.csv"
     rss_sample
 

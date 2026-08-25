@@ -23,11 +23,11 @@
 |---|------|---------|------|
 | B1 | **supervisor 实体化**：崩溃监管/依赖序重启/健康门 | 声明式配置驱动；kill -9 任一节点按策略恢复（health_monitor/OtaCoordinator 零件复用） | 〔无依赖〕 |
 
-> **B1 进展（2026-08-25）**：核心已落地并实证——`amr_supervisor` 进程级监管
-> （domain 状态机 22 单测 + 3 真实子进程集成验证：kill -9 后 1.0s 级联恢复、
-> 预算耗尽 FATAL），见 docs/design/20260825-b1-supervisor-adr.md 与
-> change journal 当日条目。剩余：sim 栈整体迁入 supervisor（supervised_sim
-> launch）+ soak 注入白名单扩 compute。
+> **B1 进展（2026-08-25）**：**完成**——`amr_supervisor` 进程级监管 + 全栈 rollout
+> （supervised_sim.launch.py，11 子进程）。实证：kill -9 compute 1.75s 恢复且
+> scan 无恙；kill -9 gz 逆拓扑级联 + oneshot 重放车 + 2.3s 全链回位。
+> soak 注入白名单已扩 compute（supervised 形态限定）。
+> 见 docs/design/20260825-b1-supervisor-adr.md 与 change journal 当日两条。
 | B2 | **运行时插拔**：迁 rclcpp_components 容器（或 pipeline.nodes 加 load/unload） | ros2 component list 可见、运行时装卸节点成功——补齐「落后于 stock」那一格 | 〔无依赖〕 |
 | B3 | **API 稳定性**：amr::qos / AmrNode 版本化与弃用策略（微缩 REP） | CHANGELOG 驱动的接口变更记录 + 一条真实弃用演练 | 〔无依赖〕 |
 

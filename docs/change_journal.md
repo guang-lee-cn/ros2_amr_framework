@@ -5,6 +5,47 @@
 
 ---
 
+## [2026-08-25 晚] supervised_sim rollout：仿真栈 11 子进程迁入 supervisor + 三 bug 现形
+
+> B1 的落地验证轮（上一条的后续）。变更：launch/supervised_sim.launch.py
+> （simulation.launch.py 的每个 RosNode → supervisor 声明式子项）+
+> run_sim.sh LAUNCH_FILE 覆盖 + soak 白名单扩 compute（supervised 形态限定）。
+
+- **症状 → 根因 → 修复**（每条都被真实运行暴露）:
+  1. **oneshot 无限重跑**: spawn_amr 每 ~2s 重放一次车（gz 里堆机器人）——
+     `completed_` 只在级联时 erase、从不在成功时置位。修复: feed() 里
+     oneshot EXITED_OK → 置位 + "完成 ✓" 日志【铁证: 重跑前日志循环 / 修复后恰 1 次】
+  2. **级联漏清 oneshot**: gz 重启后 spawn_amr 不重跑（新世界无车）——
+     cascade_yield 的 `continue` 跳过 STOPPED 子项在 erase 之前。修复: 先清
+     标记再判相位【铁证: 修复后 gz 击杀 → spawn_amr 二次完成 + DiffDrive
+     entity 46 加载，/tmp/sup_direct.log】
+  3. **清场孤儿 foxglove 占 8765**: run_sim clean 的 pkill 清单不含
+     foxglove_bridge/static_transform_publisher（路径不在本包 lib 下）——被
+     清场的栈留下孤儿，后续每次启动 Bind Error 崩溃循环直至 FATAL。
+     08-16「清单不全清场留孤儿」同型复发。修复: clean() 补两个 pkill 模式
+     【铁证: ss -tlnp 见孤儿 pid 170086 占 8765；补齐后 foxglove 稳定 RUNNING】
+  4. **附送考古**: clean() 的 `rm /dev/shm/fastdds*` 是多年无效 glob——实际
+     文件名 fastrtps_* 段 + sem.fastrtps_port*_mutex 端口锁；FastDDS C++ 日志
+     走 stdout 污染 probe 输出致假判定。修复: 三类文件全清 + probe 只取纯数字行
+     （run_sim/soak_run/sim_watchdog 三处同修）
+  5. **交互式 pkill 自杀**: 清场命令 `pkill -f 'gz sim'` 匹配到自身 shell
+     （CLAUDE.md 禁止清单原文明示）→ 命令静默中断、清场"没跑"。改用方括号
+     模式/显式 PID。run_sim.sh 的 clean() 本身不受影响（独立进程 cmdline 安全）
+- **rollout 验证**【铁证，/tmp/sup_direct.log + /tmp/sim_run_194459_try2.log】:
+  - 11 子进程拓扑序错峰拉起（gz→spawn_amr/bridge→scan_filter/mock_amcl→…→patrol）
+  - **kill -9 compute**: 250ms 检出 → patrol 让位 → 1.25s 退避 → 1.75s 全恢复，
+    scan 全程无恙（不触发 watchdog 全栈重启）——soak compute 注入正式解锁
+  - **kill -9 gz**: 逆拓扑级联（patrol→compute→mock_amcl→scan_filter→bridge）→
+    1s 退避 → gz 重生 → spawn_amr 重放车 → 2.3s 全链回位 → **新抽签 254 回波健康**
+    （顺带治好 kill 前已劣化到 46 回波的渲染——秒级重抽对比 watchdog 2-4min）
+- **遗留**: 当晚 WSL2 渲染抽签偏冷（多轮 3/3 全盲），run #3 的健康局 + 直连裸跑
+  完成全部验证矩阵；72h soak 用 supervised 形态跑前建议先 wsl --shutdown 复位
+- **回滚**: `git checkout` 本条涉及文件（launch/supervised_sim.launch.py 删除 +
+  scripts/run_sim.sh scripts/soak_run.sh scripts/sim_watchdog.sh +
+  src/infrastructure/supervisor_node.cpp）
+
+---
+
 ## [2026-08-25] B1 supervisor 落地：进程级监管/依赖序重启/预算 FATAL（迭代2 B1）
 
 > 设计：docs/design/20260825-b1-supervisor-adr.md；验收：迭代2 B1

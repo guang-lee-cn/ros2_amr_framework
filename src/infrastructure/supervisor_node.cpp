@@ -163,9 +163,9 @@ void SupervisorNode::cascade_yield(const std::string &name) {
   const auto deps = transitive_dependents(name);
   for (auto it = deps.rbegin(); it != deps.rend(); ++it) {  // 逆拓扑：最下游先让位
     auto &c = children_.at(*it);
+    completed_.erase(*it);  // oneshot 必须重跑——先清标记，STOPPED 也不例外
     if (c.state.phase == Phase::STOPPED || c.state.phase == Phase::FATAL) continue;
     feed(c, Event::DEP_RESTARTING);  // feed 内执行 KILL 动作
-    completed_.erase(*it);           // oneshot 依赖重启后要重跑
   }
 }
 
@@ -177,6 +177,12 @@ void SupervisorNode::feed(ProcChild &c, Event ev) {
   if (c.state.phase != before) {
     RCLCPP_INFO(get_logger(), "%s: %s → %s", c.spec.name.c_str(),
                 phase_str(before), phase_str(c.state.phase));
+  }
+
+  // oneshot 成功收工：标记完成，try_bring_up 不再重生（依赖重启时级联清除）
+  if (c.spec.oneshot && ev == Event::EXITED_OK && c.state.phase == Phase::STOPPED) {
+    completed_[c.spec.name] = true;
+    RCLCPP_INFO(get_logger(), "%s (oneshot) 完成 ✓", c.spec.name.c_str());
   }
 
   // 依赖者让位：本子进程从存活相（RUNNING/STARTING）跌入 BACKOFF/FATAL
