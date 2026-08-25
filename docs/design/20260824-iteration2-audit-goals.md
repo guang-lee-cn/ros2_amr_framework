@@ -10,6 +10,10 @@
 |---|------|---------|------|
 | A1 | **真机 bring-up**：EtherCAT 伺服 + ros2_control 硬件插件（DiffDriveSystem 第二季） | 真电机速度/位置闭环日志 + 与仿真闭环同构的验证记录 | 〔Orin〕+ 二手 EtherCAT 驱动 |
 | A2 | **72h soak + 故障注入**：连续负载、周期性 kill -9、内存/泄露监控 | soak 报告：吞吐/时延曲线、恢复次数=注入次数、RSS 平稳 | 〔无依赖〕（仿真负载即可先行） |
+
+> **A2 进展（2026-08-25）**：harness 已落地并 smoke 实证（注入2/恢复2，
+> MTTR 125-150s）——见 `docs/design/20260825-a2-soak-runbook.md`。
+> 剩余：72h 正式跑（`nohup ./scripts/soak_run.sh &`）+ 出报告归档。
 | A3 | **ARM64 + PREEMPT_RT 复测** | bench5 三环境对照表填满（脚本已备） | 〔Orin〕 |
 | A4 | **RAUC 真机集成**：OtaCoordinator 的 SlotOps 接 RAUC 后端 | 真分区升级+回滚演示替换目录级模拟 | 〔Orin〕 |
 
