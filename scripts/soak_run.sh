@@ -9,8 +9,9 @@
 #   负载    patrol_3c（simulation.launch.py 自带，无需另起）
 #   注入    本脚本 kill -9 受害进程（VICTIMS 轮换，默认 bridge,gz）
 #   恢复    sim_watchdog.sh（/scan_raw 断流 2min → run_sim 清场重启）——
-#           当前架构唯一自动恢复链。compute_container 注入后无人拉起
-#           （迭代2 B1 supervisor 缺口），故不支持该 victim。
+#           本 launch 形态下的自动恢复链。compute_container 注入需栈跑在
+#           amr_supervisor 之下（B1 已落地，supervised_sim launch rollout 后
+#           白名单即可扩 compute，见 docs/design/20260825-b1-supervisor-adr.md）
 #   判定    恢复 = scan 探针 ≥ MIN_VALID 且 注入后出现新 /goal_pose 事件
 #           （soak_monitor.py 跨栈重启存活，patrol 重启即重发首 goal）
 #   采样    samples.csv(scan) / rss.csv(进程内存) / monitor.csv(位姿·速度)

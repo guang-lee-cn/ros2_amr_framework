@@ -2,11 +2,23 @@
 
 ## [Unreleased]
 
+### Added — B1 进程级 supervisor（迭代2）
+- **`amr_supervisor`**：声明式配置驱动的崩溃监管/依赖序重启/健康门——
+  posix_spawn 独立进程组、waitpid tick、指数退避、窗口化重启预算→FATAL、
+  死源级联让位（逆拓扑）、HealthReport(latched) 状态出口
+- `domain/monitoring/supervisor_policy.hpp`：策略内核纯逻辑（零 ROS），22 单测
+- 集成实证：kill -9 compute → 级联恢复全程 **1.0s**（watchdog 全栈路径 2-4min）；
+  预算耗尽 → FATAL + 级联停依赖者（见 change journal 2026-08-25）
+
+### Added — A2 soak harness
+- `scripts/soak_run.sh / soak_monitor.py / soak_report.py`：72h 长稳编排 +
+  故障注入 + RSS/吞吐/恢复率报告；smoke 实证注入2/恢复2（MTTR 125-150s）
+
 ### Fixed — 测试
 - **test_control_loop 补注册**：随 15b93b2 入库但漏 CMake 注册，从未编译/运行；
   适配现行 API（`amr::domain` 命名空间、uint8 代价场、`GridUpdater` 三参 Params），
   修复两处未运行而未暴露的问题（仿真起点偏离路径起点、包围圈量化缝隙），9 用例全绿
-- 测试套件实况：**31 模块**（ctest 100% 通过），README 数据同步刷新
+- 测试套件实况：**32 模块**（ctest 100% 通过），README 数据同步刷新
 
 ## [2.1.0] — 2026-07-31
 

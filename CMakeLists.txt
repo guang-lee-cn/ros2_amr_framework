@@ -109,6 +109,13 @@ foreach(node ${INDEPENDENT_NODES})
   install(TARGETS ${node}_node DESTINATION lib/${PROJECT_NAME})
 endforeach()
 
+# B1 supervisor — 进程级监管（posix_spawn/进程组），见 docs/design/20260825-b1-supervisor-adr.md
+add_executable(amr_supervisor
+  src/infrastructure/supervisor_main.cpp
+  src/infrastructure/supervisor_node.cpp)
+target_link_libraries(amr_supervisor robot_middleware_lib)
+install(TARGETS amr_supervisor DESTINATION lib/${PROJECT_NAME})
+
 # Scene simulator — synthetic sensor driver for the interview demo
 # (replaces Gazebo; gz-sim gpu_lidar has engine bugs on this platform).
 add_executable(scene_simulator
@@ -263,6 +270,7 @@ if(BUILD_TESTING)
   add_amr_test(test_path_smoother quality/src/test_path_smoother.cpp)
   add_amr_test(test_track_error  quality/src/test_track_error.cpp)
   add_amr_test(test_control_loop quality/src/test_control_loop.cpp)
+  add_amr_test(test_supervisor_policy quality/src/test_supervisor_policy.cpp)
   add_amr_test(test_grid_updater quality/src/test_grid_updater.cpp)
   add_amr_test(test_collision_guard quality/src/test_collision_guard.cpp)
   add_amr_test(test_vfh_avoidance  quality/src/test_vfh_avoidance.cpp)

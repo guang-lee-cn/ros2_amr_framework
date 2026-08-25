@@ -5,6 +5,50 @@
 
 ---
 
+## [2026-08-25] B1 supervisor 落地：进程级监管/依赖序重启/预算 FATAL（迭代2 B1）
+
+> 设计：docs/design/20260825-b1-supervisor-adr.md；验收：迭代2 B1
+> 「声明式配置驱动；kill -9 任一节点按策略恢复」
+
+- **症状（缺口）**: ros2 launch 无 respawn——compute_container 被 kill -9 后
+  无人拉起，机器人永久停滞（soak 注入白名单因此排除 compute）；
+  sim_watchdog 只看 scan、整栈重启、恢复 2-4min。
+- **改动（三层）**:
+  1. `domain/monitoring/supervisor_policy.hpp`：状态机纯逻辑（STOPPED/
+     STARTING/RUNNING/BACKOFF/FATAL）+ 指数退避 + 窗口化重启预算 +
+     Kahn 拓扑序；语义对齐既有 RecoveryPolicy（budget→FATAL、稳定清零）
+  2. `infrastructure/supervisor_node.{hpp,cpp}` + `amr_supervisor` 可执行：
+     posix_spawn 独立进程组拉起、waitpid(WNOHANG) 250ms tick、级联让位
+     （死源逆拓扑杀依赖者）、HealthReport(latched) 状态出口、AmrNode 基类
+  3. 声明式配置：`supervisor.<name>.cmd/depends_on/oneshot/退避预算` 参数；
+     环/未知依赖启动即拒
+- **验证**【铁证，/tmp/supervisor_val.log】（3 真实子进程
+  scan_filter→compute→patrol，拓扑链）:
+  1. 拉起：按拓扑序错峰 250ms 三级全 RUNNING
+  2. kill -9 compute：**250ms 检出 → patrol 组杀让位 → 500ms 退避 →
+     compute 重生 → patrol 跟随重生，全程 1.0s**（对比 watchdog 全栈 2-4min）
+  3. 连杀 scan_filter 4 次（预算 3）：第 4 杀 → FATAL + 级联停全部依赖者，
+     子进程清零；/supervisor/report 如实报 ERROR/STALE（health_monitor 兼容格式）
+  4. SIGINT supervisor：逆拓扑 teardown 无泄漏
+  5. 单测 22 用例（test_supervisor_policy）：拓扑/退避/预算/稳定窗/
+     oneshot/迟到事件免疫/级联让位
+- **边界**: supervisor 自身单点（真机 systemd 兜底）；健康门 v1=进程存活，
+  v2=心跳确认（START_TIMEOUT 事件路径已就位）；sim 栈整体迁到 supervisor
+  之下（supervised_sim launch）是 rollout 下一步，soak compute 注入待其解锁
+- **回滚**:
+  ```bash
+  git checkout -- CMakeLists.txt CHANGELOG.md docs/ docs/change_journal.md \
+    include/ros2_robot_middleware/domain/monitoring/supervisor_policy.hpp \
+    include/ros2_robot_middleware/infrastructure/supervisor_node.hpp \
+    src/infrastructure/supervisor_node.cpp src/infrastructure/supervisor_main.cpp \
+    quality/src/test_supervisor_policy.cpp
+  rm -f src/infrastructure/supervisor_main.cpp  # 及新文件
+  colcon build --packages-select ros2_robot_middleware
+  ```
+
+---
+
+
 ## [2026-08-18] sim_watchdog 运行时看门狗上线：scan 劣化自动清场重启（90a1a86 承诺的"后续"）
 
 - **症状**: guard fail-safe（min_valid_echoes=50）只负责安全停车+告警等待，
