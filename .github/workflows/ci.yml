@@ -16,6 +16,7 @@ on:
       - '**.md'
       - 'doc/**'
       - 'mdDoc/**'
+  workflow_dispatch: {}   # 手动触发（push 事件偶发丢失时的兜底，2026-08-25 实证需要）
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
