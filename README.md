@@ -104,7 +104,7 @@ curl localhost:9091/metrics   # AMR_PERF_PHASE 阶段延迟 (ON 构建)
 | HAL | `amr::hal` 插件注册（ISensor + IActuator） |
 | 观测 | Prometheus (:9090 + :9091) + AMR_PERF_PHASE + Grafana |
 | Build | colcon + ament_cmake |
-| Test | GoogleTest, 98 cases, 15 modules |
+| Test | GoogleTest, 239 cases, 31 modules |
 | CI | GitHub Actions (静态分析 → 构建 → 测试 → 覆盖率) |
 | Simulation | Gazebo Harmonic + ros_gz_bridge |
 | Language | C++17 |
@@ -130,7 +130,7 @@ curl localhost:9091/metrics   # AMR_PERF_PHASE 阶段延迟 (ON 构建)
 |--------|-------|
 | Build | [![CI](https://github.com/guang-lee-cn/ros2_amr_framework/actions/workflows/ci.yml/badge.svg)](https://github.com/guang-lee-cn/ros2_amr_framework/actions) |
 | Coverage | 78.8% — [quality/data/](quality/data/coverage.txt) |
-| Tests | 98 cases, 15 modules |
+| Tests | 239 cases, 31 modules（2026-08-25 本地全绿） |
 | 控制层 | 自研闭环：规划/避障/执行/自感知 |
 | HAL | 插件注册，加传感器零改框架 |
 | ROS 2 | Jazzy Jalisco (LTS, EOL 2029) |

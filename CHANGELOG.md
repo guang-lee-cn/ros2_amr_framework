@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed — 测试
+- **test_control_loop 补注册**：随 15b93b2 入库但漏 CMake 注册，从未编译/运行；
+  适配现行 API（`amr::domain` 命名空间、uint8 代价场、`GridUpdater` 三参 Params），
+  修复两处未运行而未暴露的问题（仿真起点偏离路径起点、包围圈量化缝隙），9 用例全绿
+- 测试套件实况：**31 模块**（ctest 100% 通过），README 数据同步刷新
+
 ## [2.1.0] — 2026-07-31
 
 ### Added — 控制层自研闭环 (P3)

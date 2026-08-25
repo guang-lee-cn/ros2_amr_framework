@@ -3,6 +3,10 @@
 /// 组合：GridUpdater(障碍标记) → AStarPlanner(路径) → PathSmoother(平滑)
 ///      → PurePursuit(跟踪) → TrackErrorMonitor(自纠)
 /// 模拟机器人沿路径运动，验证避障/跟踪/自纠/速度平滑行为。
+///
+/// 注：本文件随 15b93b2 入库但漏 CMake 注册，从未编译——2026-08-25 补注册时
+/// 适配现行 API（amr::domain 命名空间、uint8 代价场、GridUpdater 三参 Params），
+/// 并修复两处从未运行而未暴露的问题（仿真起点偏离路径起点、包围圈量化缝隙）。
 #include "ros2_robot_middleware/domain/planning/astar_planner.hpp"
 #include "ros2_robot_middleware/domain/planning/grid_updater.hpp"
 #include "ros2_robot_middleware/domain/planning/path_smoother.hpp"
@@ -12,18 +16,19 @@
 #include <cmath>
 #include <gtest/gtest.h>
 #include <utility>
+#include <vector>
 
-using planning::AStarPlanner;
-using planning::GridUpdater;
-using planning::PathSmoother;
-using planning::TrackErrorMonitor;
-using planning::TrackErrorLevel;
-using planning::OccupancyGrid;
-using planning::Pose;
-using planning::Waypoint;
-using execution::PurePursuit;
-using execution::Pose2D;
-using execution::Twist2D;
+using amr::domain::planning::AStarPlanner;
+using amr::domain::planning::GridUpdater;
+using amr::domain::planning::PathSmoother;
+using amr::domain::planning::TrackErrorMonitor;
+using amr::domain::planning::TrackErrorLevel;
+using amr::domain::planning::OccupancyGrid;
+using amr::domain::planning::Pose;
+using amr::domain::planning::Waypoint;
+using amr::domain::execution::PurePursuit;
+using amr::domain::execution::Pose2D;
+using amr::domain::execution::Twist2D;
 
 namespace {
 
@@ -32,12 +37,14 @@ constexpr int kW = 200;        // 10m
 constexpr int kH = 200;
 
 /// 构建网格，可选障碍物（world 坐标）。
+/// inscribed=inflation=障碍半径：圆盘内全部 INSCRIBED/LETHAL 不可走，
+/// 圆盘外 FREE——等价旧版二值实心圆盘语义（无指数尾巴）。
 OccupancyGrid make_grid(const std::vector<std::pair<float, float>> &obstacles,
                         float obstacle_radius = 0.3F) {
   OccupancyGrid g;
-  g.width = kW; g.height = kH; g.resolution = kRes; g.origin = {0, 0};
-  g.cells.assign(static_cast<size_t>(kW * kH), false);
-  GridUpdater updater(GridUpdater::Params{obstacle_radius});
+  g.width = kW; g.height = kH; g.resolution = kRes; g.origin = {0.0F, 0.0F};
+  g.cells.assign(static_cast<size_t>(kW * kH), OccupancyGrid::FREE);
+  GridUpdater updater(GridUpdater::Params{obstacle_radius, obstacle_radius, 3.0F});
   for (const auto &[x, y] : obstacles) {
     updater.inflate(g, x, y);
   }
@@ -45,14 +52,14 @@ OccupancyGrid make_grid(const std::vector<std::pair<float, float>> &obstacles,
 }
 
 /// 从 A* 路径转 PurePursuit 路径。
-std::vector<execution::Waypoint> to_exec_path(const std::vector<Waypoint> &p) {
-  std::vector<execution::Waypoint> out;
+std::vector<amr::domain::execution::Waypoint> to_exec_path(const std::vector<Waypoint> &p) {
+  std::vector<amr::domain::execution::Waypoint> out;
   for (const auto &w : p) out.push_back({w.x, w.y});
   return out;
 }
 
 /// 规划 + 平滑 → execution 路径。
-std::vector<execution::Waypoint> plan_smooth(
+std::vector<amr::domain::execution::Waypoint> plan_smooth(
     const OccupancyGrid &g, const Pose &start, const Pose &goal,
     const AStarPlanner &astar, const PathSmoother &smoother) {
   auto raw = astar.plan(g, start, goal);
@@ -62,11 +69,12 @@ std::vector<execution::Waypoint> plan_smooth(
 
 /// 模拟机器人沿路径运动，返回是否到达。
 /// 每步：PurePursuit 计算 twist → 误差监控缩放 → 运动学积分推进。
-/// 到达条件：距目标 < goal_tolerance。
-bool simulate_follow(const std::vector<execution::Waypoint> &path,
+/// 起点 = 路径首点（起点若偏离路径 >0.40m，误差监控立即 ERROR——
+/// 那是"测试摆错"，不是被测行为）。
+bool simulate_follow(const std::vector<amr::domain::execution::Waypoint> &path,
                      const PurePursuit &pp, const TrackErrorMonitor &mon,
                      int max_steps = 5000, float dt = 0.05F) {
-  Pose2D pose{0.0F, 0.0F, 0.0F};
+  Pose2D pose{path.front().x, path.front().y, 0.0F};
   const auto &goal = path.back();
   constexpr float kGoalTol = 0.1F;
   for (int step = 0; step < max_steps; ++step) {
@@ -109,17 +117,19 @@ TEST(ControlLoopTest, Given_StraightPath_Then_ReachGoal) {
 
 // ── 2. Given_Obstacle_Then_ReplanAround ──────────────────────────────
 // 单障碍挡路：A* 应绕障，路径不穿障碍，机器人到达。
+// 障碍半径 0.35（非旧版 0.3）：路径格心距 ≥0.35，减平滑切角（≤0.083）
+// 后仍 >0.25 断言阈值——半径 0.3 时平滑路径可贴近至 0.22，断言会抖。
 
 TEST(ControlLoopTest, Given_Obstacle_Then_ReplanAround) {
   // 障碍在直线路径 (2.0, 0.5) 上
-  auto grid = make_grid({{2.0F, 0.5F}}, 0.3F);
+  auto grid = make_grid({{2.0F, 0.5F}}, 0.35F);
   AStarPlanner astar;
   PathSmoother smoother;
 
   auto path = plan_smooth(grid, {0.5F, 0.5F}, {4.0F, 0.5F}, astar, smoother);
   ASSERT_FALSE(path.empty());
 
-  // 路径不经过障碍区域（障碍中心 2.0,0.5，半径 ~0.3+0.15 网格）
+  // 路径不经过障碍区域（障碍中心 2.0,0.5，圆盘 0.35）
   for (const auto &wp : path) {
     float d = std::hypot(wp.x - 2.0F, wp.y - 0.5F);
     EXPECT_GT(d, 0.25F) << "路径不应穿过障碍 (" << wp.x << "," << wp.y << ")";
@@ -136,7 +146,7 @@ TEST(ControlLoopTest, Given_Obstacle_Then_ReplanAround) {
 
 TEST(ControlLoopTest, Given_OffPath_Then_ErrorMonitorSlows) {
   TrackErrorMonitor mon(TrackErrorMonitor::Params{0.15F, 0.40F});
-  std::vector<execution::Waypoint> path = {{0, 0}, {1, 0}, {2, 0}, {3, 0}};
+  std::vector<amr::domain::execution::Waypoint> path = {{0, 0}, {1, 0}, {2, 0}, {3, 0}};
 
   // 在直线上 → OK 全速
   auto ok = mon.evaluate({1.5F, 0.0F, 0.0F}, path);
@@ -155,7 +165,7 @@ TEST(ControlLoopTest, Given_OffPath_Then_ErrorMonitorSlows) {
 
 TEST(ControlLoopTest, Given_OffPath_Large_Then_Stops) {
   TrackErrorMonitor mon(TrackErrorMonitor::Params{0.15F, 0.40F});
-  std::vector<execution::Waypoint> path = {{0, 0}, {1, 0}, {2, 0}, {3, 0}};
+  std::vector<amr::domain::execution::Waypoint> path = {{0, 0}, {1, 0}, {2, 0}, {3, 0}};
 
   auto err = mon.evaluate({1.5F, 0.5F, 0.0F}, path);  // 0.5m 偏离
   EXPECT_EQ(err.level, TrackErrorLevel::ERROR);
@@ -163,11 +173,11 @@ TEST(ControlLoopTest, Given_OffPath_Large_Then_Stops) {
 }
 
 // ── 5. Given_NearGoal_Then_SlowsDown ─────────────────────────────────
-// 接近目标：PurePursuit 应减速（梯形速度）。
+// 接近目标：PurePursuit 应减速（慢逼近分支 / 梯形速度）。
 
 TEST(ControlLoopTest, Given_NearGoal_Then_SlowsDown) {
   PurePursuit pp(PurePursuit::Params{0.5F, 1.0F, 1.5F, 1.0F, 0.1F, 0.5F, 1.0F});
-  std::vector<execution::Waypoint> path = {{0, 0}, {1, 0}, {2, 0}};
+  std::vector<amr::domain::execution::Waypoint> path = {{0, 0}, {1, 0}, {2, 0}};
 
   // 远距 → 全速
   auto far = pp.track(path, {0.2F, 0.0F, 0.0F});
@@ -181,10 +191,13 @@ TEST(ControlLoopTest, Given_NearGoal_Then_SlowsDown) {
 
 // ── 6. Given_NoPath_Then_NoPlan ──────────────────────────────────────
 // 障碍包围目标：A* 应返回空路径（无法到达）。
+// 包围圈半径 0.3（非旧版 0.2）：格心量化下 0.2 圆盘在对角留 ~0.02m 缝，
+// A* 虽被防穿角拦住对角步，但 0.3 才能把目标 8 邻域格全部封死（格心
+// 几何验证：最近障碍 0.3m，目标格心距 0.325，邻格 ≤0.276 全 INSCRIBED）。
 
 TEST(ControlLoopTest, Given_NoPath_Then_NoPlan) {
   // 目标 (4,0.5) 被 4 面障碍围住
-  auto grid = make_grid({{4.0F, 0.2F}, {4.0F, 0.8F}, {3.7F, 0.5F}, {4.3F, 0.5F}}, 0.2F);
+  auto grid = make_grid({{4.0F, 0.2F}, {4.0F, 0.8F}, {3.7F, 0.5F}, {4.3F, 0.5F}}, 0.3F);
   AStarPlanner astar;
 
   auto path = astar.plan(grid, {0.5F, 0.5F}, {4.0F, 0.5F});
@@ -214,7 +227,7 @@ TEST(ControlLoopTest, Given_MultiObstacle_Then_Slalom) {
 TEST(ControlLoopTest, Given_EmptyPath_Then_Stops) {
   PurePursuit pp;
   TrackErrorMonitor mon;
-  std::vector<execution::Waypoint> empty{};
+  std::vector<amr::domain::execution::Waypoint> empty{};
 
   auto twist = pp.track(empty, {0, 0, 0});
   EXPECT_FLOAT_EQ(twist.linear, 0.0F);
@@ -225,10 +238,12 @@ TEST(ControlLoopTest, Given_EmptyPath_Then_Stops) {
 
 // ── 9. Given_GoalBlocked_Then_StopsAtBoundary ────────────────────────
 // 目标不可达 + 误差超限：机器人停在安全位置（不撞障碍）。
+// 障碍 (1.2,0.5)（非旧版 (1.0,0.5)）：旧位与起点 (0.5,0.5) 距 0.5=圆盘半径，
+// 起点格直接 INSCRIBED → A* 恒空，测试退化为空转——移出盘外才有绕障路径可测。
 
 TEST(ControlLoopTest, Given_GoalBlocked_Then_StopsAtBoundary) {
-  // 障碍直接堵住目标方向，且障碍在路径上
-  auto grid = make_grid({{1.0F, 0.5F}}, 0.5F);  // 大障碍挡路
+  // 大障碍挡路
+  auto grid = make_grid({{1.2F, 0.5F}}, 0.5F);
   AStarPlanner astar;
   PathSmoother smoother;
 
@@ -242,7 +257,7 @@ TEST(ControlLoopTest, Given_GoalBlocked_Then_StopsAtBoundary) {
     bool reached = simulate_follow(path, pp, mon);
     // 可能因误差累积停下或到达——都不能穿过障碍
     for (const auto &wp : path) {
-      float d = std::hypot(wp.x - 1.0F, wp.y - 0.5F);
+      float d = std::hypot(wp.x - 1.2F, wp.y - 0.5F);
       EXPECT_GT(d, 0.4F) << "路径不应穿障碍";
     }
     // 不强制到达——允许误差监控触发安全停止
