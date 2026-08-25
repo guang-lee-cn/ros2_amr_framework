@@ -26,9 +26,10 @@ cppcheck --enable=warning,performance,portability \
   2>"$TMP_LOG" || true
 
 # Only fail on errors (not style/info/performance notes)
-# 注：grep -c 无匹配时自打印 0 且退出码 1，`|| echo 0` 会再补一个 0 —— 修复双 0
-ERRORS=$(grep -c "(error)" "$TMP_LOG" 2>/dev/null); ERRORS=${ERRORS:-0}
-WARNINGS=$(grep -c "(warning)" "$TMP_LOG" 2>/dev/null); WARNINGS=${WARNINGS:-0}
+# 注：grep -c 无匹配时自打印 0 但退出码 1——set -e 会误杀脚本，需 || true
+# 掩退出码（原作者的 `|| echo 0` 掩对了退出码但多打一个 0 致比较报错）
+ERRORS=$(grep -c "(error)" "$TMP_LOG" 2>/dev/null || true); ERRORS=${ERRORS:-0}
+WARNINGS=$(grep -c "(warning)" "$TMP_LOG" 2>/dev/null || true); WARNINGS=${WARNINGS:-0}
 
 cat "$TMP_LOG"
 rm -f "$TMP_LOG"
