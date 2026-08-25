@@ -1,7 +1,7 @@
 # ROS2 AMR Framework
 
 [![CI](https://github.com/guang-lee-cn/ros2_amr_framework/actions/workflows/ci.yml/badge.svg)](https://github.com/guang-lee-cn/ros2_amr_framework/actions)
-[![Coverage](https://img.shields.io/badge/coverage-84.5%25-brightgreen)](quality/data/coverage.txt)
+[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/guang-lee-cn/ros2_amr_framework/main/quality/data/badge.json)](quality/data/badge.json)
 [![ROS2](https://img.shields.io/badge/ROS%202-Jazzy-22303C?logo=ros)](https://docs.ros.org/en/jazzy/)
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=c%2B%2B)](https://en.cppreference.com/w/cpp/17)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)

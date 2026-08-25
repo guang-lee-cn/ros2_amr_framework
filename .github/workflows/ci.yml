@@ -36,6 +36,9 @@ jobs:
 
   build-test-coverage:
     runs-on: ubuntu-24.04
+    # badge 自动提交需要写权限（仅 GITHUB_TOKEN 范围内，无第三方凭证）
+    permissions:
+      contents: write
     container: ros:jazzy-ros-base
     strategy:
       fail-fast: false
@@ -87,3 +90,37 @@ jobs:
           export RMW_IMPLEMENTATION=$RMW_IMPL
           cd src/ros2_robot_middleware
           ./quality/quality.sh
+
+      # B4 可复算度量链：.info 原始件归档（任何人可用 coverage_report.py 复算徽章数字）
+      - name: Archive coverage data
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.rmw }}
+          path: |
+            /tmp/amr_cov_filtered.info
+            src/ros2_robot_middleware/quality/data/
+          retention-days: 90
+
+      - name: Coverage summary
+        shell: bash
+        run: |
+          echo "## Coverage (${{ matrix.rmw }})" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat src/ros2_robot_middleware/quality/data/coverage_full.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      # badge 由 CI 实测更新（仅 fastrtps 腿执行，避免矩阵双写冲突）——
+      # README 徽章走 endpoint URL，数字与归档 .info 恒一致
+      - name: Update coverage badge
+        if: matrix.rmw == 'fastrtps'
+        shell: bash
+        run: |
+          cd src/ros2_robot_middleware
+          git config user.name "ci-bot"
+          git config user.email "ci-bot@users.noreply.github.com"
+          git add quality/data/badge.json quality/data/coverage.txt \
+                  quality/data/coverage.prev.txt quality/data/coverage_full.txt
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(coverage): CI 实测徽章更新 [skip ci]"
+            git push
+          fi

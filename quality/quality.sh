@@ -28,39 +28,41 @@ bash "$SCRIPT_DIR/scripts/run_tests.sh" "${1:-coverage}"
 
 # ── Step 2: Coverage ────────────────────────────────────────────────
 echo "[quality] step 2/2: coverage + gate..."
-HAS_COVERAGE=true
 COV_FAIL=false
 
-lcov --capture --directory "$BUILD_DIR" \
+# B4 修复（2026-08-25 外部审计 P1-a）：lcov 失败不再静默放行——度量链断则门禁红。
+# 同一 commit 曾出现 summary 84.5% 而 --list 明细全 ≤61.9% 的矛盾（lcov 2.0
+# 报表 per-file 数字与 .info DA 数据不符），故明细/聚合/badge 一律由
+# coverage_report.py 从 .info 直算，单一口径可复算；.info 原始件由 CI 上传归档。
+if ! lcov --capture --directory "$BUILD_DIR" \
   --output-file "$COV_INFO" \
   --ignore-errors empty,unused,mismatch,gcov \
   --rc geninfo_gcov_all_blocks=0 \
-  2>&1 | tail -1 || HAS_COVERAGE=false
+  >/dev/null; then
+  echo "ERROR: lcov capture failed — 度量链断，门禁失败（不再静默放行）"
+  exit 1
+fi
 
-if $HAS_COVERAGE && [ -s "$COV_INFO" ]; then
-  lcov --remove "$COV_INFO" \
+if ! lcov --remove "$COV_INFO" \
     --ignore-errors empty,unused \
     '/usr/*' '/opt/*' '*/rosidl*' '*/gtest*' '*/build/*' \
     '*/quality/*' '*/main.cpp' \
     '*/fleet_manager*' '*/compute_container*' \
     '*/observability/log_worker*' '*/observability/log_event*' \
     --output-file "$COV_FILTERED" \
-    2>&1 | tail -1 || HAS_COVERAGE=false
+    >/dev/null; then
+  echo "ERROR: lcov filter failed — 度量链断，门禁失败"
+  exit 1
 fi
 
-if $HAS_COVERAGE && [ -s "$COV_FILTERED" ]; then
-  LINE_COV=$(lcov --summary "$COV_FILTERED" 2>&1 | grep "lines" | awk '{print $2}' || echo "N/A")
+if [ -s "$COV_FILTERED" ]; then
+  LINE_COV=$(python3 "$SCRIPT_DIR/scripts/coverage_report.py" "$COV_FILTERED" "$COV_DIR" \
+    | head -1 | grep -oE '[0-9]+\.[0-9]%')
 
-  if [ "$LINE_COV" != "N/A" ] && [ -n "$LINE_COV" ]; then
-    # Save
+  if [ -n "$LINE_COV" ]; then
+    # Save（明细 coverage_full.txt 与 badge.json 已由 coverage_report.py 生成）
     if [ -f "$COV_FILE" ]; then cp "$COV_FILE" "$COV_PREV"; fi
     echo "$LINE_COV" > "$COV_FILE"
-
-    # Per-file detail
-    lcov --list "$COV_FILTERED" 2>&1 \
-      | grep "\.hpp\|\.cpp" | grep -v "test_" \
-      | awk '{printf "%-70s %s\n", $1, $2}' \
-      > "$COV_FULL" 2>/dev/null || true
 
     # Report
     echo ""
@@ -97,12 +99,14 @@ if $HAS_COVERAGE && [ -s "$COV_FILTERED" ]; then
     fi
   fi
 else
-  echo "[quality] coverage data unavailable — skipping gate"
+  echo "ERROR: filtered coverage info 为空 — 度量链断，门禁失败"
+  exit 1
 fi
 
 echo ""
 echo "Results: $COV_FILE"
 echo "Detail:  $COV_FULL"
+echo "Badge:   $COV_DIR/badge.json"
 
 if [ "$COV_FAIL" = true ]; then
   echo ""
