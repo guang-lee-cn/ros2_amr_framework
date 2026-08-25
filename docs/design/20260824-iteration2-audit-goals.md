@@ -4,7 +4,19 @@
 > 原则：每一条都来自审计发现的**具体缺口**，且是面试口头承诺的实体化——说了就要长出代码。
 > 依赖标注：〔Orin〕= 等开发板到货；〔无依赖〕= 随时可做。
 > **2026-08-25 外部 L7 审计**（`doc/ITERATION.md` 文末节）：B1 被评为全仓最硬闭环、A2/C1 方向被印证；
-> 同时新增本清单未覆盖的 **P0 私钥泄露**、覆盖率链修复、fail-fast、e2e 断言四项——见该报告 §7 映射表。
+> 同时新增 **P0 私钥泄露**、覆盖率链修复、fail-fast、e2e 断言四项——见该报告 §7 映射表。
+
+## P0 · 私钥泄露处置（外部审计新增，先于一切）— ✅ 已处置（2026-08-25）
+
+SROS2 私钥 11 文件（CA 三件套 + 8 enclave key）随 `8c4873b` 进入已推送历史。
+处置完成记录：
+- 全量备份 bundle → **密钥轮换**（新 CA + 8 enclave，private/enclaves 在 gitignore 内）
+  → `git filter-repo` 重写 244 commits（`--invert-paths '*/sros2/*key.pem'`）
+  → 强推 origin/main → 远端 git 侧验证清零
+- **防再犯**：gitleaks-action 全历史扫描进 CI（secrets-scan job，先于构建）
+- 残留：GitHub 平台 GC 前悬空 commit 仍可经 API 直链访问（需 Support 工单
+  请求 gc）；密钥已轮换烧毁，残留风险有界
+- 详见 change journal 2026-08-25 P0 条目
 
 ## A 类 · 闭合「商用」验证差（宣称里最软的词，最高优先）
 
@@ -12,26 +24,28 @@
 |---|------|---------|------|
 | A1 | **真机 bring-up**：EtherCAT 伺服 + ros2_control 硬件插件（DiffDriveSystem 第二季） | 真电机速度/位置闭环日志 + 与仿真闭环同构的验证记录 | 〔Orin〕+ 二手 EtherCAT 驱动 |
 | A2 | **72h soak + 故障注入**：连续负载、周期性 kill -9、内存/泄露监控 | soak 报告：吞吐/时延曲线、恢复次数=注入次数、RSS 平稳 | 〔无依赖〕（仿真负载即可先行） |
+| A3 | **ARM64 + PREEMPT_RT 复测** | bench5 三环境对照表填满（脚本已备） | 〔Orin〕 |
+| A4 | **RAUC 真机集成**：OtaCoordinator 的 SlotOps 接 RAUC 后端 | 真分区升级+回滚演示替换目录级模拟 | 〔Orin〕 |
+| A5 | **e2e 断言式测试**（外部审计建议新增）：到点停车/遇障停车/恢复 3 场景进 ctest | 「车真动、真停、真避障」有断言证据，不再是纸面 integration-plan | 〔无依赖〕 |
 
 > **A2 进展（2026-08-25）**：harness 已落地并 smoke 实证（注入2/恢复2，
 > MTTR 125-150s）——见 `docs/design/20260825-a2-soak-runbook.md`。
 > 剩余：72h 正式跑（`nohup ./scripts/soak_run.sh &`）+ 出报告归档。
-| A3 | **ARM64 + PREEMPT_RT 复测** | bench5 三环境对照表填满（脚本已备） | 〔Orin〕 |
-| A4 | **RAUC 真机集成**：OtaCoordinator 的 SlotOps 接 RAUC 后端 | 真分区升级+回滚演示替换目录级模拟 | 〔Orin〕 |
 
 ## B 类 · 闭合「框架」差距（IoC 缺口）
 
 | # | 目标 | 验收标准 | 依赖 |
 |---|------|---------|------|
 | B1 | **supervisor 实体化**：崩溃监管/依赖序重启/健康门 | 声明式配置驱动；kill -9 任一节点按策略恢复（health_monitor/OtaCoordinator 零件复用） | 〔无依赖〕 |
+| B2 | **运行时插拔**：迁 rclcpp_components 容器（或 pipeline.nodes 加 load/unload） | ros2 component list 可见、运行时装卸节点成功——补齐「落后于 stock」那一格 | 〔无依赖〕 |
+| B3 | **API 稳定性**：amr::qos / AmrNode 版本化与弃用策略（微缩 REP） | CHANGELOG 驱动的接口变更记录 + 一条真实弃用演练 | 〔无依赖〕 |
+| B4 | **覆盖率链修复**（外部审计 P1-a）：CI 上传 lcov、badge 由 CI 生成、修 coverage_full 解析、删 lcov 失败静默放行 | 84.5% 等数字可从仓库数据复算；badge 与明细对账 | 〔无依赖〕 |
 
 > **B1 进展（2026-08-25）**：**完成**——`amr_supervisor` 进程级监管 + 全栈 rollout
 > （supervised_sim.launch.py，11 子进程）。实证：kill -9 compute 1.75s 恢复且
 > scan 无恙；kill -9 gz 逆拓扑级联 + oneshot 重放车 + 2.3s 全链回位。
 > soak 注入白名单已扩 compute（supervised 形态限定）。
 > 见 docs/design/20260825-b1-supervisor-adr.md 与 change journal 当日两条。
-| B2 | **运行时插拔**：迁 rclcpp_components 容器（或 pipeline.nodes 加 load/unload） | ros2 component list 可见、运行时装卸节点成功——补齐「落后于 stock」那一格 | 〔无依赖〕 |
-| B3 | **API 稳定性**：amr::qos / AmrNode 版本化与弃用策略（微缩 REP） | CHANGELOG 驱动的接口变更记录 + 一条真实弃用演练 | 〔无依赖〕 |
 
 ## C 类 · NIH 清偿（换生态件，审计认账项）
 

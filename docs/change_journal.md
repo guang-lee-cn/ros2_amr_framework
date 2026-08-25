@@ -5,6 +5,42 @@
 
 ---
 
+## [2026-08-25] P0 事故处置：SROS2 私钥泄露进已推送历史（轮换+重写+防再犯）
+
+> 发现：外部 L7 工程审计（doc/ITERATION.md §2）。处置执行见本条。
+
+- **症状**: `git cat-file -p 8c4873b:install/.../config/sros2/private/ca.key.pem`
+  可完整恢复 CA 私钥明文；共 11 个私钥文件（CA 三件套 + 8 enclave key）随
+  8c4873b（install/ 产物误提交）进入 origin/main 历史。HEAD 干净（0177fca
+  清理 + .gitignore 正确）但历史 blob 永久可恢复。【铁证：处置前逐条复现】
+- **处置（按审计要求三步 + 防再犯）**:
+  1. **备份**: `git bundle create /tmp/ros2_amr_pre_filter_backup.bundle --all`
+     （23MB，重写出错可回退；注意它含泄露密钥，验证后应删除）
+  2. **轮换**: 旧 keystore 整体烧毁（.burned 残骸已删）；`ros2 security
+     create_keystore` 新 CA 三件套 + 8 enclave（/camera…/motor_ctrl）；
+     private/ 与 enclaves/ 在 gitignore 内（验证：git status 不显示）；
+     跟踪的 public 证书更新为新 CA 签发（commit 3e17bbe，重写后 65428bd）
+  3. **重写**: git-filter-repo（单文件脚本 ~\/.local/bin）`--invert-paths
+     --path-glob '*/sros2/*key.pem' --force`——244 commits 重写 0.13s，
+     新 tip 65428bd；`git log --all -- '*key.pem'` 清零、8c4873b 不复存在
+  4. **强推**: `git push --force origin main`（filter-repo 移除 origin 后重挂）
+  5. **防再犯**: CI 增 secrets-scan job（gitleaks-action@v2，fetch-depth:0
+     全历史扫描，先于构建；公开仓库免 license）
+- **验证**【铁证】:
+  - 本地: `git log --all -- '*key.pem'` 空；`git cat-file -p 8c4873b` fatal
+  - 远端 git: `git log origin/main -- '*key.pem'` 空；tag v0.1.0 指向泄露前
+    commit（哈希未变、在新历史内）；无 refs/pull/* 保活
+  - **残留（已知边界）**: GitHub 平台 GC 前，悬空 commit 8c4873b 仍可经
+    API/直链访问（gh api 实测返回完整 JSON）——需 GitHub Support 工单请求
+    gc；密钥已轮换烧毁，残留泄露面只影响已作废材料，风险有界
+- **影响面通知**: 历史重写后所有旧 clone 失效——需 `git fetch origin &&
+  git reset --hard origin/main`（或重新 clone）；本地若有未推送分支需 rebase
+- **回滚**: 不适用（安全处置不可逆是目的本身）；出错恢复用备份 bundle
+  `git clone /tmp/ros2_amr_pre_filter_backup.bundle`
+
+---
+
+
 ## [2026-08-25 晚] supervised_sim rollout：仿真栈 11 子进程迁入 supervisor + 三 bug 现形
 
 > B1 的落地验证轮（上一条的后续）。变更：launch/supervised_sim.launch.py
