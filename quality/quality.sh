@@ -6,11 +6,11 @@ set -eo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
-if [ -n "${GITHUB_WORKSPACE:-}" ]; then
-  WS_DIR="$GITHUB_WORKSPACE"
-else
-  WS_DIR="$(dirname "$PROJECT_DIR")"
-fi
+# 与 run_tests.sh 同源解析（其 colcon 构建根 = 本包目录的上一级：CI 里是
+# $GITHUB_WORKSPACE/src，本地是 ~/code/ros2_ws/src）。旧版在 CI 里误用
+# GITHUB_WORKSPACE 根 → lcov 抓空目录 → 覆盖率在 CI 从未真正测过
+# （旧静默放行掩护了它，2026-08-25 B4 硬门禁首次暴露）。
+WS_DIR="$(dirname "$PROJECT_DIR")"
 
 BUILD_DIR="$WS_DIR/build/ros2_robot_middleware"
 COV_DIR="$SCRIPT_DIR/data"
