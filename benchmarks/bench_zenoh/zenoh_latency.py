@@ -12,8 +12,8 @@ import time
 
 import zenoh
 
-PING_KEY = "mw/bench/zenoh/ping"
-PONG_KEY = "mw/bench/zenoh/pong"
+PING_TOPIC = "mw/bench/zenoh/ping"
+PONG_TOPIC = "mw/bench/zenoh/pong"
 
 
 def encode(seq: int, t_ns: int, size: int) -> bytes:
@@ -35,9 +35,9 @@ def run_pong(session):
         seq, _ = decode(sample.payload.to_bytes())
         if seq == 0:
             return  # 探测帧
-        session.put(PONG_KEY, sample.payload.to_bytes())
+        session.put(PONG_TOPIC, sample.payload.to_bytes())
 
-    session.declare_subscriber(PING_KEY, handler=on_ping)
+    session.declare_subscriber(PING_TOPIC, handler=on_ping)
     print("pong ready", flush=True)
     threading.Event().wait()
 
@@ -60,16 +60,16 @@ def run_ping(session, size, samples, warmup):
                 rtts.append(rtt_us)
             received.set()
 
-    session.declare_subscriber(PONG_KEY, handler=on_pong)
+    session.declare_subscriber(PONG_TOPIC, handler=on_pong)
     time.sleep(1.0)  # 匹配等待
 
     while len(rtts) < samples:
         seq += 1
         payload = encode(seq, time.monotonic_ns(), size)
         received.clear()
-        session.put(PING_KEY, payload)
+        session.put(PING_TOPIC, payload)
         if not received.wait(timeout=2.0):
-            session.put(PING_KEY, payload)  # 重发
+            session.put(PING_TOPIC, payload)  # 重发
             received.wait(timeout=2.0)
 
     rtts.sort()
