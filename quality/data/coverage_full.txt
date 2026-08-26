@@ -1,26 +1,25 @@
 # 由 coverage_report.py 从 lcov .info 直算（DA 行口径）
-# 聚合: 2245/2656 = 84.5%  文件数: 47
+# 聚合: 2254/2646 = 85.2%  文件数: 47
 domain/planning/target_selector.hpp                                      0.0%      0/    2
 infrastructure/tf2_transform_provider.hpp                               35.3%     12/   34
 hal/sensor/isensor.hpp                                                  47.1%      8/   17
-hal/sensor/sensor_factory.hpp                                           63.2%     24/   38
 src/infrastructure/camera_node.cpp                                      63.8%     37/   58
 src/infrastructure/decision_node.cpp                                    66.2%    182/  275
 src/infrastructure/motor_ctrl_node.cpp                                  66.7%    162/  243
 src/infrastructure/imu_node.cpp                                         71.4%     35/   49
 src/infrastructure/lidar_node.cpp                                       71.8%     51/   71
 infrastructure/amr_node.hpp                                             75.0%     15/   20
-src/infrastructure/fusion_node.cpp                                      77.2%    169/  219
+src/infrastructure/fusion_node.cpp                                      79.7%    173/  217
 domain/monitoring/recovery_policy.hpp                                   83.3%      5/    6
-hal/common/registry.hpp                                                 83.3%     10/   12
 domain/simulation/simulated_scene.hpp                                   83.9%     52/   62
+hal/sensor/sensor_factory.hpp                                           84.4%     27/   32
 domain/planning/goal_dispatch_gate.hpp                                  84.6%     22/   26
 src/observability/metrics_registry.cpp                                  85.2%     23/   27
 domain/perception/degradation_policy.hpp                                85.3%     29/   34
 domain/ota/ota_coordinator.hpp                                          85.3%     64/   75
-hal/sensor/sick_tim781_adapter.hpp                                      85.7%     30/   35
 domain/monitoring/supervisor_policy.hpp                                 86.6%     97/  112
 domain/device/device_registry.hpp                                       90.9%     20/   22
+hal/sensor/sick_tim781_adapter.hpp                                      91.4%     32/   35
 domain/perception/perception_service.hpp                                95.1%     58/   61
 domain/execution/collision_guard.hpp                                    95.2%     79/   83
 domain/rpc/lightweight_rpc.hpp                                          95.2%     60/   63
@@ -43,6 +42,7 @@ domain/planning/scan_to_grid.hpp                                       100.0%   
 domain/planning/track_error_monitor.hpp                                100.0%     44/   44
 domain/scheduling/task_scheduler.hpp                                   100.0%     27/   27
 domain/transform_provider.hpp                                          100.0%      1/    1
+hal/common/registry.hpp                                                100.0%     10/   10
 hal/sensor/simulated_sensors.hpp                                       100.0%     57/   57
 infrastructure/qos_profiles.hpp                                        100.0%      8/    8
 observability/ring_buffer.hpp                                          100.0%     21/   21
