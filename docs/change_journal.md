@@ -5,6 +5,39 @@
 
 ---
 
+## [2026-08-26] 泄露 #2：gitleaks 门禁首次全量扫描抓出 live AI key — 两轮补写
+
+> 续 P0 条目：为泄露 #1 部署的 gitleaks 门禁，在第一次**真正的全量**历史
+> 扫描中抓到第二批真实密钥——防线生效的直接闭环。
+
+- **发现路径**: gitleaks-action 增量扫描模式只扫新增 commit（此前各轮皆绿）；
+  一次 workflow_dispatch 无基线回落到全量 → 3 类 Finding：
+  1. `log/build_2026-07-18_*/events.log`、`log/test_*/events.log`：
+     colcon 日志捕获**完整构建环境**——含 `ANTHROPIC_AUTH_TOKEN`、
+     `DEEPSEEK_API_KEY`（live AI 服务凭证）【真实泄露】
+  2. `build/ros2_robot_middleware/colcon_command_prefix_*.sh.env`：同源
+     另一份环境转储（首轮已随 build/ 清除）【真实泄露】
+  3. `benchmarks/bench_zenoh/zenoh_latency.py` 的 `PING_KEY`：zenoh 主题
+     路由名（key expression），generic-api-key 按变量名误报【误报】
+- **处置**:
+  1. 备份 bundle（/tmp/ros2_amr_pre_filter2_backup.bundle，含两次重写前状态）
+  2. filter-repo 第二轮清 `build/`、第三轮清 `log/`（均 --invert-paths，
+     强推验证旧对象不可达）；HEAD 无需改（两路径 e69f1af/d514198 早已清）
+  3. 误报处置：HEAD 变量更名 PING_KEY→PING_TOPIC（语义本就是 topic）+
+     `.gitleaks.toml`（extend useDefault + 定向放行，附复核结论）
+- **验证**【铁证】: 重写后全量 secrets-scan success；fastrtps/cyclonedds
+  构建腿全绿（cyclonedds 的 negative-count 亦由 -fprofile-update=atomic
+  治愈，同日闭环）
+- **⚠️ 不可由 git 侧完成的必做动作**: `ANTHROPIC_AUTH_TOKEN` 与
+  `DEEPSEEK_API_KEY` 自 2026-07-18 暴露于公网历史（近 14 天 34 独立
+  clone 量级），**必须由持有人在对应平台轮换**——重写不撤销已发生的暴露
+- **教训**: ① colcon 的 build/ 与 log/ 都会捕获完整环境，构建产物目录
+  永不入库（.gitignore 已覆盖，泄漏源是 gitignore 之前的 7/18 提交）；
+  ② 增量扫描有基线盲区——新装门禁后应先手动 dispatch 一次全量基线
+  （本次教训已固化：dispatch 兜底常驻 ci.yml）
+
+---
+
 ## [2026-08-26] D1 第三方扩展验收：19.5min/8 摩擦 → 修复 → 8m48s/2 摩擦一次全过
 
 > 迭代 2 D1——「可扩展」唯一无法自证的词，用两个干净上下文的 AI 子代理
