@@ -1,0 +1,18 @@
+# gitleaks 配置 —— 复核过的误报复核记录（secrets-scan 门禁使用）
+#
+# 本文件存在时 gitleaks-action 用它替代默认规则集——extend useDefault=true
+# 保住全部默认规则，仅追加定向放行。每条放行必须有复核结论与日期。
+
+[extend]
+useDefault = true
+
+[allowlist]
+  description = "zenoh 主题路由名（key expression）不是密钥"
+  # 复核 2026-08-26：PING_KEY/PONG_KEY = "mw/bench/zenoh/ping|pong" 是
+  # zenoh 的主题名（协议术语即 key expression），generic-api-key 按变量名
+  # 误报。HEAD 已更名 *_TOPIC；本条放行历史 commit 中的旧名与该文件后续
+  # 同类用法。文件内容为基准测试代码，从未含真实凭证。
+  paths = [
+    '''benchmarks/bench_zenoh/zenoh_latency\.py''',
+    '''benchmarks/bench_zenoh/zenoh_throughput\.py''',
+  ]
