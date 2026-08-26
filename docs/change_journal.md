@@ -46,6 +46,7 @@
 > B1 的落地验证轮（上一条的后续）。变更：launch/supervised_sim.launch.py
 > （simulation.launch.py 的每个 RosNode → supervisor 声明式子项）+
 > run_sim.sh LAUNCH_FILE 覆盖 + soak 白名单扩 compute（supervised 形态限定）。
+> **复盘**：五个 bug 的模式提炼见 docs/design/20260825-b1a2-five-bugs-retrospective.md。
 
 - **症状 → 根因 → 修复**（每条都被真实运行暴露）:
   1. **oneshot 无限重跑**: spawn_amr 每 ~2s 重放一次车（gz 里堆机器人）——
