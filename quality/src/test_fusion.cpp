@@ -3,6 +3,7 @@
 #include "ros2_robot_middleware/msg/perception_objects.hpp"
 
 #include <gtest/gtest.h>
+#include "lifecycle_msgs/msg/state.hpp"
 #include <rclcpp/rclcpp.hpp>
 
 #include <chrono>
@@ -135,4 +136,22 @@ TEST_F(FusionTest, Given_LowStepScenario_When_Publish_CategoryCopied) {
     if (obj.category == "low") { saw_low = true; break; }
   }
   EXPECT_TRUE(saw_low);  // camera depth detected the lidar-invisible low obstacle
+}
+
+// ── fail-fast：传感器类型未注册（拼写错）→ configure 拒绝 ────────────────
+// 2026-08-25 审计 P1-c：旧版静默 fallback 仿真传感器 = 机器人带假感知上线。
+
+TEST_F(FusionTest, Given_UnknownLidarType_Then_ConfigureFails) {
+  rclcpp::NodeOptions opt;
+  opt.append_parameter_override("sensors.lidar.type", "sick_tim781x");  // 拼错
+  FusionNode fusion(opt);
+  // configure 失败 → 停在 UNCONFIGURED（而非带 SimulatedLidar 假数据进 INACTIVE）
+  EXPECT_EQ(fusion.configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_UNCONFIGURED);
+}
+
+TEST_F(FusionTest, Given_ValidTypes_Then_ConfigureSucceeds) {
+  rclcpp::NodeOptions opt;
+  opt.append_parameter_override("sensors.lidar.type", "sick_tim781");
+  FusionNode fusion(opt);
+  EXPECT_EQ(fusion.configure().id(), lifecycle_msgs::msg::State::PRIMARY_STATE_INACTIVE);
 }

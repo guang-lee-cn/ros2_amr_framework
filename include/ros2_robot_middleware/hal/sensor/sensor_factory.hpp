@@ -60,10 +60,12 @@ public:
     using ImuPtr    = std::unique_ptr<ISensor<ImuData>>;
     using CameraPtr = std::unique_ptr<ISensor<CameraFrame>>;
 
+    // fail-fast（2026-08-25 审计 P1-c）：未注册类型返回 nullptr，调用方必须
+    // 检查并拒绝启动。旧版静默 fallback 到仿真传感器 = 配置拼错时机器人
+    // 在产线"看见"假数据——那是最危险的失败模式。
     static LidarPtr create_lidar(const SensorConfig &cfg) {
         register_builtin_sensors();
-        auto ptr = make_sensor<LidarScan>("lidar", cfg.type);
-        return ptr ? std::move(ptr) : std::make_unique<SimulatedLidar>();  // fallback
+        return make_sensor<LidarScan>("lidar", cfg.type);
     }
 
     /// Create simulated LiDAR with a scenario (obstacle layout) — for demo
@@ -77,14 +79,12 @@ public:
 
     static ImuPtr create_imu(const SensorConfig &cfg) {
         register_builtin_sensors();
-        auto ptr = make_sensor<ImuData>("imu", cfg.type);
-        return ptr ? std::move(ptr) : std::make_unique<SimulatedImu>();
+        return make_sensor<ImuData>("imu", cfg.type);
     }
 
     static CameraPtr create_camera(const SensorConfig &cfg) {
         register_builtin_sensors();
-        auto ptr = make_sensor<CameraFrame>("camera", cfg.type);
-        return ptr ? std::move(ptr) : std::make_unique<SimulatedCamera>();
+        return make_sensor<CameraFrame>("camera", cfg.type);
     }
 
     /// Create simulated camera with a scenario — generates FOV depth from the

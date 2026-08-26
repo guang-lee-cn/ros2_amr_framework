@@ -96,17 +96,6 @@ void FusionNode::create_sensors() {
   camera_cfg_.topic = this->get_parameter("sensors.camera.topic").as_string();
   // 场景同样驱动相机深度：低矮障碍补盲（lidar 看不到的由深度检测到）。
   camera_ = SensorFactory::create_camera(camera_cfg_, scenario);
-
-  // 配置拼写错误可见化：请求了非 simulated 类型但未注册 → 已静默 fallback。
-  auto &reg = amr::hal::common::SensorRegistry::instance();
-  if (imu_cfg_.type != "simulated" && !reg.contains("imu", imu_cfg_.type)) {
-    RCLCPP_WARN(this->get_logger(), "IMU type '%s' not registered, fell back to simulated",
-                imu_cfg_.type.c_str());
-  }
-  if (camera_cfg_.type != "simulated" && !reg.contains("camera", camera_cfg_.type)) {
-    RCLCPP_WARN(this->get_logger(), "Camera type '%s' not registered, fell back to simulated",
-                camera_cfg_.type.c_str());
-  }
 }
 
 // ── Lifecycle callbacks ──────────────────────────────────────────────
@@ -114,6 +103,15 @@ void FusionNode::create_sensors() {
 FusionNode::CallbackReturn FusionNode::on_configure(const rclcpp_lifecycle::State &) {
   // Create sensors from YAML-driven params
   create_sensors();
+  // fail-fast（2026-08-25 审计 P1-c）：类型未注册（拼写错/缺驱动）→ 配置失败
+  // 拒绝启动。旧版静默 fallback 仿真传感器 = 机器人带着假感知上线。
+  if (!lidar_ || !imu_ || !camera_) {
+    RCLCPP_ERROR(this->get_logger(),
+      "传感器创建失败: lidar='%s' imu='%s' camera='%s' —— 类型未注册（fail-fast，"
+      "不降级为仿真传感器）",
+      lidar_cfg_.type.c_str(), imu_cfg_.type.c_str(), camera_cfg_.type.c_str());
+    return CallbackReturn::FAILURE;
+  }
   // 若 lidar 是可连接适配器（sick_tim781）：宿主直接订阅并喂入扫描数据。
   // LifecycleNode 组合 rclcpp::Node（非继承），不能直接传 rclcpp::Node&，故用 feed_scan。
   if (auto *adapter = dynamic_cast<amr::hal::sensor::SickTiM781Adapter *>(lidar_.get())) {

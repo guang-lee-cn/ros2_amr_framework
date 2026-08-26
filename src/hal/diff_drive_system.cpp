@@ -53,13 +53,28 @@ hardware_interface::CallbackReturn DiffDriveSystem::on_init(
     }
   }
 
-  // 硬件参数（URDF <param>）
+  // 硬件参数（URDF <param>）——非数字值 fail-fast 拒绝 on_init
+  // （2026-08-25 审计 P1-c：裸 stod 抛异常会击穿 controller_manager）
   const auto & hp = info_.hardware_parameters;
+  auto parse_double = [this](const char *key, const std::string &value,
+                             double &out) -> bool {
+    try {
+      out = std::stod(value);
+      return true;
+    } catch (const std::exception &) {
+      RCLCPP_ERROR(get_logger(), "硬件参数 %s='%s' 不是数字", key, value.c_str());
+      return false;
+    }
+  };
   if (auto it = hp.find("max_wheel_vel"); it != hp.end()) {
-    max_wheel_vel_ = std::stod(it->second);
+    if (!parse_double("max_wheel_vel", it->second, max_wheel_vel_)) {
+      return hardware_interface::CallbackReturn::ERROR;
+    }
   }
   if (auto it = hp.find("cmd_accel"); it != hp.end()) {
-    cmd_accel_ = std::stod(it->second);
+    if (!parse_double("cmd_accel", it->second, cmd_accel_)) {
+      return hardware_interface::CallbackReturn::ERROR;
+    }
   }
   return hardware_interface::CallbackReturn::SUCCESS;
 }

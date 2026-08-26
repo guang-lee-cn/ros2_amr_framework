@@ -73,12 +73,13 @@ def generate_launch_description():
         ),
 
         # Health monitor (independent, must not share fate with monitored)
+        # 注：LifecycleNode 无 respawn 参数（那是 Node 的）——生命周期节点的
+        # 监管由本节点自身的 watchdog ChangeState 序列承担，不走进程重启。
+        # （2026-08-25 审计 P1-a：本文件曾有双逗号语法错且从未运行过，现修通）
         LifecycleNode(
             package="ros2_robot_middleware",
             executable="health_monitor_node",
-            name="health_monitor"
-            respawn=True,
-            respawn_delay=2.0,,
+            name="health_monitor",
             namespace="",
             additional_env=env,
             output="screen",
