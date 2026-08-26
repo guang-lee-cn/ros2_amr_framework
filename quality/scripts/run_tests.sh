@@ -17,9 +17,12 @@ source /opt/ros/jazzy/setup.bash 2>/dev/null || true
 
 case "$MODE" in
   coverage)
-    CXX_FLAGS="--coverage -g -O0"
-    LD_FLAGS="--coverage"
-    echo "[run_tests] Mode: coverage"
+    # -fprofile-update=atomic：多线程测试（e2e 后台线程/MultiThreadedExecutor）
+    # 并发写 gcda 计数器会撕裂出负值，geninfo 报 negative count（CI cyclonedds
+    # 腿 2026-08-26 实证）；atomic 更新为官方解法
+    CXX_FLAGS="--coverage -g -O0 -fprofile-update=atomic"
+    LD_FLAGS="--coverage -fprofile-update=atomic"
+    echo "[run_tests] Mode: coverage (profile-update=atomic)"
     ;;
   asan)
     CXX_FLAGS="-fsanitize=address,undefined -g -O1 -fno-omit-frame-pointer"
