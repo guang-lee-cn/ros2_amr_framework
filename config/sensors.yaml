@@ -1,3 +1,6 @@
+# ⚠️ 本文件是参数速查/文档模板，不随任何 launch 加载（D1 实验查证）。
+# 实际接线：ROS 参数 sensors.<sensor>.type/.topic 由 FusionNode 等节点
+# declare_parameter 读取——改这里不会生效，改 launch 参数/YAML 参数源才会。
 # ── Sensor configuration — edit to switch sensors, no recompilation ──
 #
 # type:  simulated      — timer-based synthetic data (WSL2/laptop)
@@ -20,3 +23,8 @@ sensors:
   camera:
     type: simulated
     topic: /camera/color/image_raw
+
+  # D1-EXT-EXPERIMENT: 模拟超声波测距（新传感器经 HAL 注册表接入）
+  ultrasonic:
+    type: simulated
+    topic:

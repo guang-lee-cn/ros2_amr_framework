@@ -27,7 +27,7 @@ void FusionNode::lidar_callback(sensor_msgs::msg::LaserScan::SharedPtr msg) {
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ domain/sensor_interface.hpp                                 │
+│ hal/sensor/isensor.hpp                                 │
 │   ILidarSensor  /  IImuSensor  /  ICameraSensor            │
 │   纯虚接口，纯 C++，零 ROS2 依赖                              │
 └──────────────────────┬──────────────────────────────────────┘
@@ -48,7 +48,7 @@ void FusionNode::lidar_callback(sensor_msgs::msg::LaserScan::SharedPtr msg) {
 
 ## 三、接口设计（已完成）
 
-`domain/perception/sensor_interface.hpp` 定义了三种原始数据类型和对应的纯虚接口：
+`hal/sensor/isensor.hpp` 定义了数据类型和 CRTP 接口（旧位置 domain/perception/ 已迁移）：
 
 ```cpp
 struct LidarScan   { const float *ranges; size_t count; float angle_min/inc; };
@@ -91,7 +91,7 @@ auto lidar = SensorFactory::create_lidar(config);
 // config.type = "sick_tim781" → SickTiM781Adapter
 ```
 
-- [ ] `infrastructure/sensors/sensor_factory.hpp`
+- [ ] `hal/sensor/sensor_factory.hpp`
 - [ ] YAML 配置文件 `sensor_config.yaml`
 
 ### M8.4：Mock 测试

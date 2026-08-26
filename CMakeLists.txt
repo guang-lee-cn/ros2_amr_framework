@@ -50,6 +50,11 @@ add_library(robot_middleware_lib STATIC
   src/infrastructure/ota_agent_node.cpp
   src/infrastructure/fleet_manager_node.cpp
   src/infrastructure/scene_simulator_node.cpp
+  src/hal/ultrasonic_sensor.cpp  # D1-EXT-EXPERIMENT: 模拟超声波（宏注册 TU）
+  src/infrastructure/ultrasonic_node.cpp  # D1-EXT-EXPERIMENT
+  src/hal/temperature_sensor.cpp  # D1-RUN2: 模拟温度（宏注册 TU）
+  src/infrastructure/temperature_node.cpp  # D1-RUN2
+  src/infrastructure/temperature_monitor_node.cpp  # D1-RUN2: 温度消费节点
   src/observability/metrics_registry.cpp
 )
 
@@ -103,7 +108,7 @@ target_link_libraries(fusion_standalone robot_middleware_lib)
 install(TARGETS fusion_standalone DESTINATION lib/${PROJECT_NAME})
 
 # Thin executables — independent processes for sensor drivers + monitoring
-set(INDEPENDENT_NODES lidar imu camera health_monitor fleet_manager)
+set(INDEPENDENT_NODES lidar imu camera ultrasonic health_monitor fleet_manager temperature temperature_monitor)  # D1-EXT-EXPERIMENT: +ultrasonic; D1-RUN2: +temperature/+temperature_monitor
 foreach(node ${INDEPENDENT_NODES})
   add_executable(${node}_node src/infrastructure/${node}_main.cpp)
   target_link_libraries(${node}_node robot_middleware_lib)
@@ -285,6 +290,10 @@ if(BUILD_TESTING)
   add_amr_test(test_depth_obstacle_detector quality/src/test_depth_obstacle_detector.cpp)
   add_amr_test(test_degradation_policy quality/src/test_degradation_policy.cpp)
   add_amr_test(test_scan_to_grid quality/src/test_scan_to_grid.cpp)
+  # D1-EXT-EXPERIMENT: 模拟超声波 HAL + AmrNode 节点
+  add_amr_test(test_ultrasonic_hal quality/src/test_ultrasonic_hal.cpp)
+  # D1-RUN2: 模拟温度 HAL + 驱动节点 + 消费节点
+  add_amr_test(test_temperature_hal quality/src/test_temperature_hal.cpp)
 endif()
 
 ament_package()

@@ -58,7 +58,7 @@ candump can0           # 能抓到帧
 ### 传感器（单向流入）
 
 ```cpp
-// amr_hal/src/sensor/velodyne_adapter.hpp
+// include/ros2_robot_middleware/hal/sensor/velodyne_adapter.hpp（本包内 hal/，非独立包——ITERATION D1 决策方案 B）
 class VelodyneAdapter : public amr::domain::sensor::SensorBase<VelodyneAdapter,
                           amr::domain::sensor::LidarScan> {
 public:
@@ -85,7 +85,7 @@ private:
 ### 执行器（双向流）
 
 ```cpp
-// amr_hal/src/actuator/diff_drive_adapter.hpp
+// include/ros2_robot_middleware/hal/actuator/diff_drive_adapter.hpp
 struct WheelCmd { float vx, vy, wz; };            // cmd_vel
 struct WheelFeedback { float left_rps, right_rps; };  // 编码器
 
@@ -108,7 +108,13 @@ public:
 
 ```cpp
 // 框架通过注册表获取适配器，不直接引用类名
-REGISTER_SENSOR(lidar, velodyne, VelodyneAdapter);
+AMR_REGISTER_SENSOR("lidar", "velodyne", VelodyneAdapter);
+
+// ⚠️ 注册的两条路径（D1 实验实证，详见 hal/common/registry.hpp 头注释）：
+// 静态库中上面的自注册对象可能被链接器丢弃——可靠路径是幂等显式注册：
+//   inline void ensure_velodyne_registered() { /* register_type + done 标记 */ }
+// 在消费节点 on_configure 里调用（参照 SimulatedUltrasonic + UltrasonicNode，
+// D1 验收实验的全程范本：hal/sensor/ultrasonic_sensor.hpp + ultrasonic_node.cpp）
 REGISTER_ACTUATOR(drive, diff_drive, DiffDriveAdapter);
 ```
 
@@ -119,7 +125,7 @@ REGISTER_ACTUATOR(drive, diff_drive, DiffDriveAdapter);
 ### 策略：测协议解析，不测真实硬件
 
 ```cpp
-// amr_hal/quality/src/test_velodyne.cpp
+// quality/src/test_velodyne.cpp
 TEST(VelodyneTest, Parse_ValidFrame_ReturnsScan) {
   VelodyneAdapter adapter;
   // 构造一段厂商协议格式的 bytes
@@ -240,6 +246,6 @@ ros2 topic echo /odom
 ## 九、参考
 
 - [HAL 设计](09-hal-design.md)
-- [ISensor 接口](../../include/ros2_robot_middleware/domain/perception/sensor_interface.hpp)
+- [ISensor 接口](../../include/ros2_robot_middleware/hal/sensor/isensor.hpp)
 - [IActuator 接口](../../include/ros2_robot_middleware/domain/execution/iactuator.hpp)
 - [ROS2 驱动接入官方指南](https://docs.ros.org/en/jazzy/Tutorials/Developing-a-ROS-2-Driver.html)

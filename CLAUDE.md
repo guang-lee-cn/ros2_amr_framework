@@ -31,8 +31,20 @@ observability）。C++17 · colcon · gtest · cppcheck 门禁 · 双 RMW CI 矩
 
 ## 节点形态
 
-- **新节点继承 `amr::infrastructure::AmrNode`**（心跳/QoS/门控/指标/时钟由基类
+- **新节点继承 `amr::infrastructure::AmrNode`**（心跳/QoS/门控/时钟由基类
   托管），参照实现见 `imu_node`；参数在 `on_configure` 声明。
+  ⚠️ 指标字段是封闭集合（MetricsRegistry 现有维度），新传感器没有现成
+  per-sensor 字段——别等基类给你指标（D1 实验实证的过度承诺）。
+- **消费方节点**（订阅传感器 topic 做处理/告警的形态）参照
+  `temperature_monitor_node`（D1 二测范本：sensor_stream 订阅 + reliable_stream
+  发布 + 滚动均值）；发布方参照 `imu_node`/`temperature_node`。
+- **独立可执行节点**要进 CMake 的 `INDEPENDENT_NODES` 列表（一行 +
+  `src/infrastructure/<name>_main.cpp`）；进 compute 容器才是「注册表一行」。
+- **传感器注册的两条路径**（registry.hpp 头注释）：静态库下自注册宏会被
+  链接器丢弃——可靠路径是幂等 `ensure_xxx_registered()` 在消费节点里显式
+  调用，参照 `SimulatedUltrasonic`/`UltrasonicNode`（D1 验收全程范本）。
+- `config/sensors.yaml` 是**参数速查文档，不随 launch 加载**——实际接线是
+  ROS 参数（`sensors.lidar.type` 等），由各节点 declare_parameter。
 - **QoS 一律 `amr::qos::` 词汇表**（sensor_stream / reliable_stream /
   latched_state / control_stream），**禁止手搓 `rclcpp::QoS(10)` 散设**。
 - compute 容器组合由 `pipeline.nodes` 参数声明；新节点入管线 = 注册表一行 +

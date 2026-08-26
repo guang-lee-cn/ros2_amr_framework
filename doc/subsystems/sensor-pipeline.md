@@ -138,4 +138,4 @@ sensors:
 
 - [HAL 设计文档](../guides/09-hal-design.md)
 - [ADR-11: 传感器注入模式](../adr/03-adr.md#adr-11-传感器注入模式--isensor-接口-vs-模板参数-vs-注册表)
-- [SensorFactory](https://github.com/guang-lee-cn/ros2_amr_framework/blob/main/include/ros2_robot_middleware/infrastructure/sensors/sensor_factory.hpp)
+- [SensorFactory](https://github.com/guang-lee-cn/ros2_amr_framework/blob/main/include/ros2_robot_middleware/hal/sensor/sensor_factory.hpp)

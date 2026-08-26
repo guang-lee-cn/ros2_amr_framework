@@ -67,6 +67,9 @@ ros2 launch ros2_robot_middleware simulation.launch.py
 
 # 单元测试
 ./quality/quality.sh
+# 或直跑 ctest（前置：source /opt/ros/jazzy/setup.bash && source install/setup.bash，
+# 再进 build/ros2_robot_middleware；缺 source 会报 typesupport 库加载失败）
+cd build/ros2_robot_middleware && ctest
 
 # 性能插桩模式（启用 AMR_PERF_PHASE 打点 + :9091 端点）
 colcon build --packages-select ros2_robot_middleware \

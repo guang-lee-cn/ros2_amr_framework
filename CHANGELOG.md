@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added — D1 第三方扩展验收（迭代2）
+- **「X 分钟接入」成为数据**：干净上下文代理两轮实测 19.5min/8 摩擦 →
+  修复（宏 token-pasting bug、静态库注册路径文档化、6 处文档对账）→
+  8m48s/2 摩擦一次全过（范围翻倍）
+- 扩展范本入库：ultrasonic（发布方）+ temperature/temperature_monitor
+  （消费方）全链（传感器/注册/节点/测试/构建注册）
+- `AMR_REGISTER_SENSOR` 修复：__LINE__ 拼名 + used 属性（原 token 粘贴
+  字符串字面量无法编译）；registry.hpp 确立两条注册路径
+
 ### Added — A5 断言式 e2e（审计行动④）
 - **`test_e2e_behavior`**：scene_simulator 合成闭环（无 Gazebo，CI 容器可跑）
   + compute 管线同款组合；三场景断言——到点真停（cmd 静默+位移<0.1m）、
