@@ -28,6 +28,12 @@ SROS2 私钥 11 文件（CA 三件套 + 8 enclave key）随 `8c4873b` 进入已�
 | A4 | **RAUC 真机集成**：OtaCoordinator 的 SlotOps 接 RAUC 后端 | 真分区升级+回滚演示替换目录级模拟 | 〔Orin〕 |
 | A5 | **e2e 断言式测试**（外部审计建议新增）：到点停车/遇障停车/恢复 3 场景进 ctest | 「车真动、真停、真避障」有断言证据，不再是纸面 integration-plan | 〔无依赖〕 |
 
+> **A5 进展（2026-08-26）**：**完成**——`test_e2e_behavior` 三场景全绿
+> （scene_simulator 闭环，CI 容器可跑）：到点真停（IT-06）、遇障绕行不穿透
+> （IT-08，实测 0.601m > 物理界 0.57）、断源降级+恢复（IT-07 族）。
+> 开发过程挖出并修复 4 个真 bug（PurePursuit 死区绕圈/快照丢戳/缓存判活/
+> 降级冻结），见 change journal 2026-08-26 条目。
+
 > **A2 进展（2026-08-25）**：harness 已落地并 smoke 实证（注入2/恢复2，
 > MTTR 125-150s）——见 `docs/design/20260825-a2-soak-runbook.md`。
 > 剩余：72h 正式跑（`nohup ./scripts/soak_run.sh &`）+ 出报告归档。

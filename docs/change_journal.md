@@ -5,6 +5,41 @@
 
 ---
 
+## [2026-08-26] A5 断言式 e2e 落地：三场景全绿 + 挖出 4 个真 bug（审计行动④）
+
+> 验收：「车真动、到点真停、遇障真绕、断源真降级恢复」——此前全项目零断言式
+> e2e。载体：scene_simulator 合成闭环（无 Gazebo，CI 容器可跑）+ compute 管线
+> 同款组合；`quality/src/test_e2e_behavior.cpp`（IT-04/05/06 + IT-08 + IT-07 族）。
+
+- **e2e 开发过程挖出的 4 个真 bug（全部修复 + 复验）**:
+  1. **到点停不下（PurePursuit）**：近目标固定 0.1 m/s 爬行 + goal_tolerance
+     0.05 < A* 路径终点量化误差（0.05 格 → 胞心偏移 ≤0.035）→ 死区边缘绕圈
+     永不定格。实测到达后 0.275m/3s 环绕漂移。修复：容差 0.05→0.10 +
+     爬行速度随剩余距离收敛（v ≤ dist，单调进死区）
+  2. **快照丢戳（perception_service）**：lidar_snapshot() 不拷 stamp_ns →
+     fusion StampGate 拿到默认 0 走「内部合成=now」分支——**新鲜度门对
+     适配器路径完全失明**（旧帧永远冒充现在）。修复：快照透传上游戳
+  3. **缓存帧判活缺失（sick 适配器）**：read() 只要 latest_msg_ 存在即
+     true → 断源后降级年龄永不增长。修复：到达时间判活（steady_clock，
+     1s 窗）——真驱动死 = 无新 DDS 消息到达；含复活复验单测
+  4. **降级冻结（fusion）**：evaluate_degradation() 在 stamp gate 的
+     return 之后 → 抑制发布的同时降级状态也冻结在 FULL，心跳继续报健康。
+     修复：评估前移到 gate 拒绝之前
+- **记录在案的 finding（未改，留调参决策）**：A* inscribed 0.55 < 物理不碰撞
+  界 0.57（盒半宽 0.25 + 车外接 0.32）——planner 理论上可规划进碰撞区 ~2cm；
+  e2e 实测绕行 0.601m 通过 0.57 断言，余量 3cm。建议后续 inscribed 提 0.60
+- **配套**：SceneSimulatorNode 增 NodeOptions 构造 + pause/resume 故障注入
+  API（soak 断源注入可复用）；scene_simulator_node.cpp 挪入 lib（e2e 与
+  可执行共用）；e2e 显式 TIMEOUT 300（默认超时在 ~105-115s 实测时长上贴边
+  抖动，曾致偶发 Timeout 假红）
+- **验证**【铁证】：三场景 OK（25.7s/49.2s/29.2s）；全套件 33 模块 100%
+- **回滚**：git checkout 本条涉及文件（4 个 bug 修复分属
+  pure_pursuit.hpp / perception_service.hpp / sick_tim781_adapter.hpp /
+  fusion_node.cpp + 测试两新文件）
+
+---
+
+
 ## [2026-08-25] P0 事故处置：SROS2 私钥泄露进已推送历史（轮换+重写+防再犯）
 
 > 发现：外部 L7 工程审计（doc/ITERATION.md §2）。处置执行见本条。

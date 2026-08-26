@@ -5,6 +5,15 @@
 #include <cmath>
 
 SceneSimulatorNode::SceneSimulatorNode() : Node("scene_simulator") {
+  init();
+}
+
+SceneSimulatorNode::SceneSimulatorNode(const rclcpp::NodeOptions &options)
+: Node("scene_simulator", options) {
+  init();
+}
+
+void SceneSimulatorNode::init() {
   // 从 ROS param 读 scene_name（rack_4box | rack_3c | warehouse_open）
   amr::domain::simulation::SceneParams params;
   this->declare_parameter<std::string>("scene_name", "rack_3c");

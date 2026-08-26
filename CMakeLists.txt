@@ -49,6 +49,7 @@ add_library(robot_middleware_lib STATIC
   src/infrastructure/prometheus_http_server.cpp
   src/infrastructure/ota_agent_node.cpp
   src/infrastructure/fleet_manager_node.cpp
+  src/infrastructure/scene_simulator_node.cpp
   src/observability/metrics_registry.cpp
 )
 
@@ -58,7 +59,7 @@ target_include_directories(robot_middleware_lib PUBLIC
 )
 
 ament_target_dependencies(robot_middleware_lib
-  rclcpp rclcpp_action rclcpp_lifecycle rclcpp_components lifecycle_msgs sensor_msgs geometry_msgs nav_msgs tf2_ros diagnostic_msgs spdlog std_msgs
+  rclcpp rclcpp_action rclcpp_lifecycle rclcpp_components lifecycle_msgs sensor_msgs geometry_msgs nav_msgs tf2_ros diagnostic_msgs spdlog std_msgs visualization_msgs
 )
 
 rosidl_get_typesupport_target(cpp_typesupport_target
@@ -118,11 +119,10 @@ install(TARGETS amr_supervisor DESTINATION lib/${PROJECT_NAME})
 
 # Scene simulator — synthetic sensor driver for the interview demo
 # (replaces Gazebo; gz-sim gpu_lidar has engine bugs on this platform).
+# 节点实现在 robot_middleware_lib 内（e2e 测试 test_e2e_behavior 复用同一世界+传感闭环）。
 add_executable(scene_simulator
-  src/infrastructure/scene_simulator_main.cpp
-  src/infrastructure/scene_simulator_node.cpp)
+  src/infrastructure/scene_simulator_main.cpp)
 target_link_libraries(scene_simulator robot_middleware_lib)
-ament_target_dependencies(scene_simulator visualization_msgs)
 install(TARGETS scene_simulator DESTINATION lib/${PROJECT_NAME})
 
 # ── ros2_control hardware plugin ────────────────────────────────────
@@ -271,6 +271,10 @@ if(BUILD_TESTING)
   add_amr_test(test_track_error  quality/src/test_track_error.cpp)
   add_amr_test(test_control_loop quality/src/test_control_loop.cpp)
   add_amr_test(test_supervisor_policy quality/src/test_supervisor_policy.cpp)
+  # 断言式 e2e（审计行动④/A5）：scene_simulator 闭环 + compute 管线，CI 容器可跑
+  add_amr_test(test_e2e_behavior quality/src/test_e2e_behavior.cpp)
+  # 三场景实测 ~105-115s（真实闭环跑车的代价）——默认超时贴边抖动，显式放宽
+  set_tests_properties(test_e2e_behavior PROPERTIES TIMEOUT 300)
   add_amr_test(test_grid_updater quality/src/test_grid_updater.cpp)
   add_amr_test(test_collision_guard quality/src/test_collision_guard.cpp)
   add_amr_test(test_vfh_avoidance  quality/src/test_vfh_avoidance.cpp)

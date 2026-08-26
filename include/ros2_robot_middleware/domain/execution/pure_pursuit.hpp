@@ -50,7 +50,9 @@ public:
     float max_linear = 0.5F;       // max linear velocity (m/s)
     float max_angular = 1.0F;      // max angular velocity (rad/s) — gz 物理降防猛转震荡
     float accel_limit = 1.0F;      // linear accel (m/s²)
-    float goal_tolerance = 0.05F;  // arrived within this distance (m)
+    float goal_tolerance = 0.10F;  // arrived within this distance (m) — 必须大于
+                                   // A* 路径终点量化误差（0.05 格 → 胞心偏移 ≤0.035），
+                                   // 否则死区边界永不定格（e2e IT-06 实证 2026-08-26）
     float slow_radius = 0.5F;      // start decelerating within this distance (m)
     float max_track_err = 1.0F;    // lateral error to clamp steering (m)
   };
@@ -95,7 +97,10 @@ public:
     float angular;
     if (goal_dist < params_.lookahead) {
       // Slow approach: mostly steer, small forward creep.
-      linear  = std::min(params_.max_linear, 0.1F);
+      // v 随剩余距离收敛（≤ goal_dist，斜率 1 保证单调进入死区）——固定 0.1
+      // 爬行会在 goal_tolerance 边缘绕圈永不停（e2e IT-06 实证 2026-08-26：
+      // 到达后 0.275m/3s 环绕漂移，cmd 恒 0.1）。
+      linear  = std::min({params_.max_linear, 0.1F, goal_dist});
       angular = std::clamp(2.0F * alpha, -params_.max_angular, params_.max_angular);
     } else {
       linear  = target_speed(goal_dist, alpha);

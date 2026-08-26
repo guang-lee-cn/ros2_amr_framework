@@ -27,8 +27,17 @@
 class SceneSimulatorNode : public rclcpp::Node {
 public:
   SceneSimulatorNode();
+  /// NodeOptions 构造（scene_name 等参数经 append_parameter_override 注入；
+  /// e2e 测试 test_e2e_behavior 用同一世界+传感闭环做断言式验收）
+  explicit SceneSimulatorNode(const rclcpp::NodeOptions &options);
+
+  /// 故障注入钩子：暂停/恢复 20Hz tick（传感+定位+运动学一起断流）。
+  /// 正式 API 非 test-only——soak 断源注入、演示"传感器死亡恢复"复用。
+  void pause() { timer_->cancel(); }
+  void resume() { timer_->reset(); }
 
 private:
+  void init();  // 两种构造共用的接线
   void tick();
   /// 构造车体 MarkerArray（底盘+lidar+双轮），frame=amr/chassis。
   /// Marker 是 Foxglove/RViz 原生类型，100% 渲染，不依赖 URDF 加载。

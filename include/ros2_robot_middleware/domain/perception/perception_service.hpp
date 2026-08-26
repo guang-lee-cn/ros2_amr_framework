@@ -68,6 +68,8 @@ public:
     if (lidar_ok) {
       lidar_ranges_      = lidar_scan.ranges;
       lidar_range_count_ = lidar_scan.range_count;
+      lidar_stamp_ns_    = lidar_scan.stamp_ns;  // 快照带戳：消费端 StampGate
+                                                // 要能看见「数据是几时的」
       lidar_angle_min_   = lidar_scan.angle_min;
       lidar_angle_inc_   = lidar_scan.angle_increment;
     }
@@ -122,6 +124,7 @@ public:
     out.range_count = lidar_range_count_;
     out.angle_min = lidar_angle_min_;
     out.angle_increment = lidar_angle_inc_;
+    out.stamp_ns = lidar_stamp_ns_;  // 透传上游戳（0=内部合成，消费端按读取时打戳）
     std::copy(lidar_ranges_, lidar_ranges_ + lidar_range_count_, out.ranges);
     return true;
   }
@@ -147,6 +150,7 @@ private:
   const float *lidar_ranges_     = nullptr;
   size_t       lidar_range_count_ = 0;
   float        lidar_angle_min_  = 0.0F;
+  int64_t      lidar_stamp_ns_   = 0;
   float        lidar_angle_inc_  = 0.0F;
   double       imu_ax_ = 0.0, imu_ay_ = 0.0;
   std::vector<amr::domain::perception::Cluster> depth_clusters_;  // camera depth → low obstacles

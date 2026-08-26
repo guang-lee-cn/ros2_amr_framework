@@ -265,6 +265,12 @@ void FusionNode::timer_callback() {
   // lidar_stamp_ns 来源：适配器路径透传 header.stamp；内部合成路径在快照处补 now。
   if (lidar_stamp_ns == 0) lidar_stamp_ns = now.nanoseconds();  // 内部合成：读取即最早点
   lidar_stamp_ns -= inject_stamp_age_ns_;                        // 故障注入（默认 0 不生效）
+
+  // 降级评估先于 gate 拒绝：断源期间数据被抑制时，降级状态也必须演进
+  // （否则 current_level_ 冻结在 FULL，心跳继续报健康——e2e 断源场景实证）
+  auto old_level = current_level_;
+  current_level_ = perception_->evaluate_degradation();
+
   if (stamp_gate_.check("lidar", lidar_stamp_ns, now.nanoseconds()) ==
       amr::domain::perception::StampGate::Verdict::STALE) {
     ++lidar_stale_rejects_;
@@ -273,9 +279,6 @@ void FusionNode::timer_callback() {
                          (now.nanoseconds() - lidar_stamp_ns) / 1000000L, stale_lidar_tol_ns_ / 1000000L);
     return;  // 本拍不发布：宁可空一拍，不用旧世界描述现在
   }
-
-  auto old_level = current_level_;
-  current_level_ = perception_->evaluate_degradation();
 
   // 零拷贝：unique_ptr 发布（1:1 订阅者=decision，所有权移交无拷贝）
   auto msg            = std::make_unique<ros2_robot_middleware::msg::PerceptionObjects>();

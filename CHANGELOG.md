@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added — A5 断言式 e2e（审计行动④）
+- **`test_e2e_behavior`**：scene_simulator 合成闭环（无 Gazebo，CI 容器可跑）
+  + compute 管线同款组合；三场景断言——到点真停（cmd 静默+位移<0.1m）、
+  遇障绕行不进物理碰撞盘、断源 3s 降级+恢复后到达
+- SceneSimulatorNode：NodeOptions 构造 + `pause()/resume()` 故障注入 API
+
+### Fixed — e2e 挖出的 4 个真 bug
+- **PurePursuit 到点停不下**：固定 0.1 爬行 + 容差 0.05 < 路径量化误差 →
+  死区边缘绕圈（实测到达后 0.275m/3s 漂移）；容差 0.10 + v≤dist 收敛
+- **lidar_snapshot 丢戳**：StampGate 对适配器路径失明（旧帧冒充现在）
+- **sick 适配器缓存帧判活缺失**：断源后降级永不触发；到达时间判活 1s 窗
+- **fusion 降级冻结**：evaluate_degradation 在 stamp gate return 之后
+
 ### Added — B1 进程级 supervisor（迭代2）
 - **`amr_supervisor`**：声明式配置驱动的崩溃监管/依赖序重启/健康门——
   posix_spawn 独立进程组、waitpid tick、指数退避、窗口化重启预算→FATAL、

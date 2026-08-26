@@ -5,6 +5,9 @@
 > 模式：已有项目收尾（重构模式产出 G3 验收）
 > 上游依据：[iso-output](../../doc/iso-output.md) G3 · [interfaces](../../doc/interfaces.md) · [requirements](../../doc/requirements.md)
 > 上游走查：计算容器契约走查 + SceneSimulator 闭环走查（2026-08-08）
+> **2026-08-26 落地**：IT-04/05/06、IT-08、IT-07 族已自动化为断言式
+> e2e（`quality/src/test_e2e_behavior.cpp`，进 ctest/CI）——本计划剩余
+> 场景（IT-07 respawn 由 B1 supervisor 集成验证覆盖、IT-09/10/11 待做）。
 
 ---
 

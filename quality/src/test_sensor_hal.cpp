@@ -4,6 +4,8 @@
 #include "ros2_robot_middleware/domain/perception/perception_service.hpp"
 
 #include <gtest/gtest.h>
+#include <chrono>
+#include <thread>
 #include <rclcpp/rclcpp.hpp>
 
 using amr::hal::sensor::SimulatedLidar;
@@ -243,4 +245,22 @@ TEST(PerceptionDepthTest, Given_NoCameraLevel_When_Fuse_MergedSkipped) {
   for (const auto &c : clusters) {
     EXPECT_NE(c.category, "low");  // depth clusters not merged when camera is out
   }
+}
+
+// ── 断源判活：缓存帧到达超窗 → read 拒绝（e2e 断源场景的 HAL 侧契约） ──
+TEST_F(SickTiM781Test, Given_NoNewArrivals_BeyondStaleWindow_ReadFails) {
+  amr::hal::sensor::SickTiM781Adapter adapter("/test_scan");
+  auto msg = std::make_shared<sensor_msgs::msg::LaserScan>();
+  msg->ranges = {1.0F, 2.0F, 3.0F};
+  adapter.feed_scan(msg);
+
+  amr::hal::sensor::LidarScan scan;
+  EXPECT_TRUE(adapter.read(scan)) << "新鲜到达的帧应可读";
+
+  std::this_thread::sleep_for(amr::hal::sensor::SickTiM781Adapter::kStaleWindow +
+                              std::chrono::milliseconds(150));
+  EXPECT_FALSE(adapter.read(scan)) << "断源超窗后缓存帧必须判死（不得冒充新鲜）";
+
+  adapter.feed_scan(msg);  // 恢复喂入 → 复活
+  EXPECT_TRUE(adapter.read(scan));
 }

@@ -22,6 +22,7 @@
 
 #include "ros2_robot_middleware/hal/sensor/isensor.hpp"
 
+#include <chrono>
 #include <mutex>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/laser_scan.hpp>
@@ -52,12 +53,22 @@ public:
         on_scan(std::move(msg));
     }
 
+    /// 读侧断源判定窗口：缓存帧到达超过此时长 = 数据源死亡（e2e 断源
+    /// 场景 2026-08-26 实证：此前缓存帧永远 read=true，降级永不触发）。
+    static constexpr auto kStaleWindow = std::chrono::seconds(1);
+
     // ── CRTP contract ────────────────────────────────────────────────
 
     bool read_impl(amr::hal::sensor::LidarScan &out) {
         std::lock_guard<std::mutex> lock(mutex_);
 
         if (!latest_msg_) return false;
+        // 到达时间判活（断源检测）：真驱动死 = 无新 DDS 消息到达。
+        // 缓存帧的 header.stamp 是上游事件时刻（保留透传），不用于判活——
+        // 传感器静默时戳不再前进，正是要检测的信号。
+        if (std::chrono::steady_clock::now() - last_arrival_ > kStaleWindow) {
+            return false;
+        }
 
         // Copy into caller-owned buffer (value semantics → thread-safe)
         size_t n = std::min(latest_msg_->ranges.size(),
@@ -93,10 +104,12 @@ private:
     void on_scan(sensor_msgs::msg::LaserScan::SharedPtr msg) {
         std::lock_guard<std::mutex> lock(mutex_);
         latest_msg_ = msg;
+        last_arrival_ = std::chrono::steady_clock::now();
     }
 
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr sub_;
     sensor_msgs::msg::LaserScan::SharedPtr latest_msg_;
+    std::chrono::steady_clock::time_point last_arrival_;  // 最近一帧到达时刻（断源判活）
     std::string topic_;
     std::mutex mutex_;
 };
