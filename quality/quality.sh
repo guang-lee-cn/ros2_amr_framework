@@ -34,10 +34,21 @@ COV_FAIL=false
 # 同一 commit 曾出现 summary 84.5% 而 --list 明细全 ≤61.9% 的矛盾（lcov 2.0
 # 报表 per-file 数字与 .info DA 数据不符），故明细/聚合/badge 一律由
 # coverage_report.py 从 .info 直算，单一口径可复算；.info 原始件由 CI 上传归档。
+#
+# capture 并行化（2026-08-27 CI 耗时自查）：capture 占覆盖率链大头（CI 实测
+# ~3m51s，geninfo 串行逐个跑 gcov；remove 仅 ~1s 非瓶颈）。lcov ≥2.0 的
+# --parallel 本地 A/B 实测 19.6s→3.3s，.info 排序后逐字节一致；1.x 无此选项，
+# 探测不到则回退串行（脚本不因此失败）。
+LCOV_PAR=""
+if lcov --help 2>&1 | grep -q -- '--parallel'; then
+  LCOV_PAR="--parallel $(nproc)"
+fi
+
 if ! lcov --capture --directory "$BUILD_DIR" \
   --output-file "$COV_INFO" \
   --ignore-errors empty,unused,mismatch,gcov \
   --rc geninfo_gcov_all_blocks=0 \
+  $LCOV_PAR \
   >/dev/null; then
   echo "ERROR: lcov capture failed — 度量链断，门禁失败（不再静默放行）"
   exit 1
