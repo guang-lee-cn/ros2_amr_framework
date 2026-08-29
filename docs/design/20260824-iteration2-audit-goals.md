@@ -18,6 +18,9 @@ SROS2 私钥 11 文件（CA 三件套 + 8 enclave key）随 `8c4873b` 进入已�
 - **防再犯**：gitleaks-action 全历史扫描进 CI（secrets-scan job，先于构建）
 - 残留：GitHub 平台 GC 前悬空 commit 仍可经 API 直链访问（需 Support 工单
   请求 gc）；密钥已轮换烧毁，残留风险有界
+- **泄露 #2**（2026-08-26，gitleaks 首次全量扫描抓出）：colcon build//log/
+  环境转储含 live AI key，同法处置（两轮补写重写）——见 journal 当日条目；
+  持有人轮换受影响 key 为必做动作
 - 详见 change journal 2026-08-25 P0 条目
 
 ## A 类 · 闭合「商用」验证差（宣称里最软的词，最高优先）
@@ -68,12 +71,12 @@ SROS2 私钥 11 文件（CA 三件套 + 8 enclave key）随 `8c4873b` 进入已�
 | # | 目标 | 验收标准 | 依赖 |
 |---|------|---------|------|
 | D1 | **第三方扩展验收测试**：一个不读内部代码的「用户」（真人或仅凭 README/CLAUDE.md 的 AI）从模板写新节点+新传感器 | 记录全部摩擦点并修复；时长可复测（「X 分钟接入」成为数据） | 〔无依赖〕 |
+| D2 | 跨机部署 + 发现治理（discovery server 实操，双机） | 跨机话题通 + 发现流量对比数据（顺带闭合服务发现 L2- 短板） | 〔Orin〕或双 PC |
 
 > **D1 进展（2026-08-26）**：**完成**——两轮干净上下文子代理实测：一测
 > 19.5min/8 摩擦（含审计点名的坏宏 + 新发现的静态库链接器丢弃注册对象）→
 > 修复 → 二测 8m48s/2 摩擦/一次全过（范围翻倍）。「X 分钟接入」成为数据。
 > 见 docs/design/20260826-d1-extension-acceptance.md。
-| D2 | 跨机部署 + 发现治理（discovery server 实操，双机） | 跨机话题通 + 发现流量对比数据（顺带闭合服务发现 L2- 短板） | 〔Orin〕或双 PC |
 
 ## E 类 · 小补（半天级）
 
@@ -81,11 +84,15 @@ SROS2 私钥 11 文件（CA 三件套 + 8 enclave key）随 `8c4873b` 进入已�
 - E2 OtaCoordinator 事件带载荷重构（std::variant + visit 落地 C++17 补课）〔无依赖〕
 - E3 RT 线程封装（jthread + 亲和 + SCHED_FIFO + PTHREAD_PRIO_INHERIT）〔Orin〕
 
-## 优先顺序（依赖解锁前）
+## 优先顺序（2026-08-28 复审后刷新）
 
 ```
-本周可做：A2(soak) > B1(supervisor) > D1(第三方扩展验收) > C1(LTTng) > B2 > B3 > E1/E2
-Orin 到货后：A1 → A3 → A4 → D2 → E3
+已完成：P0×2 / A5 / B1 / B4 / D1（复审 §8.1 核验通过）
+A2 尾款：72h 正式跑出报告入库（随时启动，建议机器空闲期、跑期不重建）
+剩余无依赖：C1(LTTng) > B2 > B3 > E1/E2
+复审新增尾款（ITERATION.md §8.3 优先序）：
+  DDS security 启用 > OTA 真签名 > 告警规则 > systemd/版本对齐 > 27 处裸 QoS 清零
+Orin 到货后：A1 → A3 → A4 → D2 → E3（真机线 =「商用验证级」门槛）
 ```
 
 ## 与面试的关系
