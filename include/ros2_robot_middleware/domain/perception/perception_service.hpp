@@ -1,6 +1,8 @@
 #ifndef ROS2_ROBOT_MIDDLEWARE_DOMAIN_PERCEPTION_SERVICE_HPP_
 #define ROS2_ROBOT_MIDDLEWARE_DOMAIN_PERCEPTION_SERVICE_HPP_
 
+#include <array>
+
 #include "ros2_robot_middleware/domain/perception/cluster_detector.hpp"
 #include "ros2_robot_middleware/domain/perception/degradation_policy.hpp"
 #include "ros2_robot_middleware/domain/perception/depth_obstacle_detector.hpp"
@@ -66,7 +68,8 @@ public:
     camera_age_s_ = camera_ok ? 0.0 : camera_age_s_ + dt;
 
     if (lidar_ok) {
-      lidar_ranges_      = lidar_scan.ranges;
+      std::copy(lidar_scan.ranges, lidar_scan.ranges + lidar_scan.range_count,
+                lidar_ranges_.begin());
       lidar_range_count_ = lidar_scan.range_count;
       lidar_stamp_ns_    = lidar_scan.stamp_ns;  // 快照带戳：消费端 StampGate
                                                 // 要能看见「数据是几时的」
@@ -97,8 +100,8 @@ public:
     std::vector<Cluster> clusters;
     switch (degradation) {
       case Level::FULL: case Level::NO_CAMERA: case Level::NO_IMU:
-        if (lidar_ranges_ && lidar_range_count_ > 0)
-          clusters = cluster_->detect(lidar_ranges_, lidar_angle_min_, lidar_angle_inc_);
+        if (lidar_range_count_ > 0)
+          clusters = cluster_->detect(lidar_ranges_.data(), lidar_angle_min_, lidar_angle_inc_);
         break;
       case Level::NO_LIDAR: break;
       case Level::CRITICAL: break;
@@ -120,12 +123,12 @@ public:
 
   /// 当前 LiDAR 原始点云快照（供可视化发布）。返回 false 表示无数据。
   bool lidar_snapshot(amr::hal::sensor::LidarScan &out) const {
-    if (!lidar_ranges_ || lidar_range_count_ == 0) return false;
+    if (lidar_range_count_ == 0) return false;
     out.range_count = lidar_range_count_;
     out.angle_min = lidar_angle_min_;
     out.angle_increment = lidar_angle_inc_;
     out.stamp_ns = lidar_stamp_ns_;  // 透传上游戳（0=内部合成，消费端按读取时打戳）
-    std::copy(lidar_ranges_, lidar_ranges_ + lidar_range_count_, out.ranges);
+    std::copy(lidar_ranges_.data(), lidar_ranges_.data() + lidar_range_count_, out.ranges);
     return true;
   }
 
@@ -147,7 +150,10 @@ private:
   CameraSensor &camera_;
   ITransformProvider *tf_ = nullptr;
 
-  const float *lidar_ranges_     = nullptr;
+  // P0-A 修复（2026-08-30 三审）：曾为 const float* 指向 tick() 栈局部
+  // LidarScan.ranges——tick 返回即悬垂，聚类/快照全在返回后消费（UAF 仅靠
+  // 栈布局运气存活）。值语义拷贝，2048×4B=8KB 成员，5Hz 拷贝开销可忽略。
+  std::array<float, amr::hal::sensor::LidarScan::kMaxRanges> lidar_ranges_{};
   size_t       lidar_range_count_ = 0;
   float        lidar_angle_min_  = 0.0F;
   int64_t      lidar_stamp_ns_   = 0;

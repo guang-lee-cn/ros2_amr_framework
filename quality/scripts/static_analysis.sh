@@ -31,7 +31,10 @@ echo "python files: syntax OK"
 echo "=== cppcheck ==="
 
 TMP_LOG=$(mktemp)
-cppcheck --enable=warning,performance,portability \
+# 三审调查结论（2026-08-30）：cppcheck 对「局部地址→成员指针→跨函数消费」
+# 类 UAF 无检测能力（enable=all 实证零发现）——该类 UB 的防线是 CI 的 ASAN
+# job。此处硬化的是工具自身：崩溃/内部错误必须红，不再 || true 静默放行。
+if ! cppcheck --enable=warning,performance,portability \
   --suppress=missingIncludeSystem \
   --suppress=unmatchedSuppression \
   --suppress=unusedFunction \
@@ -40,7 +43,12 @@ cppcheck --enable=warning,performance,portability \
   --inline-suppr \
   -I "$INCLUDE_DIR" \
   "$SRC_DIR" "$INCLUDE_DIR" \
-  2>"$TMP_LOG" || true
+  2>"$TMP_LOG"; then
+  echo "FAIL — cppcheck 工具自身异常退出（内部错误/崩溃），门禁红"
+  cat "$TMP_LOG" | tail -5
+  rm -f "$TMP_LOG"
+  exit 1
+fi
 
 # Only fail on errors (not style/info/performance notes)
 # 注：grep -c 无匹配时自打印 0 但退出码 1——set -e 会误杀脚本，需 || true

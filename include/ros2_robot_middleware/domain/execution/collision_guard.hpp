@@ -63,8 +63,10 @@ public:
     float fov_half = 0.7854F;   // forward FOV half-angle (rad) ≈ 45°
     float range_max = 20.0F;    // ranges beyond = no echo (m)
     std::chrono::milliseconds stale_timeout{500};  // protection expiry
-    int min_valid_echoes = 0;   // omni echoes below this = sensor failure →
-                                // hard stop; 0 disables (real-hw default)
+    int min_valid_echoes = 50;  // omni echoes below this = sensor failure → hard
+                                // stop。fail-safe default（三审 P0-G，2026-08-30）：
+                                // 0 曾是「真机关检测」默认——准点发布但全 inf 的
+                                // 发疯传感器默认直行通过。空旷/仿真场景显式设 0 豁免。
     float crawl_speed = 0.02F;  // anti-deadlock: obstacle-pressed output below
                                 // this counts as blocked (border dithering
                                 // at nearest ≈ stop_dist outputs ~4 mm/s and
@@ -182,7 +184,7 @@ inline float CollisionGuard::clamp(
   const bool have_scan = scan_.recv_time !=
       std::chrono::steady_clock::time_point::min();
   const float d = nearest_in_fov_locked();
-  // min_valid_echoes = 0 (real hw) keeps the legacy "all inf = open field"
+  // min_valid_echoes 显式设 0 才豁免（空旷场景/仿真）；默认 fail-safe 拦全盲
   // pass-through; > 0 (sim) treats an echo-less scan as sensor death.
   const bool sensor_blind = params_.min_valid_echoes > 0
                           && count_valid_locked() < params_.min_valid_echoes;

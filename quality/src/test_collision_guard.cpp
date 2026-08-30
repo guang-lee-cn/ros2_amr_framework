@@ -17,7 +17,9 @@ constexpr float kSafe = 0.8F;
 constexpr float kFovHalf = 0.7854F;   // 45°
 constexpr float kNoEcho = 20.0F;      // > range_max (20) → ignored
 
-CollisionGuard::Params kParams{kStop, kSafe, kFovHalf, kNoEcho, ms{500}};
+// 单测显式豁免盲检测（min_valid_echoes=0）——几何行为与 P0-G 的传感器
+// 失明语义解耦；后者由 *MinEchoes* 系列用例专测。
+CollisionGuard::Params kParams{kStop, kSafe, kFovHalf, kNoEcho, ms{500}, 0};
 
 /// 7 beams across ±90°. Beam i=3 (0°) at distance `d`; beams at ±30° are
 /// inside the FOV, beams at ±60° and ±90° are outside. Pass kNoEcho to
@@ -204,11 +206,14 @@ TEST_F(CollisionGuardTest,
 }
 
 // ── GivenAllInfScanWithoutMinEchoes_WhenClamp_PassesThrough ────────────
-// Real-hardware default (min_valid_echoes = 0): a legal echo-less open
-// square must keep passing through — the fail-safe is opt-in.
+// 显式豁免路径（P0-G 修复后默认反转）：空旷无回声是合法场景，但必须
+// 显式设 min_valid_echoes=0 声明——默认（50）下全盲 = 硬停。
 
 TEST_F(CollisionGuardTest,
        GivenAllInfScanWithoutMinEchoes_WhenClamp_PassesThrough) {
+  CollisionGuard::Params p = kParams;
+  p.min_valid_echoes = 0;  // 显式豁免（空旷场景部署侧声明）
+  guard_.set_params(p);
   ScanData s;
   s.angle_min = -1.5708F;
   s.angle_increment = 0.5236F;

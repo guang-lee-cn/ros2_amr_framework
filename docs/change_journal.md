@@ -41,7 +41,42 @@
 
 ---
 
-## [2026-08-30] OTA 真签名（§8.3-2）— 恒真桩替换为 ed25519 fail-closed 验签
+## [2026-08-30] 三审 Wave 1 安全兜底链批次 + cppcheck 失明调查 + WSL OOM 事故
+
+> 执行方案：docs/design/20260830-audit3-execution-plan.md Wave 1（1.1/1.3/1.4/1.5）。
+
+- **P0-A UAF 根修**：perception_service `lidar_ranges_` 裸指针（指向 tick()
+  栈局部）→ `std::array` 值语义拷贝。验证门双证：旧代码 ASAN 二进制实报
+  `stack-use-after-return in ClusterDetector::detect`；修复后 ASAN 全套件
+  36/36 零报告。
+- **cppcheck 失明调查**（为何 CI 静态扫没抓到）：
+  1. 工具能力边界——「局部地址→成员指针→跨函数消费」类逃逸，enable=all +
+     全 include 解析实证零发现（静态分析对这类 UB 天生短板）
+  2. 门禁自身缺陷——cppcheck 调用带 `|| true` 吞工具崩溃、只门 error 级
+  3. 有效防线是 ASAN——此发现直接成为 Wave 2「ASAN 进 CI」的理据；
+     附带教训：GCC 无 -fsanitize-address-use-after-return 选项，
+     报告名是 stack-use-after-**scope/return**，grep 模式别写窄
+- **门禁硬化**：static_analysis.sh 的 cppcheck 崩溃/内部错误不再静默（红）
+- **P0-G fail-open 默认反转**：min_valid_echoes 默认 0→50（真机关检测）；
+  空旷/仿真显式设 0 豁免；测试 kParams 显式钉 0（几何语义与盲检测解耦），
+  旧「默认直行」测试改造成「显式豁免路径」
+- **P0-L 饿死修复**：motor_ctrl_main 单线程 spin → MultiThreadedExecutor
+  （callback group 隔离在独立可执行形态下真正生效）
+- **P1 入口校验**：decision goal_pose NaN/Inf 拒绝（防 static_cast<int> UB）
+  + motor action goal 非有限值 REJECT（防 NaN twist 上 /cmd_vel）；
+  NaN 测试走真实订阅路径（不 friend 破坏封装）
+- **WSL OOM 事故（操作侧教训入账）**：被中断的 ASAN 全量重建子进程链未被
+  杀，孤儿 cc1plus 12 路并行（单实例 2.1GB）撞穿 WSL 22GB → 全局 OOM 杀掉
+  IDE 桥接进程（dsh.service, oom_score_adj=100）→ vscode/zcode 断连 → VM
+  重启。journalctl -b -1 内核日志铁证。**纪律固化**：run_tests.sh asan 模式
+  内置 CMAKE_BUILD_PARALLEL_LEVEL=4 + 负载命令一律 nice；重跑验证「构建前后
+  可用内存持平 20GB」实证有效
+- **验证**【铁证】：全套件 36/36（一次误报批次为 shell 相对路径 sourcing
+  错误——DDS 测试速死签名即刻定位）；ASAN 门零报告；cppcheck errors=0
+
+---
+
+## [2026-08-30] OTA 真签名（§8.3-2）— 恒真桩替换为 ed25519 fail-closed 验签（§8.3-2）— 恒真桩替换为 ed25519 fail-closed 验签
 
 > 审计 P1-b「签名校验 /*signature_valid=*/true 恒真」——三条安全不变量
 > 之前的信任门从未真正闭合，本次闭合。

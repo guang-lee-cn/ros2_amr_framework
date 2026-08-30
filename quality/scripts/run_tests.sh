@@ -29,6 +29,12 @@ case "$MODE" in
     LD_FLAGS="-fsanitize=address,undefined"
     echo "[run_tests] Mode: ASan + UBSan + LSan (suppressed: DDS/ROS2 internals)"
     export LSAN_OPTIONS="suppressions=$PROJECT_DIR/quality/lsan.supp"
+    # 2026-08-30 WSL OOM 事故教训：ASAN 编译单 cc1plus ~2.1GB，12 路并行
+    # 峰值 ~25GB 撞穿 22GB WSL 上限 → 全局 OOM 杀掉 IDE 桥接进程。
+    # asan 模式强制限幅 + 低优先级（4×2GB=8GB 峰值，安全；慢但不断连）。
+    export CMAKE_BUILD_PARALLEL_LEVEL=${CMAKE_BUILD_PARALLEL_LEVEL:-4}
+    export MAKEFLAGS="-j${CMAKE_BUILD_PARALLEL_LEVEL}"
+    echo "[run_tests] 编译并行限幅: $CMAKE_BUILD_PARALLEL_LEVEL（OOM 纪律）"
     ;;
   release)
     CXX_FLAGS="-O2 -DNDEBUG"

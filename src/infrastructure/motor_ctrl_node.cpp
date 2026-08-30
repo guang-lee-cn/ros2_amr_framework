@@ -206,6 +206,15 @@ rclcpp_action::GoalResponse MotorCtrlNode::handle_goal(
   RCLCPP_INFO(this->get_logger(),
               "Received goal: target=(%.2f, %.2f, %.2f) speed=%.2f",
               goal->target_x, goal->target_y, goal->target_theta, goal->max_speed);
+  // 入口校验（三审 P1）：NaN/Inf 目标经 PurePursuit 会产出 NaN twist 上
+  // /cmd_vel（max_speed 只进日志拦不住数值）。坏目标 REJECT，不进执行。
+  const float ft = goal->target_x, fy = goal->target_y, fa = goal->target_theta;
+  if (!std::isfinite(ft) || !std::isfinite(fy) || !std::isfinite(fa) ||
+      !std::isfinite(goal->max_speed)) {
+    RCLCPP_WARN(this->get_logger(),
+                "goal 拒绝：非有限值 target=(%f,%f,%f) speed=%f", ft, fy, fa, goal->max_speed);
+    return rclcpp_action::GoalResponse::REJECT;
+  }
   return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
 }
 

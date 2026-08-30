@@ -1,3 +1,4 @@
+#include <limits>
 /// @file test_decision.cpp — DecisionNode perception→goal dispatch tests
 #include "ros2_robot_middleware/infrastructure/decision_node.hpp"
 
@@ -456,4 +457,49 @@ TEST_F(DecisionTest, Given_DegradedNoLidarHeartbeat_When_Perception_DoesNotDispa
              [&goal_received] { return goal_received; },
              std::chrono::milliseconds(1500));
   EXPECT_FALSE(goal_received);
+}
+
+// ── 三审 P1 / Wave 1.5：goal_pose 入口 finite 校验 ──────────────────────
+// NaN/Inf 目标直达 world_to_grid 的 static_cast<int> 是 UB（换编译器即静默
+// 数据损坏）。坏帧必须拒绝且不污染当前 goal 参数。
+
+TEST_F(DecisionTest, Given_NanGoalPose_WhenPublished_RejectedNotApplied) {
+  auto decision = std::make_shared<DecisionNode>(
+      rclcpp::NodeOptions()
+          .append_parameter_override("goal_x", 3.0)
+          .append_parameter_override("goal_y", 4.0));
+  decision->configure();
+
+  // 走真实订阅路径（DDS 发布 → 回调守卫），不 friend 破坏封装
+  auto pub_node = std::make_shared<rclcpp::Node>("nan_goal_pub");
+  auto pub = pub_node->create_publisher<geometry_msgs::msg::PoseStamped>(
+      "/goal_pose", rclcpp::QoS(10).reliable());
+  rclcpp::executors::SingleThreadedExecutor exec;
+  exec.add_node(decision->get_node_base_interface());
+  exec.add_node(pub_node);
+
+  auto spin_ms = [&](int ms) {
+    auto end = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+    while (std::chrono::steady_clock::now() < end) {
+      exec.spin_once(std::chrono::milliseconds(10));
+    }
+  };
+  spin_ms(400);  // 发现匹配
+
+  geometry_msgs::msg::PoseStamped bad;
+  bad.pose.position.x = std::numeric_limits<double>::quiet_NaN();
+  bad.pose.position.y = std::numeric_limits<double>::infinity();
+  pub->publish(bad);
+  spin_ms(400);
+  // 守卫拒绝：goal 参数保持原值，未被 NaN 污染
+  EXPECT_DOUBLE_EQ(decision->get_parameter("goal_x").as_double(), 3.0);
+  EXPECT_DOUBLE_EQ(decision->get_parameter("goal_y").as_double(), 4.0);
+
+  geometry_msgs::msg::PoseStamped good;  // 合法帧仍通过（守卫不误伤）
+  good.pose.position.x = 7.0;
+  good.pose.position.y = 8.0;
+  pub->publish(good);
+  spin_ms(400);
+  EXPECT_DOUBLE_EQ(decision->get_parameter("goal_x").as_double(), 7.0);
+  EXPECT_DOUBLE_EQ(decision->get_parameter("goal_y").as_double(), 8.0);
 }

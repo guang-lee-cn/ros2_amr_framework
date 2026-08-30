@@ -356,9 +356,17 @@ void DecisionNode::on_fusion_heartbeat(const std_msgs::msg::String::SharedPtr ms
 
 void DecisionNode::on_goal_pose(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
 {
+  // 入口校验（三审 P1）：NaN/Inf 直达 world_to_grid 的 static_cast<int> 是 UB，
+  // 坏帧拒绝并告警——goal 是外部输入（DDS 任何人可发），不可信任。
+  const double gx = msg->pose.position.x;
+  const double gy = msg->pose.position.y;
+  if (!std::isfinite(gx) || !std::isfinite(gy)) {
+    RCLCPP_WARN(this->get_logger(), "goal_pose 拒绝：非有限值 (%f, %f)", gx, gy);
+    return;
+  }
   // patrol_3c 发 /goal_pose（替代 ros2 param set /decision，lifecycle 不暴露 param）。
   // 内部 set_parameter → plan loop get_parameter 读新 goal。
-  this->set_parameter(rclcpp::Parameter("goal_x", static_cast<double>(msg->pose.position.x)));
+  this->set_parameter(rclcpp::Parameter("goal_x", gx));
   this->set_parameter(rclcpp::Parameter("goal_y", static_cast<double>(msg->pose.position.y)));
   RCLCPP_INFO(this->get_logger(), "goal_pose: (%.1f, %.1f)",
       msg->pose.position.x, msg->pose.position.y);
