@@ -28,9 +28,12 @@
 - **验证**【铁证】: 重写后全量 secrets-scan success；fastrtps/cyclonedds
   构建腿全绿（cyclonedds 的 negative-count 亦由 -fprofile-update=atomic
   治愈，同日闭环）
-- **⚠️ 不可由 git 侧完成的必做动作**: `ANTHROPIC_AUTH_TOKEN` 与
-  `DEEPSEEK_API_KEY` 自 2026-07-18 暴露于公网历史（近 14 天 34 独立
-  clone 量级），**必须由持有人在对应平台轮换**——重写不撤销已发生的暴露
+- **持有人轮换（2026-08-28 完成闭环）**: 比对确认泄露两变量实为同一枚
+  DeepSeek key（当时 ANTHROPIC_AUTH_TOKEN 复用了它；当前 BigModel token
+  未泄露）。新 key 已替换 ~/.claude/credentials.d/deepseek.key 并实测可用；
+  **旧 key 实测已失效**（平台侧删除 + API 返回 invalid）；本机明文残留
+  （file-history 快照删除 + 会话转录精确串替换）清零。
+  至此泄露 #2 全闭环：历史重写 + key 作废，GitHub 悬空 commit 仅余废纸
 - **教训**: ① colcon 的 build/ 与 log/ 都会捕获完整环境，构建产物目录
   永不入库（.gitignore 已覆盖，泄漏源是 gitignore 之前的 7/18 提交）；
   ② 增量扫描有基线盲区——新装门禁后应先手动 dispatch 一次全量基线
