@@ -6,6 +6,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
+find_package(OpenSSL REQUIRED)  # OTA 签名验证（domain/ota/package_signer.hpp）
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(PCL QUIET)  # optional — for PCL cluster backend + benchmark
@@ -69,7 +70,7 @@ ament_target_dependencies(robot_middleware_lib
 
 rosidl_get_typesupport_target(cpp_typesupport_target
   ${PROJECT_NAME} "rosidl_typesupport_cpp")
-target_link_libraries(robot_middleware_lib "${cpp_typesupport_target}")
+target_link_libraries(robot_middleware_lib "${cpp_typesupport_target}" OpenSSL::Crypto)
 
 # Composable compute nodes — shared library loaded into a container process
 # fusion, decision, motor_ctrl share a process (zero-copy, low latency)
@@ -264,6 +265,7 @@ if(BUILD_TESTING)
   add_amr_test(test_lightweight_rpc quality/src/test_lightweight_rpc.cpp)
   add_amr_test(test_sched_device   quality/src/test_sched_device.cpp)
   add_amr_test(test_ota_agent     quality/src/test_ota_agent.cpp)
+  add_amr_test(test_package_signer quality/src/test_package_signer.cpp)
   add_amr_test(test_fusion         quality/src/test_fusion.cpp)
   add_amr_test(test_observability  quality/src/test_observability.cpp)
   add_amr_test(test_kalman_filter quality/src/test_kalman_filter.cpp)

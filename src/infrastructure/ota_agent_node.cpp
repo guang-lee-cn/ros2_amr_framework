@@ -1,5 +1,7 @@
 #include "ros2_robot_middleware/infrastructure/ota_agent_node.hpp"
 
+#include "ros2_robot_middleware/domain/ota/package_signer.hpp"
+
 #include <filesystem>
 #include <sstream>
 
@@ -21,6 +23,10 @@ OtaAgentNode::OtaAgentNode(const rclcpp::NodeOptions & options)
   // 参数变化足够，且跨发行版行为一致。
   this->declare_parameter<int64_t>("ota.target_version", 0);
   this->declare_parameter<std::string>("ota.health_report", "");
+  // 签名链（§8.3-2）：公钥烧录在设备（参数注入）；签名随版本一同送达。
+  // 缺失/错误/公钥未配置 → 验证失败 → fail-closed 拒绝升级。
+  this->declare_parameter<std::string>("ota.public_key_pem", "");
+  this->declare_parameter<std::string>("ota.target_signature", "");
   last_target_ = this->get_parameter("ota.target_version").as_int();
   poll_timer_ = this->create_wall_timer(
     std::chrono::seconds(1), [this]() {
@@ -97,7 +103,22 @@ void OtaAgentNode::on_param_change(int64_t target)
                  .value_or(0),
                security_counter_, std::move(ops));
 
-  auto r = ota_->run_update(target, /*signature_valid=*/true);  // 一键门面
+  // 真实验签（替换 2026-08-25 审计点名的恒真桩）：任何失败 = 拒绝
+  const std::string sig =
+      this->get_parameter("ota.target_signature").as_string();
+  const std::string pub =
+      this->get_parameter("ota.public_key_pem").as_string();
+  const bool signature_valid = domain::ota::PackageSigner::verify(
+      domain::ota::update_manifest(target), sig, pub);
+  if (signature_valid) {
+    RCLCPP_INFO(get_logger(), "[verify] ed25519 签名通过（v%ld）", target);
+  } else {
+    RCLCPP_ERROR(get_logger(),
+        "[verify] 签名验证失败（v%ld）——fail-closed 拒绝：签名缺失/错误或公钥未配置",
+        target);
+  }
+
+  auto r = ota_->run_update(target, signature_valid);  // 一键门面
   if (r == domain::ota::Result::ACCEPTED &&
       ota_->state() == domain::ota::State::HEALTH_GATE) {
     RCLCPP_INFO(get_logger(),

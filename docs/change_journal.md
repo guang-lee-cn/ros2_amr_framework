@@ -41,7 +41,24 @@
 
 ---
 
-## [2026-08-30] DDS security 真启用（§8.3 头名）— 四段断言实证，认证真的在挡人
+## [2026-08-30] OTA 真签名（§8.3-2）— 恒真桩替换为 ed25519 fail-closed 验签
+
+> 审计 P1-b「签名校验 /*signature_valid=*/true 恒真」——三条安全不变量
+> 之前的信任门从未真正闭合，本次闭合。
+
+- **domain/ota/package_signer.hpp**（OpenSSL EVP，纯 domain）：ed25519
+  detached 签名/验签/密钥生成；被签对象为规范串 amr-ota:v<version>；
+  6 例单测含全部 fail-closed 反例（篡改载荷/换公钥/翻签名/坏 b64/坏 PEM/空输入）
+- **agent 接线**：新参数 ota.public_key_pem（设备烧录）+ ota.target_signature
+  （随版本送达）；on_param_change 先验签再 run_update——缺失/错误/未烧公钥
+  三种路径全部走 REJECTED_SIGNATURE，槽位零触碰（test_ota_agent 扩至 4 例）
+- **既有 2 例改造**：合法签名注入（每例独立密钥对，模拟真实信任链）
+- ADR 增补交付侧 openssl 签发示例（原始 Ed25519 与 PackageSigner 互通）
+- 全套件 36 模块 100%
+
+---
+
+## [2026-08-30] DDS security 真启用（§8.3 头名）— 四段断言实证，认证真的在挡人（§8.3 头名）— 四段断言实证，认证真的在挡人
 
 > 审计遗留头号缺口：「DDS security 从未跑通」。本次以可复跑脚本证明启用
 > （设环境变量不算——野节点被拒、DENY 连入域都不行才算）。

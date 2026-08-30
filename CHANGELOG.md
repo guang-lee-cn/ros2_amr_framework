@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed — OTA 真签名（审计行动 §8.3-2）
+- **恒真桩替换**：`ota_agent` 签名校验 `/*signature_valid=*/true` →
+  ed25519 fail-closed 验签（`domain/ota/package_signer.hpp`，OpenSSL EVP）
+- 信任模型：私钥离线签发/公钥设备烧录（`ota.public_key_pem`），
+  签名随版本送达（`ota.target_signature`）；缺失/错误 → REJECTED_SIGNATURE
+- 测试 +8：签名器 6 例（全反例）+ agent 3 条拒绝路径（槽位零触碰）
+
 ### Added — D1 第三方扩展验收（迭代2）
 - **「X 分钟接入」成为数据**：干净上下文代理两轮实测 19.5min/8 摩擦 →
   修复（宏 token-pasting bug、静态库注册路径文档化、6 处文档对账）→
