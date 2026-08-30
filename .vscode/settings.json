@@ -1,0 +1,11 @@
+{
+  // C/C++ 智能提示已由 clangd 接管（compile_commands.json 在 ros2_ws 根）。
+  // 即使 Windows 侧把 cpptools 又装回来，这里也强制关闭它的 IntelliSense，避免双引擎打架。
+  "C_Cpp.intelliSenseEngine": "disabled",
+
+  "clangd.arguments": [
+    "--background-index",
+    "--header-insertion=never",
+    "--completion-style=detailed"
+  ]
+}

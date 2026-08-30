@@ -91,7 +91,7 @@ SROS2 私钥 11 文件（CA 三件套 + 8 enclave key）随 `8c4873b` 进入已�
 A2 尾款：72h 正式跑出报告入库（随时启动，建议机器空闲期、跑期不重建）
 剩余无依赖：C1(LTTng) > B2 > B3 > E1/E2
 复审新增尾款（ITERATION.md §8.3 优先序）：
-  DDS security 启用 > OTA 真签名 > 告警规则 > systemd/版本对齐 > 27 处裸 QoS 清零
+  ~~DDS security 启用~~✅(08-30 四段断言实证) > OTA 真签名 > 告警规则 > systemd/版本对齐 > 27 处裸 QoS 清零
 Orin 到货后：A1 → A3 → A4 → D2 → E3（真机线 =「商用验证级」门槛）
 ```
 

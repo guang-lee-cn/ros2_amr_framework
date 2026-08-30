@@ -1,15 +1,20 @@
 """SROS2 secure launch — DDS-Security keys for all nodes.
 
-Prerequisites (one-time):
+2026-08-30 修通（此前从未工作过）：per-node 身份必须经 ros args
+`--ros-args --enclave /<name>` 传递——仅设 ROS_SECURITY_* 环境变量时
+fqn 不会拼入安全目录路径（strace 实证，见 verify_dds_security.sh 头注）。
+
+Prerequisites (one-time; keystore 在 gitignore 内，不入库):
   cd config/sros2
   ros2 security create_keystore .
-  for n in /lidar /imu /camera /compute /health_monitor; do
+  for n in /lidar /imu /camera /fusion /decision /motor_ctrl /health_monitor; do
     ros2 security create_enclave . $n
   done
+  # 注意: keystore 经 install(DIRECTORY config) 拷入 share——重生成后需
+  # colcon build 刷新 install 侧副本（或外部覆盖 ROS_SECURITY_KEYSTORE）。
 
-Verification:
-  ros2 topic echo /sensor/lidar  # unauthorized nodes cannot subscribe
-  tcpdump -i lo -A | grep "lidar"  # data is encrypted
+Verification: ./scripts/verify_dds_security.sh
+  （四段断言: 认证互通/野节点被拒/真实栈 Enforce/授权 DENY 拒入域）
 """
 
 import os
@@ -42,6 +47,7 @@ def generate_launch_description():
             executable="lidar_node",
             name="lidar",
             namespace="",
+            arguments=["--ros-args", "--enclave", "/lidar"],
             additional_env=env,
             output="screen",
         ),
@@ -50,6 +56,7 @@ def generate_launch_description():
             executable="imu_node",
             name="imu",
             namespace="",
+            arguments=["--ros-args", "--enclave", "/imu"],
             additional_env=env,
             output="screen",
         ),
@@ -58,6 +65,7 @@ def generate_launch_description():
             executable="camera_node",
             name="camera",
             namespace="",
+            arguments=["--ros-args", "--enclave", "/camera"],
             additional_env=env,
             output="screen",
         ),
@@ -68,6 +76,8 @@ def generate_launch_description():
             executable="compute_container",
             name="compute",
             namespace="",
+            # 容器单进程单身份: fusion/decision/motor 共用 /fusion enclave
+            arguments=["--ros-args", "--enclave", "/fusion"],
             additional_env=env,
             output="screen",
         ),
@@ -81,6 +91,7 @@ def generate_launch_description():
             executable="health_monitor_node",
             name="health_monitor",
             namespace="",
+            arguments=["--ros-args", "--enclave", "/health_monitor"],
             additional_env=env,
             output="screen",
         ),

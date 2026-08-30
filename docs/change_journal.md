@@ -41,6 +41,33 @@
 
 ---
 
+## [2026-08-30] DDS security 真启用（§8.3 头名）— 四段断言实证，认证真的在挡人
+
+> 审计遗留头号缺口：「DDS security 从未跑通」。本次以可复跑脚本证明启用
+> （设环境变量不算——野节点被拒、DENY 连入域都不行才算）。
+
+- **排障三发现（均为 strace/实证级）**:
+  1. **enclave 必须走 ros args**：`--ros-args --enclave /<name>`——仅设
+     ROS_SECURITY_* 环境变量（含 ROS_SECURITY_NODE_NAME）时 fqn 不拼入
+     安全目录路径，参与者报 couldn't find all security files。这是
+     system_secure.launch.py 从未工作过的真正原因
+  2. `create_enclave` 自带已签 governance + 全通行 permissions（rt/*，仅
+     domain 0）——认证材料开箱即得；授权收窄才需自签 permissions
+  3. `create_permission` 的 schema 校验在本环境解析失败（连自家模板都过
+     不了）；DENY 用 openssl CMS 手工签名等价替代（FastDDS 实测接受）
+- **`scripts/verify_dds_security.sh`（四段断言，自含临时 keystore）**:
+  A 认证互通（合法 enclave 加密通信）✅ B 野节点被拒（无凭证 0 条）✅
+  C 真实栈（scene_simulator Enforce 下发布 /odom）✅
+  D 授权拒绝（DENY permissions → Participant is not allowed，连 join 都不行）✅
+  —— 首轮即 PASS=4
+- **system_secure.launch.py 修通**：五个节点全部补 `--ros-args --enclave`
+  （compute_container 单进程单身份用 /fusion）；keystore 的 install 侧
+  拷贝语义（重生成需 colcon build 刷新）写入头注
+- **遗留**: 生产 compose 的安全变量注入（真机部署时一并）；D 段的手签
+  依赖本机 openssl（脚本内已自含）
+
+---
+
 ## [2026-08-26] D1 第三方扩展验收：19.5min/8 摩擦 → 修复 → 8m48s/2 摩擦一次全过
 
 > 迭代 2 D1——「可扩展」唯一无法自证的词，用两个干净上下文的 AI 子代理
