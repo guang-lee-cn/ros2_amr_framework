@@ -1,5 +1,5 @@
 # 由 coverage_report.py 从 lcov .info 直算（DA 行口径）
-# 聚合: 2689/3011 = 89.3%  文件数: 54
+# 聚合: 2783/3106 = 89.6%  文件数: 55
 domain/planning/target_selector.hpp                                      0.0%      0/    2
 src/infrastructure/camera_node.cpp                                      63.8%     37/   58
 hal/sensor/isensor.hpp                                                  64.7%     11/   17
@@ -22,13 +22,14 @@ domain/device/device_registry.hpp                                       90.9%   
 src/infrastructure/scene_simulator_node.cpp                             93.9%    139/  148
 domain/execution/collision_guard.hpp                                    95.2%     79/   83
 domain/rpc/lightweight_rpc.hpp                                          95.2%     60/   63
-src/infrastructure/ota_agent_node.cpp                                   95.3%     81/   85
+src/infrastructure/ota_agent_node.cpp                                   95.7%     90/   94
 domain/planning/path_smoother.hpp                                       97.3%     71/   73
 domain/perception/depth_obstacle_detector.hpp                           98.0%     49/   50
 domain/execution/pure_pursuit.hpp                                       98.3%     58/   59
 domain/perception/cluster_detector.hpp                                  98.4%     62/   63
 domain/perception/perception_service.hpp                                98.4%     62/   63
 domain/execution/vfh_avoidance.hpp                                      98.7%     74/   75
+domain/ota/package_signer.hpp                                           98.8%     85/   86
 domain/planning/astar_planner.hpp                                       98.9%     92/   93
 domain/execution/velocity_smoother.hpp                                 100.0%     11/   11
 domain/monitoring/heartbeat_analyzer.hpp                               100.0%      5/    5
