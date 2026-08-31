@@ -183,3 +183,79 @@ Wave R5 部署链
 **零 Reject**——审计没有口味问题，全部是断言与事实的冲突。这不是审计太强，
 是我的方案在 R4.3/R3.1/R3.2 三处犯了它自己要根治的同类错误（宣称未经
 验证）。方案审计的价值正是把这道防线从代码层延伸到了方案层。
+
+
+---
+
+## 六、决策记录审计裁决（2026-09-01 第三轮）
+
+> 输入：`20260901-reaudit-decision-record-audit.md`——对本 ADR 的执行前审计。
+> 核验方法：逐条命令级独立取证。
+
+### 核验记录
+
+| 审计发现 | 我的核验 | 结论 |
+|----------|---------|------|
+| F-1 S-2 机制不存在 | `grep -c create_subscription supervisor_node.cpp` = **0**；:289 是 create_pub | **属实** |
+| F-2 R2.1 锁错回归点 | node 侧 `declare_parameter("guard_min_valid_echoes", 0)` 覆写 domain 默认 | **属实** |
+| F-3 CLAUDE.md:30 同源假叙事 | 原文确认存在 | **属实** |
+| S-B health_monitor 手搓 QoS | :133/:232 两处 `rclcpp::QoS(10).reliable()` | **属实** |
+
+### F-1 S-2 重裁决：选改法 a（诚实降级）
+
+**为什么**：R4.2 第一阶段只做「ERROR 状态上 /health/report + ERROR 日志」。
+接管接线（supervisor 订阅 /health/report + ERROR 策略）单列条目 R4.2b，
+显式排期到 R3 后（需要 supervisor 新增订阅逻辑 + e2e 验证门）。
+
+**理由**：
+1. 我写的「用现有机制不加新通道」犯了具体化未验证的错误——supervisor
+   零订阅，/supervisor/report 是输出不是输入，被卡死的 lifecycle 节点在
+   compute_container 进程内活着、supervisor 的进程级探测原理上看不见它
+2. 改法 a 零新通道、宣称与实现一致——度量诚实波不引入新宣称
+3. 改法 b（supervisor 新增订阅）是正确终态但是新功能——单列排期比
+   塞进 R4.2 更诚实
+
+### F-2 R2.1 重裁决：单一事实源常量
+
+**修法更新**：
+```
+collision_guard.hpp:
+  inline constexpr int kDefaultMinValidEchoes = 50;  // fail-safe default
+  struct Params { ... int min_valid_echoes = kDefaultMinValidEchoes; ... };
+
+motor_ctrl_node.cpp:
+  declare_parameter("guard_min_valid_echoes", kDefaultMinValidEchoes);
+```
+域测断言常量值 == 50；grep 验证 node 侧引用 kDefault 而非字面量——
+node 默认值无法独立于 domain 回退。
+
+### F-3 R4.3 补：CLAUDE.md:30 同步
+
+原裁决只改 ARCHITECTURE.md——审计正确指出 CLAUDE.md:30 有同源叙事
+（「跨进程 DDS 故意保留，不要优化掉」），只改一处会两份文档互相矛盾。
+
+**修法**：R4.3 执行清单补一行，CLAUDE.md:30 同步改为
+「真机形态规划为跨进程 DDS（故障隔离），当前默认 launch 未接线——见
+ARCHITECTURE.md 数据流注」。
+
+### P-1/P-2/P-3 措辞更正
+
+| # | 原文 | 更正 |
+|---|------|------|
+| P-1 | R1.1「真根因**锁定**为」 | 「高置信假设；R1.3 的 grep supervisor_node 门即终验」 |
+| P-2 | R4.3 理由 3「届时按 D1 验收的 8 分钟接入路径实现」 | 删去「8 分钟」（跨形态外推未验证），保留时机判断 |
+| P-3 | R4.4「发 v2.2.1（patch）」 | 改 v2.3.0——内容含默认值反转（行为变更）+竞态修复，semver 偏 minor |
+
+### S-A/S-B 补充
+
+| # | 裁决 |
+|---|------|
+| S-A | R2.2 注释口径清单补 motor_ctrl_node.cpp:32 的 "(sim)" 同步改 |
+| S-B | health_monitor :133/:232 手搓 QoS → amr::qos::reliable_stream()（R4.2 触碰同区域顺带修） |
+
+### 元教训（三连击的规律）
+
+P0-I（代码宣称未验证）→ 方案层 R4.3/R3.1/R3.2（方案断言未验证）→
+本 ADR 的 S-2/R2.1（具体化未验证）——**每往下一层具体化，验证就松一层**。
+规律：当把别处的建议具体化为自己的机制断言时，验证必须跟着升级到
+命令级。这比 CLAUDE.md 的「同类调用 grep」防线更深一层。
