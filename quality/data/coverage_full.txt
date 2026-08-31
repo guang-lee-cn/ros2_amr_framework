@@ -1,21 +1,24 @@
 # 由 coverage_report.py 从 lcov .info 直算（DA 行口径）
-# 聚合: 2795/3115 = 89.7%  文件数: 55
+# 聚合: 3001/3464 = 86.6%  文件数: 59
 domain/planning/target_selector.hpp                                      0.0%      0/    2
+src/infrastructure/health_monitor_node.cpp                              53.4%    135/  253
+src/infrastructure/prometheus_http_server.cpp                           62.0%     31/   50
 src/infrastructure/camera_node.cpp                                      63.8%     37/   58
 hal/sensor/isensor.hpp                                                  64.7%     11/   17
 src/infrastructure/imu_node.cpp                                         71.4%     35/   49
 src/infrastructure/lidar_node.cpp                                       71.8%     51/   71
 src/infrastructure/temperature_node.cpp                                 74.1%     40/   54
 src/infrastructure/ultrasonic_node.cpp                                  75.4%     43/   57
+domain/monitoring/heartbeat_analyzer.hpp                                76.9%     10/   13
 src/infrastructure/decision_node.cpp                                    79.2%    221/  279
 src/infrastructure/temperature_monitor_node.cpp                         81.6%     40/   49
 src/infrastructure/motor_ctrl_node.cpp                                  82.3%    204/  248
 src/infrastructure/fusion_node.cpp                                      82.9%    180/  217
-domain/monitoring/recovery_policy.hpp                                   83.3%      5/    6
 domain/simulation/simulated_scene.hpp                                   83.9%     52/   62
 hal/sensor/sensor_factory.hpp                                           84.4%     27/   32
 src/observability/metrics_registry.cpp                                  85.2%     23/   27
 domain/ota/ota_coordinator.hpp                                          85.3%     64/   75
+infrastructure/diagnostics_publisher.hpp                                85.7%     24/   28
 domain/monitoring/supervisor_policy.hpp                                 86.6%     97/  112
 domain/perception/degradation_policy.hpp                                88.2%     30/   34
 domain/device/device_registry.hpp                                       90.9%     20/   22
@@ -32,8 +35,8 @@ domain/execution/vfh_avoidance.hpp                                      98.7%   
 domain/ota/package_signer.hpp                                           98.8%     85/   86
 domain/planning/astar_planner.hpp                                       98.9%     92/   93
 domain/execution/velocity_smoother.hpp                                 100.0%     11/   11
-domain/monitoring/heartbeat_analyzer.hpp                               100.0%      5/    5
-domain/monitoring/monitoring_service.hpp                               100.0%     25/   25
+domain/monitoring/monitoring_service.hpp                               100.0%     32/   32
+domain/monitoring/recovery_policy.hpp                                  100.0%      6/    6
 domain/perception/icluster_algorithm.hpp                               100.0%      1/    1
 domain/perception/kalman_filter.hpp                                    100.0%    158/  158
 domain/perception/stamp_gate.hpp                                       100.0%     16/   16
@@ -50,6 +53,7 @@ hal/sensor/simulated_sensors.hpp                                       100.0%   
 hal/sensor/temperature_sensor.hpp                                      100.0%     23/   23
 hal/sensor/ultrasonic_sensor.hpp                                       100.0%     27/   27
 infrastructure/amr_node.hpp                                            100.0%     20/   20
+infrastructure/prometheus_http_server.hpp                              100.0%      3/    3
 infrastructure/qos_profiles.hpp                                        100.0%      8/    8
 infrastructure/scene_simulator_node.hpp                                100.0%      2/    2
 infrastructure/tf2_transform_provider.hpp                              100.0%     34/   34
