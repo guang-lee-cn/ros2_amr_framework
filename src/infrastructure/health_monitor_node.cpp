@@ -175,7 +175,7 @@ void HealthMonitorNode::check_health()
       if (monitor_.should_recover(cfg.node)) {
         RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
                               "[%s] ERROR: triggering restart", cfg.node);
-        try_restart_sequence(cfg.node);
+        begin_restart(cfg.node);  // 异步发起，回调内零阻塞（P0-C）
       } else {
         RCLCPP_ERROR(this->get_logger(), "[%s] FATAL: restart limit exceeded",
                      cfg.node);
@@ -234,57 +234,88 @@ void HealthMonitorNode::create_report_publisher()
 
 void HealthMonitorNode::create_restart_clients()
 {
+  restart_group_ = this->create_callback_group(
+      rclcpp::CallbackGroupType::MutuallyExclusive);
   for (const auto &cfg : kNdes) {
     restart_clients_[cfg.node] =
       this->create_client<lifecycle_msgs::srv::ChangeState>(
-        std::string(cfg.node) + "/change_state");
+        std::string(cfg.node) + "/change_state",
+        rmw_qos_profile_services_default, restart_group_);
   }
 }
 
-bool HealthMonitorNode::try_restart_sequence(const std::string &node_name)
+void HealthMonitorNode::begin_restart(const std::string &node_name)
 {
-  auto it = restart_clients_.find(node_name);
-  if (it == restart_clients_.end()) return false;
-
-  auto &client = it->second;
-  using Transition = lifecycle_msgs::msg::Transition;
-
-  if (!client->wait_for_service(std::chrono::seconds(1))) {
-    RCLCPP_WARN(this->get_logger(), "[%s] lifecycle service unreachable", node_name.c_str());
-    return false;
+  if (restart_.in_progress) {
+    RCLCPP_DEBUG(this->get_logger(),
+                 "[%s] 重启已在进行（%s step %zu），跳过", node_name.c_str(),
+                 restart_.node.c_str(), restart_.step);
+    return;
   }
+  auto it = restart_clients_.find(node_name);
+  if (it == restart_clients_.end()) return;
+  restart_ = {node_name, 0, true};
+  RCLCPP_WARN(this->get_logger(), "[%s] 启动异步重启序列（4 步 transition）",
+              node_name.c_str());
+  send_next_transition();
+}
 
-  const std::array<std::pair<uint8_t, const char *>, 4> sequence = {{
+void HealthMonitorNode::send_next_transition()
+{
+  using Transition = lifecycle_msgs::msg::Transition;
+  static constexpr std::array<std::pair<uint8_t, const char *>, 4> kSequence = {{
     {Transition::TRANSITION_DEACTIVATE, "deactivate"},
     {Transition::TRANSITION_CLEANUP,    "cleanup"},
     {Transition::TRANSITION_CONFIGURE,  "configure"},
     {Transition::TRANSITION_ACTIVATE,   "activate"},
   }};
 
-  for (const auto &[id, label] : sequence) {
-    auto request = std::make_shared<lifecycle_msgs::srv::ChangeState::Request>();
-    request->transition.id    = id;
-    request->transition.label = label;
-
-    auto future   = client->async_send_request(request);
-    auto status   = future.wait_for(std::chrono::seconds(2));
-
-    if (status != std::future_status::ready) {
-      RCLCPP_WARN(this->get_logger(), "[%s] %s timed out", node_name.c_str(), label);
-      return false;
-    }
-
-    auto response = future.get();
-    if (!response->success) {
-      RCLCPP_WARN(this->get_logger(), "[%s] %s rejected (wrong state?)",
-                   node_name.c_str(), label);
-      return false;
-    }
+  if (restart_.step >= kSequence.size()) {
+    RCLCPP_INFO(this->get_logger(), "[%s] restart sequence completed successfully",
+                restart_.node.c_str());
+    restart_ = {};
+    return;
   }
 
-  RCLCPP_INFO(this->get_logger(), "[%s] restart sequence completed successfully",
-               node_name.c_str());
-  return true;
+  auto it = restart_clients_.find(restart_.node);
+  if (it == restart_clients_.end()) { restart_ = {}; return; }
+  auto &client = it->second;
+
+  // 非阻塞就绪检查（旧 wait_for_service(1s) 是死锁要素之一）
+  if (!client->service_is_ready()) {
+    RCLCPP_WARN(this->get_logger(), "[%s] lifecycle service unreachable — 放弃本轮重启",
+                restart_.node.c_str());
+    restart_ = {};
+    return;
+  }
+
+  auto request = std::make_shared<lifecycle_msgs::srv::ChangeState::Request>();
+  request->transition.id    = kSequence[restart_.step].first;
+  request->transition.label = kSequence[restart_.step].second;
+
+  // 响应回调推进状态机——不等待（旧 future.wait_for(2s) 是死锁主因：
+  // 单线程 spin 里响应永远轮不到被处理）
+  client->async_send_request(
+      request,
+      [this](rclcpp::Client<lifecycle_msgs::srv::ChangeState>::SharedFuture f) {
+        handle_transition_response(f);
+      });
+}
+
+void HealthMonitorNode::handle_transition_response(
+    rclcpp::Client<lifecycle_msgs::srv::ChangeState>::SharedFuture future)
+{
+  const auto response = future.get();
+  const auto step_labels = std::array<const char *, 4>{
+      "deactivate", "cleanup", "configure", "activate"};
+  if (!response->success) {
+    RCLCPP_WARN(this->get_logger(), "[%s] %s rejected（状态不对/已死）— 中止重启",
+                restart_.node.c_str(), step_labels[restart_.step < 4 ? restart_.step : 0]);
+    restart_ = {};
+    return;
+  }
+  ++restart_.step;
+  send_next_transition();  // 链式推进，零阻塞
 }
 
 std::string HealthMonitorNode::prometheus_metrics() const

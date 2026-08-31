@@ -41,6 +41,32 @@
 
 ---
 
+## [2026-08-30] P0-C 重启序列异步化——「从第一天就不可能工作」的看门狗首次真工作
+
+> 三审 P0-C 收官（Wave 1 全项完成）。旧实现三死锁要素：单线程 spin + 定时器
+> 回调内 wait_for_service(1s) + 4×future.wait_for(2s)——响应永远轮不到被
+> 处理，每个 transition 必超时，重启从未成功过。
+
+- **异步状态机**：begin_restart（零阻塞入口）→ send_next_transition
+  （service_is_ready 替代 wait_for_service）→ 响应回调链式推进四步
+  （deactivate→cleanup→configure→activate）；客户端挂独立 callback group
+  （多线程 executor 可并行）；单飞约束（一次一台，防重启风暴）
+- **行为验收（test_health_restart，37 号模块）**：FakeLidar 停心跳（功能性
+  死亡，lifecycle 活）→ 监控 ERROR → 四步完成 → 心跳恢复救活。**实测
+  触发到完成 1ms**（旧实现 8s 超时后失败）。SingleThreadedExecutor 与生产
+  main 同形态——修复不依赖多线程
+- **排障三轮的教训入账**（差点误修生产代码）：
+  1. 测试首版用裸 sleep 等发现——rclcpp 定时器只在 spin 时触发，睡眠期
+     零心跳发布，STALE(never-seen) 永不升级 ERROR，重启自然不触发。
+     隔离自检+二分+探针三轮定位后才确认毒在测试自身
+  2. 排障脚手架的正则清理吞掉 return → 非 void 无返回 UB → SIGILL，
+     gdb 一发定位
+  3. 顺带发现（未修，记账）：HeartbeatAnalyzer 的 STALE=never-received
+     永不升级 ERROR——冷启动即死的节点永远不被重启（审计 P1 族，
+     与 B7 冷启动门控同族），Wave 2 后单独裁决
+
+---
+
 ## [2026-08-30] 三审 Wave 1 安全兜底链批次 + cppcheck 失明调查 + WSL OOM 事故
 
 > 执行方案：docs/design/20260830-audit3-execution-plan.md Wave 1（1.1/1.3/1.4/1.5）。

@@ -45,7 +45,23 @@ private:
   void check_health();
 
   void create_restart_clients();
-  bool try_restart_sequence(const std::string &node_name);
+
+  // ── P0-C 异步重启状态机（三审 2026-08-30）─────────────────────────────
+  // 旧实现：回调内 wait_for_service(1s) + 4×future.wait_for(2s) 同步等待 +
+  // 单线程 spin = 结构性死锁（响应永远无法被处理，每个 transition 必超时，
+  // 重启从第一天起就不可能成功）。新实现零阻塞：定时器只发起第一步，
+  // 响应回调链式推进，service_is_ready() 替代 wait_for_service。
+  struct RestartState {
+    std::string node;
+    size_t step = 0;       // 0..3: deactivate→cleanup→configure→activate
+    bool in_progress = false;
+  };
+  void begin_restart(const std::string &node_name);
+  void send_next_transition();
+  void handle_transition_response(
+      rclcpp::Client<lifecycle_msgs::srv::ChangeState>::SharedFuture future);
+  RestartState restart_;
+  rclcpp::CallbackGroup::SharedPtr restart_group_;  // 响应回调独立组（可迁移多线程）
 
   std::string prometheus_metrics() const;
 
