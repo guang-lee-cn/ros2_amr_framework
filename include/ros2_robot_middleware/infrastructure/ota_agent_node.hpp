@@ -43,6 +43,10 @@ private:
   std::string last_report_;
   rclcpp::TimerBase::SharedPtr poll_timer_;
   std::optional<domain::ota::OtaCoordinator> ota_;
+  // 三审 P0-E/D：构造期钉住的公钥（root 属主只读文件）+ 镜像目录——
+  // 运行时参数替换对二者均无效，fetch 对实际镜像字节做 sha256 复验
+  std::string pinned_public_key_;
+  std::string image_dir_;
 };
 
 }  // namespace infrastructure

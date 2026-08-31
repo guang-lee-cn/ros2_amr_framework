@@ -31,6 +31,34 @@ inline std::string update_manifest(int64_t version)
   return "amr-ota:v" + std::to_string(version);
 }
 
+/// P0-D（三审 2026-08-31）：内容绑定 manifest——签名对象从裸版本号升级为
+/// {version, sha256, size} 整体。旧格式只证明「有人授权过这个版本号」，
+/// 不证明「进槽的就是那份镜像」——合法签名 + 任意恶意内容可进槽。
+inline std::string image_manifest(int64_t version, const std::string &sha256_hex,
+                                  uint64_t size_bytes)
+{
+  return "amr-ota:v" + std::to_string(version) + ";sha256=" + sha256_hex +
+         ";size=" + std::to_string(size_bytes);
+}
+
+/// SHA-256 摘要（hex 小写）。镜像内容复验的哈希源——OpenSSL EVP，
+/// 与签名器同文件（domain 纯度：零 ROS 头）。
+inline std::string sha256_hex(const void *data, std::size_t len)
+{
+  unsigned char md[EVP_MAX_MD_SIZE];
+  unsigned int md_len = 0;
+  if (!EVP_Digest(data, len, md, &md_len, EVP_sha256(), nullptr) || md_len == 0) {
+    return {};
+  }
+  static const char kHex[] = "0123456789abcdef";
+  std::string out(md_len * 2, '0');
+  for (unsigned int i = 0; i < md_len; ++i) {
+    out[2 * i]     = kHex[md[i] >> 4];
+    out[2 * i + 1] = kHex[md[i] & 0xF];
+  }
+  return out;
+}
+
 namespace detail {
 
 inline std::string b64_encode(const unsigned char *data, std::size_t len)

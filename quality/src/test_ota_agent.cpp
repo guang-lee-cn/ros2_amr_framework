@@ -25,6 +25,7 @@ struct SlotEnv {
     put(dir + "/slots/slotA/version.txt", "10\n");
     put(dir + "/slots/slotB/version.txt", "9\n");
     put(dir + "/boot_target", "A\n");
+    fs::create_directories(dir + "/images");
   }
   ~SlotEnv() { fs::remove_all(dir); }
   static void put(const std::string & p, const std::string & v)
@@ -61,17 +62,30 @@ protected:
   static void TearDownTestSuite() { rclcpp::shutdown(); }
 
   // 签名链测试基建：每例独立密钥对（模拟设备烧公钥 + 交付侧签发）
-  std::string priv_, pub_;
+  std::string priv_, pub_, pub_file_;
   void SetUp() override
   {
     ASSERT_TRUE(amr::domain::ota::PackageSigner::generate_keypair(priv_, pub_));
+    // P0-E：公钥走文件（root 属主只读的模拟）
+    pub_file_ = "/tmp/amr_ota_test_pub_" +
+                std::to_string(reinterpret_cast<uintptr_t>(this)) + ".pem";
+    { std::ofstream f(pub_file_, std::ios::trunc); f << pub_; }
   }
-  /// 先放签名再放目标（agent 1Hz 轮询只对 target 变化触发）
+  void TearDown() override { std::remove(pub_file_.c_str()); }
+  /// 放置镜像 + 内容绑定签名（P0-D：签 {version, sha256, size} 整体）
   void set_signed_target(const std::shared_ptr<amr::infrastructure::OtaAgentNode> & n,
-                         int64_t version, const std::string & private_key)
+                         int64_t version, const std::string & dir,
+                         const std::string & private_key,
+                         const std::string & image_content = "FAKE-IMAGE-BYTES")
   {
+    const std::string img = dir + "/images/v" + std::to_string(version) + ".img";
+    { std::ofstream f(img, std::ios::trunc | std::ios::binary); f << image_content; }
     const auto sig = amr::domain::ota::PackageSigner::sign(
-        amr::domain::ota::update_manifest(version), private_key);
+        amr::domain::ota::image_manifest(
+            version,
+            amr::domain::ota::sha256_hex(image_content.data(), image_content.size()),
+            image_content.size()),
+        private_key);
     ASSERT_FALSE(sig.empty());
     ASSERT_TRUE(n->set_parameter(rclcpp::Parameter("ota.target_signature", sig)).successful);
     ASSERT_TRUE(n->set_parameter(rclcpp::Parameter("ota.target_version", version)).successful);
@@ -84,10 +98,10 @@ TEST_F(OtaAgentTest, OneKeyUpgradeCommitsAndFlipsSlot) {
     rclcpp::NodeOptions()
       .append_parameter_override("ota.slot_dir", env.dir)
       .append_parameter_override("ota.security_counter", 8)
-      .append_parameter_override("ota.public_key_pem", pub_));
+      .append_parameter_override("ota.public_key_file", pub_file_));
 
   // 一键升级：签名+版本注入 → HEALTH_GATE（标记已切、版本已写非活动槽）
-  set_signed_target(node, 12, priv_);
+  set_signed_target(node, 12, env.dir, priv_);
   spin_brief(node);
   EXPECT_EQ(SlotEnv::get(env.dir + "/boot_target"), "B");        // 引导标记翻转
   EXPECT_EQ(SlotEnv::get(env.dir + "/slots/slotB/version.txt"), "12");  // 只写非活动槽
@@ -97,7 +111,7 @@ TEST_F(OtaAgentTest, OneKeyUpgradeCommitsAndFlipsSlot) {
   ASSERT_TRUE(node->set_parameter(health).successful);
   spin_brief(node);
   // 提交后安全计数器=12 → 降级请求应被拒：槽位不再变化
-  set_signed_target(node, 5, priv_);  // 合法签名——防降级由安全计数器拦截
+  set_signed_target(node, 5, env.dir, priv_);  // 合法签名——防降级由安全计数器拦截
   spin_brief(node);
   EXPECT_EQ(SlotEnv::get(env.dir + "/boot_target"), "B");        // 未被触碰
   EXPECT_EQ(SlotEnv::get(env.dir + "/slots/slotB/version.txt"), "12");
@@ -109,9 +123,9 @@ TEST_F(OtaAgentTest, HealthFailRollsBack) {
     rclcpp::NodeOptions()
       .append_parameter_override("ota.slot_dir", env.dir)
       .append_parameter_override("ota.security_counter", 8)
-      .append_parameter_override("ota.public_key_pem", pub_));
+      .append_parameter_override("ota.public_key_file", pub_file_));
 
-  set_signed_target(node, 11, priv_);
+  set_signed_target(node, 11, env.dir, priv_);
   spin_brief(node);
   EXPECT_EQ(SlotEnv::get(env.dir + "/boot_target"), "B");        // 已切到候选
   ASSERT_TRUE(node->set_parameter(
@@ -128,13 +142,19 @@ TEST_F(OtaAgentTest, BadSignature_RejectedWithoutTouchingSlots) {
     rclcpp::NodeOptions()
       .append_parameter_override("ota.slot_dir", env.dir)
       .append_parameter_override("ota.security_counter", 8)
-      .append_parameter_override("ota.public_key_pem", pub_));
+      .append_parameter_override("ota.public_key_file", pub_file_));
 
   // 坏签名（正确格式但不是本设备公钥对应的私钥所签）
   std::string other_priv, other_pub;
   ASSERT_TRUE(amr::domain::ota::PackageSigner::generate_keypair(other_priv, other_pub));
+  { std::ofstream f(env.dir + "/images/v12.img", std::ios::trunc | std::ios::binary);
+    f << "FAKE-IMAGE-BYTES"; }
+  const std::string img_bytes = "FAKE-IMAGE-BYTES";
   const auto forged = amr::domain::ota::PackageSigner::sign(
-      amr::domain::ota::update_manifest(12), other_priv);
+      amr::domain::ota::image_manifest(
+          12, amr::domain::ota::sha256_hex(img_bytes.data(), img_bytes.size()),
+          img_bytes.size()),
+      other_priv);
   ASSERT_TRUE(node->set_parameter(rclcpp::Parameter("ota.target_signature", forged)).successful);
   ASSERT_TRUE(node->set_parameter(rclcpp::Parameter("ota.target_version", 12)).successful);
   spin_brief(node);
@@ -155,8 +175,28 @@ TEST_F(OtaAgentTest, MissingPublicKey_EverythingRejected) {
     rclcpp::NodeOptions()
       .append_parameter_override("ota.slot_dir", env.dir)
       .append_parameter_override("ota.security_counter", 8));  // 未烧公钥
-  set_signed_target(node, 12, priv_);  // 签名本身合法也没用
+  set_signed_target(node, 12, env.dir, priv_);  // 签名本身合法也没用
   spin_brief(node);
   EXPECT_EQ(SlotEnv::get(env.dir + "/boot_target"), "A");
   EXPECT_EQ(SlotEnv::get(env.dir + "/slots/slotB/version.txt"), "9");
+}
+
+// ── 三审 P0-D：镜像内容篡改 → 内容绑定验签拒绝 ──────────────────────────
+// 版本号不变、签名合法，但镜像字节被换——旧实现（签裸版本号）放行，
+// 新实现对实际字节算 sha256 与签名比对，必须拒绝。
+TEST_F(OtaAgentTest, TamperedImageContent_RejectedDespiteValidVersionSig) {
+  SlotEnv env("tamper");
+  auto node = std::make_shared<amr::infrastructure::OtaAgentNode>(
+    rclcpp::NodeOptions()
+      .append_parameter_override("ota.slot_dir", env.dir)
+      .append_parameter_override("ota.security_counter", 8)
+      .append_parameter_override("ota.public_key_file", pub_file_));
+
+  // 签发针对内容 A，实际放置内容 B（同版本号）
+  set_signed_target(node, 12, env.dir, priv_, "SIGNED-CONTENT-A");
+  { std::ofstream f(env.dir + "/images/v12.img", std::ios::trunc | std::ios::binary);
+    f << "TAMPERED-CONTENT-B"; }
+  spin_brief(node);
+  EXPECT_EQ(SlotEnv::get(env.dir + "/boot_target"), "A");              // 未切
+  EXPECT_EQ(SlotEnv::get(env.dir + "/slots/slotB/version.txt"), "9");  // 未写
 }

@@ -161,7 +161,9 @@ install(PROGRAMS scripts/verify_dds_security.sh DESTINATION share/${PROJECT_NAME
 install(PROGRAMS scripts/scan_filter.py DESTINATION lib/${PROJECT_NAME} RENAME scan_filter)
 
 install(DIRECTORY config launch worlds urdf
-  DESTINATION share/${PROJECT_NAME})
+  DESTINATION share/${PROJECT_NAME}
+  PATTERN "sros2/private" EXCLUDE   # 三审 P0-F：私钥绝不随 install 分发
+  PATTERN "sros2/enclaves" EXCLUDE)  # enclave 私钥同理（部署侧独立注入）
 install(PROGRAMS scripts/verify_ros2_control.sh DESTINATION share/${PROJECT_NAME})
 
 # ── Performance instrumentation option ──────────────────────────────

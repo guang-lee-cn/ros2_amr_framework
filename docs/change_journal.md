@@ -41,6 +41,26 @@
 
 ---
 
+## [2026-08-31] 三审 Wave 3 信任链收口 — 验签绑内容/公钥钉住/install 排私钥
+
+- **P0-D 内容绑定验签**：签名对象从裸版本号 `"amr-ota:v12"` 升级为
+  `{version, sha256, size}` 整体（`image_manifest` + `sha256_hex`，OpenSSL
+  EVP）。fetch 从恒真桩变为「读镜像文件 → 对实际字节算哈希 → 与签名比对」
+  ——版本号不变、镜像被换的场景（旧实现放行）现在必拒。新增
+  TamperedImageContent 测试锁定该攻击路径
+- **P0-E 公钥出参数域**：`ota.public_key_pem`（运行时可 set 的字符串参数，
+  攻击者可同时替换公钥+签名+版本完成"合法"升级）删除 → `ota.public_key_file`
+  （构造期读文件一次性钉住 `pinned_public_key_`，运行时参数替换无效）
+- **P0-F install 排私钥**：`install(DIRECTORY config)` 加
+  `PATTERN "sros2/private" EXCLUDE` + `PATTERN "sros2/enclaves" EXCLUDE`
+  ——make install 不再把 CA 三件套/enclave 私钥拷进 share 分发；本机
+  keystore 全部私钥 chmod 600。附注：本 keystore 的 identity/permissions
+  CA 是同一把 key 的软链（sros2 工具行为）——商用部署需独立双 CA，
+  已在 ota-adr 记录为真机前置项
+- 测试：test_ota_agent 2→5 例（内容绑定/篡改拒绝/未烧公钥），37 模块全绿
+
+---
+
 ## [2026-08-31] 三审 Wave 2 防线机制 — ASAN 进 CI + -Werror 零警告 + TSAN 手册
 
 - **ASAN job 接入 CI**（asan-gate）：cppcheck 对跨函数指针逃逸类 UAF 的

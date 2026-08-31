@@ -23,10 +23,30 @@ OtaAgentNode::OtaAgentNode(const rclcpp::NodeOptions & options)
   // 参数变化足够，且跨发行版行为一致。
   this->declare_parameter<int64_t>("ota.target_version", 0);
   this->declare_parameter<std::string>("ota.health_report", "");
-  // 签名链（§8.3-2）：公钥烧录在设备（参数注入）；签名随版本一同送达。
-  // 缺失/错误/公钥未配置 → 验证失败 → fail-closed 拒绝升级。
-  this->declare_parameter<std::string>("ota.public_key_pem", "");
+  // 签名链（§8.3-2 + 三审 P0-E）：公钥从文件读（root 属主只读），configure
+  // 时一次性钉住——不再是运行时可替换的字符串参数（攻击者同时 set
+  // 公钥+签名+版本即可完成"合法"升级的路径已封死）。镜像目录 = fetch 的
+  // 哈希复验对象（P0-D：签名绑定内容而非裸版本号）。
+  this->declare_parameter<std::string>("ota.image_dir", slot_dir_ + "/images");
   this->declare_parameter<std::string>("ota.target_signature", "");
+
+  // P0-E：公钥一次性加载钉住（root 属主只读文件；运行时参数替换无效）
+  this->declare_parameter<std::string>("ota.public_key_file", "");
+  const std::string key_file =
+      this->get_parameter("ota.public_key_file").as_string();
+  image_dir_ = this->get_parameter("ota.image_dir").as_string();
+  if (!key_file.empty()) {
+    std::ifstream kf(key_file);
+    if (kf) {
+      pinned_public_key_ = std::string((std::istreambuf_iterator<char>(kf)),
+                                       std::istreambuf_iterator<char>());
+      RCLCPP_INFO(get_logger(), "OTA 公钥已钉住: %s（%zu 字节）",
+                  key_file.c_str(), pinned_public_key_.size());
+    } else {
+      RCLCPP_ERROR(get_logger(), "OTA 公钥文件不可读: %s — 所有升级将 fail-closed",
+                   key_file.c_str());
+    }
+  }
   last_target_ = this->get_parameter("ota.target_version").as_int();
   poll_timer_ = this->create_wall_timer(
     std::chrono::seconds(1), [this]() {
@@ -77,8 +97,35 @@ void OtaAgentNode::on_param_change(int64_t target)
   char inactive = domain::ota::OtaCoordinator::other_slot(*active);
 
   domain::ota::OtaCoordinator::SlotOps ops;
-  ops.fetch = [this](int64_t v) {               // 演示：版本文件即时就位
-    RCLCPP_INFO(get_logger(), "[fetch] 镜像 v%ld 就位", v);
+  ops.fetch = [this](int64_t v) {
+    // P0-D：fetch = 下载+哈希复验。镜像文件由分发侧放置（真机=下载器，
+    // 目录级模拟=测试/脚本写入），此处对实际字节算 sha256 并与签名内的
+    // manifest 比对——签名绑定的是 {version, sha256, size} 整体。
+    const std::string img = image_dir_ + "/v" + std::to_string(v) + ".img";
+    std::ifstream f(img, std::ios::binary);
+    if (!f) {
+      RCLCPP_ERROR(get_logger(), "[fetch] 镜像文件不存在: %s — fail-closed", img.c_str());
+      return false;
+    }
+    const std::string bytes((std::istreambuf_iterator<char>(f)),
+                             std::istreambuf_iterator<char>());
+    if (bytes.empty()) {
+      RCLCPP_ERROR(get_logger(), "[fetch] 镜像为空 — fail-closed");
+      return false;
+    }
+    const std::string digest = domain::ota::sha256_hex(bytes.data(), bytes.size());
+    const std::string manifest = domain::ota::image_manifest(v, digest, bytes.size());
+    const std::string sig =
+        this->get_parameter("ota.target_signature").as_string();
+    if (!domain::ota::PackageSigner::verify(manifest, sig, pinned_public_key_)) {
+      RCLCPP_ERROR(get_logger(),
+          "[fetch] 内容绑定验签失败（v%ld）：镜像哈希/大小与签名不符或签名无效 — 拒绝",
+          v);
+      return false;
+    }
+    RCLCPP_INFO(get_logger(),
+        "[fetch] v%ld 内容验签通过（sha256=%s… size=%zu）", v,
+        digest.substr(0, 12).c_str(), bytes.size());
     return true;
   };
   ops.write = [this, inactive](char slot, int64_t v) {
@@ -103,22 +150,8 @@ void OtaAgentNode::on_param_change(int64_t target)
                  .value_or(0),
                security_counter_, std::move(ops));
 
-  // 真实验签（替换 2026-08-25 审计点名的恒真桩）：任何失败 = 拒绝
-  const std::string sig =
-      this->get_parameter("ota.target_signature").as_string();
-  const std::string pub =
-      this->get_parameter("ota.public_key_pem").as_string();
-  const bool signature_valid = domain::ota::PackageSigner::verify(
-      domain::ota::update_manifest(target), sig, pub);
-  if (signature_valid) {
-    RCLCPP_INFO(get_logger(), "[verify] ed25519 签名通过（v%ld）", target);
-  } else {
-    RCLCPP_ERROR(get_logger(),
-        "[verify] 签名验证失败（v%ld）——fail-closed 拒绝：签名缺失/错误或公钥未配置",
-        target);
-  }
-
-  auto r = ota_->run_update(target, signature_valid);  // 一键门面
+  // 验签移入 fetch（内容绑定，见上）——公钥缺失则 fetch 必然失败（fail-closed）
+  auto r = ota_->run_update(target, /*signature_valid=*/true);  // 一键门面
   if (r == domain::ota::Result::ACCEPTED &&
       ota_->state() == domain::ota::State::HEALTH_GATE) {
     RCLCPP_INFO(get_logger(),
