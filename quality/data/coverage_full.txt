@@ -1,5 +1,5 @@
 # 由 coverage_report.py 从 lcov .info 直算（DA 行口径）
-# 聚合: 3001/3464 = 86.6%  文件数: 59
+# 聚合: 3000/3463 = 86.6%  文件数: 59
 domain/planning/target_selector.hpp                                      0.0%      0/    2
 src/infrastructure/health_monitor_node.cpp                              53.4%    135/  253
 src/infrastructure/prometheus_http_server.cpp                           62.0%     31/   50
@@ -38,7 +38,7 @@ domain/execution/velocity_smoother.hpp                                 100.0%   
 domain/monitoring/monitoring_service.hpp                               100.0%     32/   32
 domain/monitoring/recovery_policy.hpp                                  100.0%      6/    6
 domain/perception/icluster_algorithm.hpp                               100.0%      1/    1
-domain/perception/kalman_filter.hpp                                    100.0%    158/  158
+domain/perception/kalman_filter.hpp                                    100.0%    157/  157
 domain/perception/stamp_gate.hpp                                       100.0%     16/   16
 domain/perception/tracker.hpp                                          100.0%     62/   62
 domain/planning/goal_dispatch_gate.hpp                                 100.0%     26/   26
