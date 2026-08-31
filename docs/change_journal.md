@@ -41,6 +41,27 @@
 
 ---
 
+## [2026-08-31] 三审 Wave 4 宣称对账与度量真化 — 收官批（2.2.0 发布）
+
+- **README 四处宣称对账**：看门狗两分法（supervisor=真 / health_monitor
+  修复后=真，两条链分开表述）+ 告警如实标注「未实现」；:9091 修正为仅
+  AMR_PERF_INSTRUMENTATION=ON 构建存在；fleet_multi 标注单机演示形态；
+  部署节降级 roadmap
+- **P0-I 覆盖率真分母**：lcov --initial 先捕获全部 gcno 再合并运行时
+  gcda——supervisor_node/health_monitor 等零覆盖目标以真实身份进分母。
+  **89.3% → 86.7%（文件 54→59）**——下降的是水分：三个零覆盖文件此前
+  从分母消失。徽章已更新为 86.7%（这是第一次「下降也自动同步」，
+  真分母机制的直接验证）
+- **P0-J 徽章新鲜度**：badge push 失败置红（::error::）+ rebase 重试
+  （多腿 non-fast-forward 场景）——「静默 4 天」不再可能
+- **版本三宇宙对齐**：package.xml 0.3.0 / CHANGELOG Unreleased / tag
+  v0.1.0 → 统一 **2.2.0**（带 annotated tag）
+- **toolkit Docker 修复**：独立 quality cmake 块（引用已迁移的 test/
+  目录，构建必断）→ colcon 一体化构建+测试
+- 三审修复序十项至此全部关闭或显式裁决
+
+---
+
 ## [2026-08-31] 三审 Wave 3 信任链收口 — 验签绑内容/公钥钉住/install 排私钥
 
 - **P0-D 内容绑定验签**：签名对象从裸版本号 `"amr-ota:v12"` 升级为
