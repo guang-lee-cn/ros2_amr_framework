@@ -1,6 +1,18 @@
 # Changelog
 
-## [Unreleased]
+## [2.2.0] — 2026-08-31
+
+### Fixed — 三审 Wave 4 宣称对账与度量真化
+- README 四处宣称对账：看门狗两分法（supervisor 真/health_monitor 修复
+  后真）+ 告警如实标注未实现；:9091 仅插桩构建存在；fleet_multi 标注
+  单机演示形态；部署节降级 roadmap
+- **P0-I 覆盖率真分母**：lcov --initial 先捕获零覆盖文件（supervisor/
+  health_monitor 等不再从分母消失）——数字下降但为真
+- **P0-J 徽章新鲜度**：badge push 失败置红 + rebase 重试（曾静默 4 天）
+- **版本三宇宙对齐**：package.xml 0.3.0 / CHANGELOG Unreleased / tag
+  v0.1.0 → 统一 2.2.0
+- toolkit Docker 修复：独立 quality cmake 块（引用已迁移的 test/ 目录）
+  → colcon 一体化构建+测试
 
 ### Fixed — OTA 真签名（审计行动 §8.3-2）
 - **恒真桩替换**：`ota_agent` 签名校验 `/*signature_valid=*/true` →
@@ -166,6 +178,6 @@
 ### Fixed
 - C++ name hiding bug: `HealthMonitorNode::create_publisher()` shadowed `rclcpp::Node::create_publisher<T>()` — fixed with qualified `rclcpp::Node::create_publisher<T>(...)` call
 
-## [Unreleased]
+## [2.2.0] — 2026-08-31
 - TODO: Fast-DDS XML profile field testing
 - TODO: Multi-threaded executor for cancel-action test coverage

@@ -44,6 +44,13 @@ if lcov --help 2>&1 | grep -q -- '--parallel'; then
   LCOV_PAR="--parallel $(nproc)"
 fi
 
+# P0-I（三审 2026-08-31）：先 --initial 捕获全部 gcno（含零覆盖文件——
+# supervisor/health_monitor 等从未进测试的目标不再从分母消失），再捕获
+# 运行时 gcda，合并 = 真分母。数字会下降——那是真话。
+lcov --initial --capture --directory "$BUILD_DIR" \
+  --rc geninfo_gcov_all_blocks=0 \
+  --output-file /tmp/amr_cov_initial.info >/dev/null 2>&1 || true
+
 if ! lcov --capture --directory "$BUILD_DIR" \
   --output-file "$COV_INFO" \
   --ignore-errors empty,unused,mismatch,gcov \
@@ -52,6 +59,13 @@ if ! lcov --capture --directory "$BUILD_DIR" \
   >/dev/null; then
   echo "ERROR: lcov capture failed — 度量链断，门禁失败（不再静默放行）"
   exit 1
+fi
+
+# 合并（initial 非空时）：零覆盖文件以 0% 进分母
+if [ -s /tmp/amr_cov_initial.info ]; then
+  lcov -a /tmp/amr_cov_initial.info -a "$COV_INFO" \
+    --output-file "$COV_INFO.merged" >/dev/null 2>&1 && \
+    mv "$COV_INFO.merged" "$COV_INFO"
 fi
 
 if ! lcov --remove "$COV_INFO" \

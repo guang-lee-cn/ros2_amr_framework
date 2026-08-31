@@ -153,5 +153,10 @@ jobs:
                   quality/data/coverage.prev.txt quality/data/coverage_full.txt
           if ! git diff --cached --quiet; then
             git commit -m "chore(coverage): CI 实测徽章更新 [skip ci]"
-            git push
+            # P0-J（三审）：徽章 push 失败曾静默 4 天无人发现——现在失败置红，
+            # 并带一次 rebase 重试（多腿并发时的 non-fast-forward 场景）
+            git push || (git pull --rebase && git push) || \
+              (echo "::error::badge push 失败——徽章新鲜度断裂（P0-J）" && exit 1)
+          else
+            echo "badge 数据无变化（覆盖率未变）——新鲜度正常"
           fi

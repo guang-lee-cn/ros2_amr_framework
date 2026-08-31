@@ -47,7 +47,10 @@ AMR **感知-决策-执行全链路自研**参考架构。基于 ROS 2 Jazzy，�
 - **进程隔离**：传感器驱动独立进程（故障隔离），compute 单进程（零拷贝），health_monitor 独立
 - **控制闭环**：odom 反馈（robot_localization EKF）→ PurePursuit → 误差监控自纠
 - **动态避障**：感知物体 → 网格标记 → A* 重规划 → 路径平滑
-- **降级**：传感器超时 → 5 级降级，看门狗重启，Prometheus 告警
+- **降级与恢复**：传感器超时 → 5 级降级；两级看门狗——supervisor 进程级
+  （kill -9 秒级按策略恢复）+ health_monitor lifecycle 级（异步四步重启，
+  行为测试实证）。Prometheus 指标可观测；**告警规则未实现**（观测"只看不叫"，
+  见 deployment-plan）
 
 ## Quick Start
 
@@ -59,7 +62,8 @@ source install/setup.bash
 # 单 AMR（含 EKF 定位）
 ros2 launch ros2_robot_middleware system.launch.py
 
-# 多 AMR 集群
+# 多 AMR（单机演示形态：同机多实例；跨机 fleet 治理未实现——
+# fleet_manager 目前仅被动聚合心跳）
 ros2 launch ros2_robot_middleware fleet_multi.launch.py
 
 # Gazebo 仿真
@@ -105,7 +109,7 @@ curl localhost:9091/metrics   # AMR_PERF_PHASE 阶段延迟 (ON 构建)
 | 控制 | 自研 PurePursuit + 梯形速度 + 误差监控 |
 | 感知 | 自研 KF + Tracker + 降级；PCL/DBSCAN 聚类（策略模式） |
 | HAL | `amr::hal` 插件注册（ISensor + IActuator） |
-| 观测 | Prometheus (:9090 + :9091) + AMR_PERF_PHASE + Grafana |
+| 观测 | Prometheus :9090 常开；:9091 仅 AMR_PERF_INSTRUMENTATION=ON 构建存在 |
 | Build | colcon + ament_cmake |
 | Test | GoogleTest（用例/模块数以 CI 实测为准，勿手写——数字漂移第 4 次教训） |
 | CI | GitHub Actions (静态分析 → 构建 → 测试 → 覆盖率) |
@@ -121,7 +125,7 @@ curl localhost:9091/metrics   # AMR_PERF_PHASE 阶段延迟 (ON 构建)
 | [DDS Selection](doc/dds-selection-guide.md) | Fast-DDS vs CycloneDDS 选型 + benchmark |
 | [Benchmark Lessons](doc/benchmark-lessons-learned.md) | DDS 测试踩坑与手把手流程 |
 | [Driver Integration](doc/guides/11-driver-integration.md) | 硬件驱动接入 4 阶段指南 |
-| [Deployment Plan](doc/deployment-plan.md) | 商业部署：Docker + OTA + 版本锁定 |
+| [Deployment Plan](doc/deployment-plan.md) | 部署路线（roadmap：Docker/RAUC 真机待落地） |
 | [Subsystem Docs](doc/subsystems/) | 传感器/融合/决策/执行/健康监控/可观测性 |
 | [ADR](doc/adr/03-adr.md) | 架构决策记录 |
 | [HAL Design](doc/guides/09-hal-design.md) | 硬件抽象层设计 |

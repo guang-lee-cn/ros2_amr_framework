@@ -29,16 +29,13 @@ RUN . /opt/ros/jazzy/setup.sh && \
     colcon build --packages-select ros2_robot_middleware \
         --cmake-args -DCMAKE_BUILD_TYPE=Release
 
-# Build and run tests
+# Build and run tests（测试在主包 CMakeLists 注册——旧独立 quality cmake
+# 块随目录迁移失效，三审 P1 修复：改 colcon 一体化构建+测试）
 RUN . /opt/ros/jazzy/setup.sh && \
-    . /ws/install/setup.sh && \
-    cmake -S src/ros2_robot_middleware/test \
-        -B build/ros2_robot_middleware_test \
-        -DPROD_BUILD_DIR=/ws/build/ros2_robot_middleware \
-        -DCMAKE_PREFIX_PATH="/opt/ros/jazzy;/ws/install" && \
-    cmake --build build/ros2_robot_middleware_test && \
-    cd build/ros2_robot_middleware_test && \
-    ctest --output-on-failure
+    colcon build --packages-select ros2_robot_middleware \
+        --cmake-args -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Release && \
+    colcon test --packages-select ros2_robot_middleware && \
+    colcon test-result --verbose
 
 # ============================================================================
 # Stage 2: runtime — minimal footprint, production deploy
