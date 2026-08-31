@@ -45,7 +45,6 @@ struct RangeBearingMeasurement {
     double y = state[1];
     double r2 = x * x + y * y;
     double r  = std::sqrt(r2);
-    double r3 = r2 * r;
 
     for (int i = 0; i < 8; ++i) H[i] = 0.0;
 

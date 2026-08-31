@@ -240,7 +240,7 @@ void HealthMonitorNode::create_restart_clients()
     restart_clients_[cfg.node] =
       this->create_client<lifecycle_msgs::srv::ChangeState>(
         std::string(cfg.node) + "/change_state",
-        rmw_qos_profile_services_default, restart_group_);
+        rclcpp::ServicesQoS(), restart_group_);
   }
 }
 

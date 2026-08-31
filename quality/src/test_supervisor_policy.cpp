@@ -179,7 +179,7 @@ TEST(SupervisorTransitionTest, Given_StartTimeout_Then_CrashPath) {
   s.policy.startup_timeout_ns = 5 * S;
   ChildState st;
   step(s, st, Event::SPAWNED, NOW);
-  auto a = step(s, st, Event::START_TIMEOUT, NOW + 6 * S);
+  step(s, st, Event::START_TIMEOUT, NOW + 6 * S);
   EXPECT_EQ(st.phase, Phase::BACKOFF);
   EXPECT_EQ(st.restarts_in_window, 1);
 }

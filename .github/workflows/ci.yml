@@ -35,6 +35,36 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # Wave 2.1（三审 2026-08-31）：ASAN+UBSAN 防线——cppcheck 对跨函数指针
+  # 逃逸类 UAF 天生盲区（实证），该类 UB 的有效检测器是 sanitizer。
+  # run_tests.sh asan 模式已内置编译并行限幅（WSL OOM 事故教训）。
+  asan-gate:
+    runs-on: ubuntu-latest
+    container: ros:jazzy-ros-base
+    steps:
+      - name: Install system deps
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends \
+            build-essential ros-jazzy-rclcpp ros-jazzy-rclcpp-action \
+            ros-jazzy-rclcpp-lifecycle ros-jazzy-rclcpp-components \
+            ros-jazzy-lifecycle-msgs ros-jazzy-sensor-msgs \
+            ros-jazzy-geometry-msgs ros-jazzy-std-msgs ros-jazzy-action-msgs \
+            ros-jazzy-ament-cmake-gtest ros-jazzy-rosidl-default-generators \
+            ros-jazzy-diagnostic-msgs ros-jazzy-hardware-interface \
+            ros-jazzy-pluginlib \
+            python3-colcon-common-extensions \
+            && rm -rf /var/lib/apt/lists/*
+      - uses: actions/checkout@v4
+        with:
+          path: src/ros2_robot_middleware
+      - name: Build + Test (ASan + UBSan)
+        shell: bash
+        run: |
+          . /opt/ros/jazzy/setup.sh
+          cd src/ros2_robot_middleware
+          ./quality/scripts/run_tests.sh asan
+
   build-test-coverage:
     runs-on: ubuntu-24.04
     # badge 自动提交需要写权限（仅 GITHUB_TOKEN 范围内，无第三方凭证）

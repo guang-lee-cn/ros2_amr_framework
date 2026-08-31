@@ -41,6 +41,23 @@
 
 ---
 
+## [2026-08-31] 三审 Wave 2 防线机制 — ASAN 进 CI + -Werror 零警告 + TSAN 手册
+
+- **ASAN job 接入 CI**（asan-gate）：cppcheck 对跨函数指针逃逸类 UAF 的
+  盲区由 sanitizer 补上（Wave 1 调查结论的落地）；run_tests.sh asan 自带
+  编译限幅（WSL OOM 教训），CI 容器内存不受本机约束但纪律统一
+- **-Wall -Wextra -Werror 固化**：先摸面（colcon 一次性 build-base 探测）
+  ——全仓仅 20 条警告且全部自有代码（外部头零噪声），逐条修毕后整体
+  -Werror。四类：KF 未用变量 r3（10×）、同名别名 using Cluster=Cluster
+  触发 GCC14 -Wchanges-meaning（8×）、deprecated rmw_qos_profile_t 重载
+  （改 rclcpp::ServicesQoS）、测试未用变量
+- **TSAN 夜跑手册**（quality/tsan-runbook.md）：demo_grid_（P0-B 嫌疑）
+  的捕获规程——独立 build-base、ROS 内噪声判读规则、三个最大竞争窗口
+  用例、修复优先级预案
+- 验证：常规构建 + 37 模块 100% 全绿（-Werror 激活态）
+
+---
+
 ## [2026-08-30] P0-C 重启序列异步化——「从第一天就不可能工作」的看门狗首次真工作
 
 > 三审 P0-C 收官（Wave 1 全项完成）。旧实现三死锁要素：单线程 spin + 定时器

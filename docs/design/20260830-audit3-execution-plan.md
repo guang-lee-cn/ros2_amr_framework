@@ -34,7 +34,7 @@
 | 1.4 | **P0-L 饿死** | motor_ctrl_main 改 MultiThreadedExecutor | 饿死回归测试（execute 循环期间 scan 回调可达） |
 | 1.5 | P1 入口校验 | goal_pose / motor goal 的 isfinite+量程校验（NaN 现在直达 cmd_vel） | NaN 注入测试拒绝 |
 
-### Wave 2 · 防线机制（1 天）——「否则修好只是把 UB 挪个位置」
+### Wave 2 · 防线机制 ✅（2026-08-31 完成）——「否则修好只是把 UB 挪个位置」
 
 | # | 项 | 修法 | 验证门 |
 |---|----|------|--------|

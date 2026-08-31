@@ -25,7 +25,7 @@ namespace perception {
 class PerceptionService {
 public:
   using Level    = DegradationLevel;
-  using Cluster  = Cluster;
+  using Cluster  = amr::domain::perception::Cluster;  // 显式限定（同名别名触发 -Wchanges-meaning）
   using LidarSensor   = amr::hal::sensor::ISensor<amr::hal::sensor::LidarScan>;
   using ImuSensor     = amr::hal::sensor::ISensor<amr::hal::sensor::ImuData>;
   using CameraSensor  = amr::hal::sensor::ISensor<amr::hal::sensor::CameraFrame>;
