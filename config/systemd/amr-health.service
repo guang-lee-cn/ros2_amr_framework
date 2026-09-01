@@ -1,0 +1,15 @@
+[Unit]
+Description=AMR Health Monitor + Prometheus metrics
+After=amr-compute.service
+
+[Service]
+Type=simple
+ExecStart=/opt/ros/jazzy/bin/ros2 run ros2_robot_middleware health_monitor_node
+Restart=on-failure
+RestartSec=5
+MemoryMax=128M
+StandardOutput=journal
+SyslogIdentifier=amr-health
+
+[Install]
+WantedBy=multi-user.target

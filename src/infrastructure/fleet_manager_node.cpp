@@ -1,4 +1,5 @@
 #include "ros2_robot_middleware/infrastructure/fleet_manager_node.hpp"
+#include "ros2_robot_middleware/infrastructure/qos_profiles.hpp"
 
 #include <sstream>
 
@@ -13,20 +14,20 @@ FleetManagerNode::on_configure(const rclcpp_lifecycle::State &)
   for (size_t i = 0; i < kMaxAmrs; ++i) {
     subs_[i] = this->create_subscription<ros2_robot_middleware::msg::HealthReport>(
       kAmrs[i].health_topic,
-      rclcpp::QoS(10).reliable(),
+      amr::qos::reliable_stream(),
       [this, i](ros2_robot_middleware::msg::HealthReport::SharedPtr msg) {
         health_callback(i, msg);
       });
   }
 
   fleet_status_pub_ = this->create_publisher<std_msgs::msg::String>(
-    "/fleet/status", rclcpp::QoS(10).reliable());
+    "/fleet/status", amr::qos::reliable_stream());
 
   fleet_health_pub_ = this->create_publisher<ros2_robot_middleware::msg::HealthReport>(
-    "/fleet/health", rclcpp::QoS(10).reliable());
+    "/fleet/health", amr::qos::reliable_stream());
 
   heartbeat_pub_ = this->create_publisher<std_msgs::msg::String>(
-    "/fleet/heartbeat", rclcpp::QoS(10).reliable());
+    "/fleet/heartbeat", amr::qos::reliable_stream());
 
   RCLCPP_INFO(this->get_logger(), "FleetManager configured: %d AMRs monitored", kMaxAmrs);
 

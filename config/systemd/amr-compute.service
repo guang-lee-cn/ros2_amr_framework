@@ -1,0 +1,23 @@
+[Unit]
+Description=AMR Compute Container (fusion + decision + motor_ctrl)
+After=network.target
+Wants=amr-sensors.service
+
+[Service]
+Type=simple
+ExecStart=/opt/ros/jazzy/bin/ros2 run ros2_robot_middleware compute_container --ros-args --params-file /etc/amr/params.yaml
+Restart=on-failure
+RestartSec=5
+# 安全加固
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/amr /tmp
+# 资源限制
+MemoryMax=512M
+CPUQuota=200%
+# 日志
+StandardOutput=journal
+SyslogIdentifier=amr-compute
+
+[Install]
+WantedBy=multi-user.target

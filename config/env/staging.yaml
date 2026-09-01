@@ -1,0 +1,13 @@
+# 预发环境：真实传感器 + 独立进程 + 告警开启
+amr:
+  environment: staging
+  log_level: info
+  sensors:
+    lidar:
+      type: sick_tim781
+      topic: /scan
+  perf:
+    instrumentation: false
+  alerts:
+    enabled: true
+    prometheus_rules: /etc/amr/prometheus/amr_alerts.yml

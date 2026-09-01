@@ -1,0 +1,12 @@
+# 开发环境：全组件 + 仿真传感器 + 调试日志
+amr:
+  environment: development
+  log_level: debug
+  sensors:
+    lidar:
+      type: simulated
+    imu:
+      type: simulated
+  perf:
+    instrumentation: true
+    prometheus_port: 9091

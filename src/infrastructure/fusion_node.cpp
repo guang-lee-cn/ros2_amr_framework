@@ -1,4 +1,5 @@
 #include "ros2_robot_middleware/infrastructure/fusion_node.hpp"
+#include "ros2_robot_middleware/infrastructure/qos_profiles.hpp"
 #include "generated/perf_instrumentation.hpp"
 #include "ros2_robot_middleware/observability/logging.hpp"
 #include "ros2_robot_middleware/observability/metrics_registry.hpp"
@@ -116,7 +117,7 @@ FusionNode::CallbackReturn FusionNode::on_configure(const rclcpp_lifecycle::Stat
   // LifecycleNode 组合 rclcpp::Node（非继承），不能直接传 rclcpp::Node&，故用 feed_scan。
   if (auto *adapter = dynamic_cast<amr::hal::sensor::SickTiM781Adapter *>(lidar_.get())) {
     scan_sub_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
-        lidar_cfg_.topic, rclcpp::QoS(10).best_effort(),
+        lidar_cfg_.topic, amr::qos::sensor_stream(),
         [adapter](sensor_msgs::msg::LaserScan::SharedPtr msg) {
           adapter->feed_scan(std::move(msg));
         });
@@ -134,16 +135,16 @@ FusionNode::CallbackReturn FusionNode::on_configure(const rclcpp_lifecycle::Stat
   perception_->set_transform(tf2_.get());
 
   fusion_pub_ = this->create_publisher<ros2_robot_middleware::msg::PerceptionObjects>(
-      "/perception/objects", rclcpp::QoS(10).reliable());
+      "/perception/objects", amr::qos::reliable_stream());
 
   heartbeat_pub_ = this->create_publisher<std_msgs::msg::String>(
-      "/sensor/fusion/heartbeat", rclcpp::QoS(10).reliable());
+      "/sensor/fusion/heartbeat", amr::qos::reliable_stream());
 
   lidar_pub_ = this->create_publisher<sensor_msgs::msg::LaserScan>(
-      "/sensor/lidar", rclcpp::QoS(10).reliable());
+      "/sensor/lidar", amr::qos::reliable_stream());
 
   pointcloud_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
-      "/sensor/pointcloud", rclcpp::QoS(10).reliable());
+      "/sensor/pointcloud", amr::qos::reliable_stream());
 
   return CallbackReturn::SUCCESS;
 }

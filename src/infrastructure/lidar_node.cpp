@@ -1,4 +1,5 @@
 #include "ros2_robot_middleware/infrastructure/lidar_node.hpp"
+#include "ros2_robot_middleware/infrastructure/qos_profiles.hpp"
 #include "ros2_robot_middleware/observability/metrics_registry.hpp"
 #include "ros2_robot_middleware/observability/tracer.hpp"
 
@@ -14,10 +15,10 @@ LidarNode::CallbackReturn
 LidarNode::on_configure(const rclcpp_lifecycle::State &)
 {
   publisher_ = this->create_publisher<sensor_msgs::msg::LaserScan>(
-    "/sensor/lidar", rclcpp::QoS(10).best_effort());
+    "/sensor/lidar", amr::qos::sensor_stream());
 
   heartbeat_pub_ = this->create_publisher<std_msgs::msg::String>(
-    "/sensor/lidar/heartbeat", rclcpp::QoS(10).reliable());
+    "/sensor/lidar/heartbeat", amr::qos::reliable_stream());
 
   return CallbackReturn::SUCCESS;
 }

@@ -1,0 +1,17 @@
+[Unit]
+Description=AMR Process Supervisor (B1 crash recovery)
+After=network.target
+# supervisor 是所有业务进程的守护者，必须先起
+Before=amr-compute.service amr-sensors.service
+
+[Service]
+Type=simple
+ExecStart=/opt/ros/jazzy/bin/ros2 run ros2_robot_middleware amr_supervisor --ros-args --params-file /etc/amr/supervisor.yaml
+Restart=always
+RestartSec=3
+MemoryMax=128M
+StandardOutput=journal
+SyslogIdentifier=amr-supervisor
+
+[Install]
+WantedBy=multi-user.target

@@ -25,6 +25,7 @@
 #include <chrono>
 #include <mutex>
 #include <rclcpp/rclcpp.hpp>
+#include "ros2_robot_middleware/infrastructure/qos_profiles.hpp"
 #include <sensor_msgs/msg/laser_scan.hpp>
 
 namespace amr::hal::sensor {
@@ -42,7 +43,7 @@ public:
     /// 不能传 rclcpp::Node&，改用 FusionNode 直接订阅 + feed_scan()。
     void connect(rclcpp::Node &node) {
         sub_ = node.create_subscription<sensor_msgs::msg::LaserScan>(
-            topic_, rclcpp::QoS(10).best_effort(),
+            topic_, amr::qos::sensor_stream(),
             [this](sensor_msgs::msg::LaserScan::SharedPtr msg) {
                 on_scan(msg);
             });

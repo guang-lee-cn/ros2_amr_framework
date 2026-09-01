@@ -1,5 +1,6 @@
 #include <rclcpp_components/register_node_macro.hpp>
 #include "ros2_robot_middleware/infrastructure/motor_ctrl_node.hpp"
+#include "ros2_robot_middleware/infrastructure/qos_profiles.hpp"
 #include "ros2_robot_middleware/infrastructure/aliases.hpp"
 #include "generated/perf_instrumentation.hpp"
 #include "ros2_robot_middleware/observability/metrics_registry.hpp"
@@ -60,11 +61,11 @@ MotorCtrlNode::on_configure(const rclcpp_lifecycle::State &)
     });
 
   status_pub_ = this->create_publisher<std_msgs::msg::String>(
-    "/cmd/status", rclcpp::QoS(10).reliable());
+    "/cmd/status", amr::qos::reliable_stream());
 
   // Velocity command to the base (DiffDrive in sim, IActuator in prod)
   cmd_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>(
-    "/cmd_vel", rclcpp::QoS(10).reliable());
+    "/cmd_vel", amr::qos::reliable_stream());
 
   // Subscribe to /odom (robot_localization EKF) — closed-loop pose source.
   // Own callback group: a blocking action execute() loop in the default
@@ -75,7 +76,7 @@ MotorCtrlNode::on_configure(const rclcpp_lifecycle::State &)
   rclcpp::SubscriptionOptions odom_opts;
   odom_opts.callback_group = odom_cb_group_;
   odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
-    "/odom", rclcpp::QoS(10).reliable(),
+    "/odom", amr::qos::reliable_stream(),
     [this](nav_msgs::msg::Odometry::SharedPtr msg) { on_odom(msg); },
     odom_opts);
 
@@ -85,7 +86,7 @@ MotorCtrlNode::on_configure(const rclcpp_lifecycle::State &)
   rclcpp::SubscriptionOptions scan_opts;
   scan_opts.callback_group = odom_cb_group_;
   scan_sub_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
-    "/scan", rclcpp::QoS(10).reliable(),
+    "/scan", amr::qos::reliable_stream(),
     [this](sensor_msgs::msg::LaserScan::SharedPtr msg) { on_scan(msg); },
     scan_opts);
 
@@ -95,7 +96,7 @@ MotorCtrlNode::on_configure(const rclcpp_lifecycle::State &)
   rclcpp::SubscriptionOptions path_opts;
   path_opts.callback_group = odom_cb_group_;
   path_sub_ = this->create_subscription<geometry_msgs::msg::PoseArray>(
-    "/planning/path", rclcpp::QoS(10).reliable(),
+    "/planning/path", amr::qos::reliable_stream(),
     [this](geometry_msgs::msg::PoseArray::SharedPtr msg) { on_path(msg); },
     path_opts);
 

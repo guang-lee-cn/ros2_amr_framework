@@ -8,6 +8,8 @@
 #include "diagnostic_msgs/msg/diagnostic_array.hpp"
 #include "diagnostic_msgs/msg/diagnostic_status.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "ros2_robot_middleware/infrastructure/qos_profiles.hpp"
+
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
 
 #include "ros2_robot_middleware/domain/monitoring/heartbeat_analyzer.hpp"
@@ -27,7 +29,7 @@ public:
   DiagnosticsPublisher(rclcpp_lifecycle::LifecycleNode *node, StatusProvider provider)
     : provider_(std::move(provider)) {
     pub_ = node->create_publisher<diagnostic_msgs::msg::DiagnosticArray>(
-      "/diagnostics", rclcpp::QoS(10).reliable());
+      "/diagnostics", amr::qos::reliable_stream());
   }
 
   void on_activate() { pub_->on_activate(); }

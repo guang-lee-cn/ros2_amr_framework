@@ -1,4 +1,5 @@
 #include "ros2_robot_middleware/infrastructure/camera_node.hpp"
+#include "ros2_robot_middleware/infrastructure/qos_profiles.hpp"
 #include "ros2_robot_middleware/observability/metrics_registry.hpp"
 #include "ros2_robot_middleware/observability/tracer.hpp"
 
@@ -13,10 +14,10 @@ CameraNode::CallbackReturn
 CameraNode::on_configure(const rclcpp_lifecycle::State &)
 {
   publisher_ = this->create_publisher<sensor_msgs::msg::Image>(
-    "/sensor/camera", rclcpp::QoS(10).best_effort());
+    "/sensor/camera", amr::qos::sensor_stream());
 
   heartbeat_pub_ = this->create_publisher<std_msgs::msg::String>(
-    "/sensor/camera/heartbeat", rclcpp::QoS(10).reliable());
+    "/sensor/camera/heartbeat", amr::qos::reliable_stream());
 
   return CallbackReturn::SUCCESS;
 }

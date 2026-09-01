@@ -1,0 +1,17 @@
+# 生产环境：真实传感器 + DDS security + 最小权限
+amr:
+  environment: production
+  log_level: warn
+  sensors:
+    lidar:
+      type: sick_tim781
+      topic: /scan
+  security:
+    dds_security: true
+    keystore: /etc/amr/sros2
+  perf:
+    instrumentation: false
+  alerts:
+    enabled: true
+    prometheus_rules: /etc/amr/prometheus/amr_alerts.yml
+    alertmanager: localhost:9093

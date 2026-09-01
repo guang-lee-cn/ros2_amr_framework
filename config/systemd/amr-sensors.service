@@ -1,0 +1,15 @@
+[Unit]
+Description=AMR Sensor Drivers (lidar + imu)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/opt/ros/jazzy/bin/ros2 launch ros2_robot_middleware system.launch.py --ros-args --params-file /etc/amr/params.yaml
+Restart=on-failure
+RestartSec=10
+MemoryMax=256M
+StandardOutput=journal
+SyslogIdentifier=amr-sensors
+
+[Install]
+WantedBy=multi-user.target

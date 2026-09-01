@@ -41,6 +41,27 @@
 
 ---
 
+## [2026-09-01] 27 处裸 QoS 清零 + systemd unit + 环境分化
+
+- **裸 QoS 清零**：27 处 `rclcpp::QoS(10)` 全部改走 `amr::qos::` 词汇表
+  - 5 处 best_effort → `sensor_stream()`
+  - 21 处 reliable → `reliable_stream()`
+  - 1 处 /cmd_vel → `control_stream()`（depth 1，新命令顶掉旧命令）
+  - 修改 9 个文件（7 src + 2 include），残留 0
+  - CLAUDE.md 禁止清单第一条正式自洽
+- **systemd unit**（config/systemd/，4 个服务）：
+  - amr-supervisor（B1 进程监管，Before 所有业务进程）
+  - amr-sensors（传感器驱动，MemoryMax 256M）
+  - amr-compute（计算容器，MemoryMax 512M，ProtectSystem=strict）
+  - amr-health（健康监控 + Prometheus）
+  - 全部 Restart=on-failure + RestartSec + SyslogIdentifier
+- **环境分化**（config/env/，3 套）：
+  - development（仿真传感器 + debug 日志 + perf 插桩）
+  - staging（真实传感器 + info 日志 + 告警开启）
+  - production（真实传感器 + DDS security + warn 日志 + Alertmanager）
+
+---
+
 ## [2026-09-01] P1 清扫 — 告警规则/恒真断言/trace 开关
 
 - **Prometheus 告警规则**（config/prometheus/amr_alerts.yml）：四组规则

@@ -1,4 +1,5 @@
 #include "ros2_robot_middleware/infrastructure/health_monitor_node.hpp"
+#include "ros2_robot_middleware/infrastructure/qos_profiles.hpp"
 #include "ros2_robot_middleware/observability/metrics_registry.hpp"
 
 #include <chrono>
@@ -130,7 +131,7 @@ void HealthMonitorNode::create_subscriptions()
 {
   for (int i = 0; i < kNumNodes; ++i) {
     subs_[i] = this->create_subscription<std_msgs::msg::String>(
-      kNdes[i].topic, rclcpp::QoS(10).reliable(),
+      kNdes[i].topic, amr::qos::reliable_stream(),
       [this, node = std::string(kNdes[i].node)](std_msgs::msg::String::SharedPtr /*msg*/) {
         monitor_.heartbeat_received(node);
       });
@@ -229,7 +230,7 @@ void HealthMonitorNode::create_service_server()
 void HealthMonitorNode::create_report_publisher()
 {
   pub_ = this->create_publisher<ros2_robot_middleware::msg::HealthReport>(
-    "/health/report", rclcpp::QoS(10).reliable());
+    "/health/report", amr::qos::reliable_stream());
 }
 
 void HealthMonitorNode::create_restart_clients()

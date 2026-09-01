@@ -1,4 +1,5 @@
 #include "ros2_robot_middleware/infrastructure/aliases.hpp"
+#include "ros2_robot_middleware/infrastructure/qos_profiles.hpp"
 #include "ros2_robot_middleware/infrastructure/decision_node.hpp"
 #include "ros2_robot_middleware/domain/perception/degradation_policy.hpp"
 #include "generated/perf_instrumentation.hpp"
@@ -45,7 +46,7 @@ DecisionNode::on_configure(const rclcpp_lifecycle::State &)
   rclcpp::SubscriptionOptions decision_opts;
   decision_opts.callback_group = perception_cb_group_;
   decision_sub_ = this->create_subscription<PerceptionObjects>(
-    "/perception/objects", rclcpp::QoS(10).reliable(),
+    "/perception/objects", amr::qos::reliable_stream(),
     [this](PerceptionObjects::SharedPtr msg) { on_perception(msg); },
     decision_opts);
 
@@ -53,7 +54,7 @@ DecisionNode::on_configure(const rclcpp_lifecycle::State &)
   rclcpp::SubscriptionOptions amcl_opts;
   amcl_opts.callback_group = perception_cb_group_;
   amcl_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
-    "/amcl_pose", rclcpp::QoS(10).reliable(),
+    "/amcl_pose", amr::qos::reliable_stream(),
     [this](geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg) { on_amcl_pose(msg); },
     amcl_opts);
 
@@ -68,18 +69,18 @@ DecisionNode::on_configure(const rclcpp_lifecycle::State &)
   // A* used to plan straight through the wall while the grid was still empty).
   // Same callback group as perception — low-rate (1 Hz) but semantically tied.
   fusion_hb_sub_ = this->create_subscription<std_msgs::msg::String>(
-    "/sensor/fusion/heartbeat", rclcpp::QoS(10).reliable(),
+    "/sensor/fusion/heartbeat", amr::qos::reliable_stream(),
     [this](std_msgs::msg::String::SharedPtr msg) { on_fusion_heartbeat(msg); },
     decision_opts);
   // patrol_3c publish /goal_pose（替代 ros2 param set，lifecycle node param 不暴露）
   goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
-    "/goal_pose", rclcpp::QoS(10).reliable(),
+    "/goal_pose", amr::qos::reliable_stream(),
     [this](geometry_msgs::msg::PoseStamped::SharedPtr msg) { on_goal_pose(msg); },
     decision_opts);
 
   // /scan raytrace（NAV2 ObstacleLayer）— scan 驱动 grid，同 perception 组。
   scan_sub_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
-    "/scan", rclcpp::QoS(10).best_effort(),
+    "/scan", amr::qos::sensor_stream(),
     [this](sensor_msgs::msg::LaserScan::SharedPtr msg) { on_scan(msg); },
     decision_opts);
 
