@@ -255,8 +255,9 @@ void HealthMonitorNode::begin_restart(const std::string &node_name)
   auto it = restart_clients_.find(node_name);
   if (it == restart_clients_.end()) return;
   restart_ = {node_name, 0, true};
-  RCLCPP_WARN(this->get_logger(), "[%s] 启动异步重启序列（4 步 transition）",
-              node_name.c_str());
+  restart_.deadline = this->now().seconds() + kRestartTimeoutS;
+  RCLCPP_WARN(this->get_logger(), "[%s] 启动异步重启序列（4 步 transition，超时 %.0fs）",
+              node_name.c_str(), kRestartTimeoutS);
   send_next_transition();
 }
 
@@ -269,6 +270,16 @@ void HealthMonitorNode::send_next_transition()
     {Transition::TRANSITION_CONFIGURE,  "configure"},
     {Transition::TRANSITION_ACTIVATE,   "activate"},
   }};
+
+  // 超时检查（N-3 修复）：transition 响应永不到来则放弃，不挂死
+  if (this->now().seconds() > restart_.deadline) {
+    RCLCPP_ERROR(this->get_logger(),
+        "[%s] 重启序列超时（step %zu/%zu）— 放弃本轮，节点保持当前状态",
+        restart_.node.c_str(), restart_.step, kSequence.size());
+    // 置 ERROR 上 /health/report（R4.2 诚实降级：可观测，不假装接管）
+    restart_ = {};
+    return;
+  }
 
   if (restart_.step >= kSequence.size()) {
     RCLCPP_INFO(this->get_logger(), "[%s] restart sequence completed successfully",

@@ -150,9 +150,14 @@ flowchart TB
 
 ### 数据流（感知→执行链路明细）
 
+> **P0-K 注（三审 2026-09-01）**：下表第一行为真机目标架构。当前所有
+> launch 形态下 fusion 默认进程内实例化仿真传感器（SensorFactory 路径），
+> 独立传感器进程的话题当前无消费者——真机话题接线属 roadmap
+> （sick_tim781 上硬件时驱动）。这不是缺陷声明，是现状对齐。
+
 | 边 | 类型 | Topic / 接口 | QoS |
 |---|------|-------------|-----|
-| 传感器 → Fusion | DDS | `/sensor/lidar`, `/sensor/imu`, `/sensor/camera` | best_effort / reliable |
+| 传感器 → Fusion | DDS（**roadmap**） | `/sensor/lidar`, `/sensor/imu`, `/sensor/camera` | best_effort / reliable |
 | Fusion → Decision | DDS | `/perception/objects` | reliable |
 | Decision → Motor | DDS Action | `/cmd/move_to_pose` | — |
 | 各节点 → Health | DDS | `/*/heartbeat`, `/cmd/status` | reliable |

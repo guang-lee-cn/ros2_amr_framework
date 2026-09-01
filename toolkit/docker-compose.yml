@@ -50,16 +50,17 @@ services:
       retries: 3
       start_period: 10s
 
-  fusion:
+  # 交付物事实（R5.1，三审）：fusion/decision/motor_ctrl 无独立可执行——
+  # 三节点共享 compute_container 单进程（零拷贝）。此前三个独立服务 =
+  # 三份全管线 = 话题冲突，必挂。
+  compute:
     <<: *node
-    container_name: middleware_fusion
-    command: [fusion]
+    container_name: middleware_compute
+    command: [compute_container]
     depends_on:
       lidar:
         condition: service_healthy
       imu:
-        condition: service_healthy
-      camera:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "/health-check.sh", "fusion"]
@@ -68,40 +69,12 @@ services:
       retries: 3
       start_period: 15s
 
-  decision:
-    <<: *node
-    container_name: middleware_decision
-    command: [decision]
-    depends_on:
-      fusion:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "/health-check.sh", "decision"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-
-  motor_ctrl:
-    <<: *node
-    container_name: middleware_motor_ctrl
-    command: [motor_ctrl]
-    depends_on:
-      decision:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "/health-check.sh", "motor_ctrl"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-
   health_monitor:
     <<: *node
     container_name: middleware_health_monitor
     command: [health_monitor]
     depends_on:
-      motor_ctrl:
+      compute:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "/health-check.sh", "health_monitor"]
