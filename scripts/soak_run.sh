@@ -173,14 +173,19 @@ if [ "${V:-0}" -lt "$MIN_VALID" ]; then
         source /opt/ros/jazzy/setup.bash 2>/dev/null
         source /ws/install/setup.bash 2>/dev/null
         EXE_DIR=$(ros2 pkg prefix ros2_robot_middleware 2>/dev/null)/lib/ros2_robot_middleware
+        # YAML 参数文件（数组参数不能用 -p 传）
+        cat > /tmp/sup_params.yaml << YAMLEOF
+supervisor:
+  ros__parameters:
+    supervisor.children: [scene_simulator, compute, patrol]
+    supervisor.scene_simulator.cmd: ["$EXE_DIR/scene_simulator"]
+    supervisor.compute.cmd: ["$EXE_DIR/compute_container", "--ros-args", "-p", "use_sim_time:=false", "-p", "guard_min_valid_echoes:=0"]
+    supervisor.compute.depends_on: [scene_simulator]
+    supervisor.patrol.cmd: ["$EXE_DIR/patrol_3c", "--ros-args", "-p", "use_sim_time:=false"]
+    supervisor.patrol.depends_on: [compute]
+YAMLEOF
         nohup ros2 run ros2_robot_middleware amr_supervisor \
-            --ros-args \
-            -p "supervisor.children=[scene_simulator,compute,patrol]" \
-            -p "supervisor.scene_simulator.cmd=[$EXE_DIR/scene_simulator]" \
-            -p "supervisor.compute.cmd=[$EXE_DIR/compute_container,--ros-args,-p,use_sim_time:=false,-p,guard_min_valid_echoes:=0]" \
-            -p "supervisor.compute.depends_on=[scene_simulator]" \
-            -p "supervisor.patrol.cmd=[$EXE_DIR/patrol_3c,--ros-args,-p,use_sim_time:=false]" \
-            -p "supervisor.patrol.depends_on=[compute]" \
+            --ros-args --params-file /tmp/sup_params.yaml \
             > /tmp/scene_launch.log 2>&1 &
         echo $! > /tmp/scene_launch.pid
         echo "[soak] 等待 scene_simulator 健康启动（30s）..."
@@ -267,15 +272,8 @@ while [ "$(date +%s)" -lt "$end_ts" ]; do
                     last_restart=$now
                     echo "[soak] scene 模式重拉 supervisor..."
                     pkill -f "amr_supervisor" 2>/dev/null; sleep 2
-                    EXE_DIR=$(ros2 pkg prefix ros2_robot_middleware 2>/dev/null)/lib/ros2_robot_middleware
                     nohup ros2 run ros2_robot_middleware amr_supervisor \
-                        --ros-args \
-                        -p "supervisor.children=[scene_simulator,compute,patrol]" \
-                        -p "supervisor.scene_simulator.cmd=[$EXE_DIR/scene_simulator]" \
-                        -p "supervisor.compute.cmd=[$EXE_DIR/compute_container,--ros-args,-p,use_sim_time:=false,-p,guard_min_valid_echoes:=0]" \
-                        -p "supervisor.compute.depends_on=[scene_simulator]" \
-                        -p "supervisor.patrol.cmd=[$EXE_DIR/patrol_3c,--ros-args,-p,use_sim_time:=false]" \
-                        -p "supervisor.patrol.depends_on=[compute]" \
+                        --ros-args --params-file /tmp/sup_params.yaml \
                         > /tmp/scene_launch.log 2>&1 &
                 fi
             fi
