@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.8)
 project(ros2_robot_middleware)
 
+# 可观测性 trace（P1 三审）：编译期可选，默认关闭——C1 计划换 LTTng
+# 后本开关降级为 fallback。开启方式: --cmake-args -DAMR_TRACING=ON
+option(AMR_TRACING "Enable self-built tracer (planned replacement: LTTng, iteration-2 C1)" OFF)
+if(AMR_TRACING)
+  add_compile_definitions(AMR_TRACING_ENABLED)
+endif()
+
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()

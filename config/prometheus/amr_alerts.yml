@@ -1,0 +1,85 @@
+# AMR Prometheus 告警规则（P1：观测从「只看」变「会叫」）
+# 部署：Prometheus rule_files 引入本文件；Alertmanager 路由通知。
+# 语义对齐 docs/change_journal.md 的事故史——每条规则的阈值来自真实复盘。
+
+groups:
+  # ── 传感器失明（08-17 撞货架模式）─────────────────────────────────────
+  - name: amr_sensor_safety
+    rules:
+      - alert: SensorBlind
+        expr: ros2_node_health_seconds > 3
+        for: 10s
+        labels:
+          severity: critical
+          category: safety
+        annotations:
+          summary: "传感器 {{ $labels.node }} 失明 >3s"
+          description: "心跳超时 3s——可能是 gpu_lidar 渲染劣化或驱动断连。guard fail-safe 应已触发硬停；若未触发，人工介入。"
+
+      - alert: SensorDegraded
+        expr: amr_degradation_level > 0
+        for: 30s
+        labels:
+          severity: warning
+          category: safety
+        annotations:
+          summary: "感知降级运行（level={{ $value }}）"
+          description: "0=FULL 1-4=降级阶梯。持续降级 >30s 意味着非瞬时丢帧——查传感器线缆/驱动日志。"
+
+  # ── 节点死亡（supervisor/health_monitor 兜底层）────────────────────────
+  - name: amr_node_liveness
+    rules:
+      - alert: NodeDead
+        expr: ros2_node_health_seconds > 10
+        for: 0s
+        labels:
+          severity: critical
+          category: liveness
+        annotations:
+          summary: "节点 {{ $labels.node }} 死亡 >10s"
+          description: "health_monitor 重启序列应已触发；若 supervisor 也未拉起，人工介入。"
+
+      - alert: SupervisorFatal
+        expr: amr_supervisor_fatal > 0
+        for: 0s
+        labels:
+          severity: critical
+          category: liveness
+        annotations:
+          summary: "supervisor 预算耗尽 → FATAL"
+          description: "某子进程重启超过窗口上限，supervisor 已放弃。需人工检查该进程为何反复崩溃。"
+
+  # ── 控制环延迟（compute 性能）─────────────────────────────────────────
+  - name: amr_performance
+    rules:
+      - alert: ControlLoopSlow
+        expr: amr_phase_motor_p99_us > 50000
+        for: 60s
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "motor 控制环 P99 >50ms"
+          description: "20Hz 控制周期 = 50ms 预算。P99 持续超限 → 控制延迟可感（含停车精度下降）。查 CPU 占用/锁竞争。"
+
+      - alert: FusionPipelineSlow
+        expr: amr_phase_fusion_p99_us > 200000
+        for: 60s
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "fusion 管线 P99 >200ms"
+          description: "5Hz 感知周期 = 200ms 预算。持续超限 → 避障响应延迟。查 PCL 聚类/内存分配。"
+
+  # ── 安全降级看门狗（guard fail-safe 触发）─────────────────────────────
+  - name: amr_guard
+    rules:
+      - alert: GuardHardStop
+        expr: increase(amr_guard_stop_total[5m]) > 0
+        labels:
+          severity: warning
+          category: safety
+        annotations:
+          summary: "碰撞护栏触发硬停（5min 内 {{ $value }} 次）"
+          description: "guard 检测到近距障碍或传感器失明。偶发=正常避障；频发=传感器伪影或地图过期。"

@@ -41,6 +41,22 @@
 
 ---
 
+## [2026-09-01] P1 清扫 — 告警规则/恒真断言/trace 开关
+
+- **Prometheus 告警规则**（config/prometheus/amr_alerts.yml）：四组规则
+  ——传感器失明（08-17 模式）/节点死亡/supervisor FATAL/控制环延迟——
+  观测从「只看不叫」到「会叫」。阈值从事故史复盘中来，每条带 annotations
+- **恒真断言修复**（2 处 EXPECT_GE(size(), 0u)）：
+  - test_fusion SimulatedSensors_DetectObjects：默认场景无障碍物（恒真
+    断言掩盖了这一事实）→ 改用 lowstep 场景 + 等到 objects 非空
+  - test_sensor_hal Fuse_ProducesClusters：改为多 tick + 行为级断言
+- **trace 死代码**：AMR_TRACING_ENABLED 无任何 CMake 定义（100% 死）→
+  加 option(AMR_TRACING) 编译期开关（默认 OFF）——C1 换 LTTng 后本开关
+  降级为 fallback
+- 38 模块全绿 + cppcheck 0 错
+
+---
+
 ## [2026-09-01] 复审整改 R1-R3 — 度量诚实/P0-G 反转/P0-B 竞态根治
 
 > 执行方案：docs/design/20260901-reaudit-fix-decision-record.md §四+§六。

@@ -38,7 +38,9 @@ static constexpr amr::domain::perception::DegradationPolicy::Config kFastConfig{
 // ── Detection: SimulatedSensors provide data internally ───────────────
 
 TEST_F(FusionTest, SimulatedSensors_DetectObjects) {
-  auto fusion = std::make_shared<FusionNode>();
+  // P1 修复：默认场景无障碍物——恒真断言掩盖了这一点。lowstep 有障碍。
+  auto fusion = std::make_shared<FusionNode>(rclcpp::NodeOptions{}
+      .append_parameter_override("scenario", "lowstep"));
   fusion->configure();
   fusion->activate();
 
@@ -51,11 +53,14 @@ TEST_F(FusionTest, SimulatedSensors_DetectObjects) {
 
   // Simulated Lidar generates sine-wave data with nearby-range returns.
   // After a few ticks, clusters should be detected.
+  // 恒真断言修复（P1）：等到「有输出且有障碍物」——测试名叫 DetectObjects
   ASSERT_TRUE(spin_until(fusion->get_node_base_interface(),
-                         [&last_output] { return last_output != nullptr; },
-                         std::chrono::seconds(3)));
-
-  EXPECT_GE(last_output->objects.size(), 0u);  // Degradation may affect count
+                         [&last_output] {
+                           return last_output != nullptr &&
+                                  !last_output->objects.empty();
+                         },
+                         std::chrono::seconds(5)))
+      << "5s 内未检出障碍物——SimulatedSensors 应产生可聚类数据";
 }
 
 // ── Degradation: FULL (sensors present, timeout not exceeded) ────────
