@@ -45,8 +45,16 @@ INJECT_INTERVAL_MIN=${INJECT_INTERVAL_MIN:-30}
 SAMPLE_INTERVAL=${SAMPLE_INTERVAL:-60}
 RECOVERY_TIMEOUT_S=${RECOVERY_TIMEOUT_S:-900}
 MIN_VALID=${MIN_VALID:-50}
-VICTIMS=${VICTIMS:-bridge,gz}
+if [ "$SCENE_MODE" = "scene" ]; then
+  VICTIMS=${VICTIMS:-scene_simulator,compute}
+  LAUNCH_FILE=${LAUNCH_FILE:-supervised_scene.launch.py}
+else
+  VICTIMS=${VICTIMS:-bridge,gz}
+  LAUNCH_FILE=${LAUNCH_FILE:-simulation.launch.py}
+fi
 METRICS_EVERY=${METRICS_EVERY:-10}
+# SCENE_MODE=scene: 云端 scene_simulator 形态（无 Gazebo/GPU）；默认本地 Gazebo
+SCENE_MODE=${SCENE_MODE:-gz}
 OUT=${OUT:-/tmp/amr_soak_$(date +%Y%m%d_%H%M%S)}
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 
@@ -71,7 +79,24 @@ for v in "${VICTIM_ARR[@]}"; do
     esac
 done
 
-probe() {  # /scan_raw 有效回波数（0=无消息/全盲），判据与 run_sim/watchdog 同源
+probe() {  # 健康探针：gz 模式查 /scan_raw 有效回波；scene 模式查 /odom 消息到达
+if [ "$SCENE_MODE" = "scene" ]; then
+  # scene 模式：/odom 有消息 = scene_simulator 活着（无「有效性」概念）
+  timeout 8 python3 -c "
+import rclpy, time
+from nav_msgs.msg import Odometry
+rclpy.init()
+n = rclpy.create_node('soak_probe%d' % int(time.time()))
+got = [False]
+n.create_subscription(Odometry, '/odom', lambda m: got.__setitem__(0, True), 5)
+end = time.time() + 6
+while time.time() < end and not got[0]:
+    rclpy.spin_once(n, timeout_sec=0.2)
+print(1 if got[0] else 0)
+rclpy.shutdown()" 2>/dev/null
+  return
+fi
+# gz 模式（原有逻辑）
              # 只取纯数字行：FastDDS C++ 日志走 stdout 会污染输出
 python3 - <<'PYEOF'
 import rclpy, time, math
@@ -122,6 +147,7 @@ inject() {  # $1=victim → kill -9, 输出命中 pid 列表（空=没找到目�
         bridge)  pat='parameter_bridge' ;;
         gz)      pat='gz sim|gz-sim-server' ;;
         compute) pat='compute_container' ;;
+        scene_simulator) pat='scene_simulator' ;;
     esac
     local pids; pids=$(pgrep -f "$pat" | paste -sd' ' -)
     [ -n "$pids" ] && kill -9 $pids 2>/dev/null
