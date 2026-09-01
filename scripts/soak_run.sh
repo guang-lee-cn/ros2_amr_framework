@@ -154,11 +154,29 @@ inject() {  # $1=victim → kill -9, 输出命中 pid 列表（空=没找到目�
     echo "$pids"
 }
 
-# ── 就绪: 栈健康（直接附着）或 run_sim 抽签拉起 ─────────────────────────
+# ── 就绪: 栈健康（直接附着）或拉起 ─────────────────────────────────────
 V=$(probe_val)
 if [ "${V:-0}" -lt "$MIN_VALID" ]; then
-    echo "[soak] 栈不在/不健康(V=$V) → run_sim 拉起"
-    "$SCRIPT_DIR/run_sim.sh" || { echo "[soak] ⛔ run_sim 失败, 放弃"; exit 1; }
+    if [ "$SCENE_MODE" = "scene" ]; then
+        # scene 模式：直接 launch supervised_scene（无 Gazebo，不需要 run_sim）
+        echo "[soak] scene 模式拉起 supervised_scene.launch.py..."
+        source /opt/ros/jazzy/setup.bash 2>/dev/null
+        source "$(dirname "$(readlink -f "$0")")/../../../../install/setup.bash" 2>/dev/null ||             source /ws/install/setup.bash 2>/dev/null
+        nohup ros2 launch ros2_robot_middleware supervised_scene.launch.py             > /tmp/scene_launch.log 2>&1 &
+        echo $! > /tmp/scene_launch.pid
+        echo "[soak] 等待 scene_simulator 健康启动（30s）..."
+        sleep 30
+        V=$(probe_val)
+        if [ "${V:-0}" -lt "$MIN_VALID" ]; then
+            echo "[soak] ⛔ supervised_scene 启动后仍不健康 (V=$V)"
+            cat /tmp/scene_launch.log | tail -10
+            exit 1
+        fi
+        echo "[soak] ✅ scene 栈健康 (V=$V)"
+    else
+        echo "[soak] gz 模式 → run_sim 拉起"
+        "$SCRIPT_DIR/run_sim.sh" || { echo "[soak] ⛔ run_sim 失败, 放弃"; exit 1; }
+    fi
 else
     echo "[soak] 附着健康栈 (V=$V)"
 fi
