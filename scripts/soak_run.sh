@@ -167,11 +167,21 @@ inject() {  # $1=victim → kill -9, 输出命中 pid 列表（空=没找到目�
 V=$(probe_val)
 if [ "${V:-0}" -lt "$MIN_VALID" ]; then
     if [ "$SCENE_MODE" = "scene" ]; then
-        # scene 模式：直接 launch supervised_scene（无 Gazebo，不需要 run_sim）
-        echo "[soak] scene 模式拉起 supervised_scene.launch.py..."
+        # scene 模式：直接 ros2 run supervisor——绕过 ros2 launch 层
+        # （launch 退出时可能杀 supervisor，而 supervisor 本身就是进程管理器）
+        echo "[soak] scene 模式直接拉起 supervisor..."
         source /opt/ros/jazzy/setup.bash 2>/dev/null
-        source "$(dirname "$(readlink -f "$0")")/../../../../install/setup.bash" 2>/dev/null ||             source /ws/install/setup.bash 2>/dev/null
-        nohup ros2 launch ros2_robot_middleware supervised_scene.launch.py             > /tmp/scene_launch.log 2>&1 &
+        source /ws/install/setup.bash 2>/dev/null
+        EXE_DIR=$(ros2 pkg prefix ros2_robot_middleware 2>/dev/null)/lib/ros2_robot_middleware
+        nohup ros2 run ros2_robot_middleware amr_supervisor \
+            --ros-args \
+            -p "supervisor.children=[scene_simulator,compute,patrol]" \
+            -p "supervisor.scene_simulator.cmd=[$EXE_DIR/scene_simulator]" \
+            -p "supervisor.compute.cmd=[$EXE_DIR/compute_container,--ros-args,-p,use_sim_time:=false,-p,guard_min_valid_echoes:=0]" \
+            -p "supervisor.compute.depends_on=[scene_simulator]" \
+            -p "supervisor.patrol.cmd=[$EXE_DIR/patrol_3c,--ros-args,-p,use_sim_time:=false]" \
+            -p "supervisor.patrol.depends_on=[compute]" \
+            > /tmp/scene_launch.log 2>&1 &
         echo $! > /tmp/scene_launch.pid
         echo "[soak] 等待 scene_simulator 健康启动（30s）..."
         sleep 30
@@ -252,14 +262,21 @@ while [ "$(date +%s)" -lt "$end_ts" ]; do
             if [ -z "$blip_start" ]; then
                 blip_start=$now
                 echo "[soak] ⚠️ 非注入劣化开始 (V=$V)"
-                # scene 模式：栈死了 → 重新拉起（5 分钟冷却防风暴）
+                # scene 模式：栈死了 → 重拉 supervisor（5 分钟冷却防风暴）
                 if [ "$SCENE_MODE" = "scene" ] &&                    [ $(( now - ${last_restart:-0} )) -gt 300 ]; then
                     last_restart=$now
-                    echo "[soak] scene 模式重拉栈..."
-                    pkill -f "ros2 launch" 2>/dev/null; sleep 2
-                    nohup ros2 launch ros2_robot_middleware supervised_scene.launch.py \
+                    echo "[soak] scene 模式重拉 supervisor..."
+                    pkill -f "amr_supervisor" 2>/dev/null; sleep 2
+                    EXE_DIR=$(ros2 pkg prefix ros2_robot_middleware 2>/dev/null)/lib/ros2_robot_middleware
+                    nohup ros2 run ros2_robot_middleware amr_supervisor \
+                        --ros-args \
+                        -p "supervisor.children=[scene_simulator,compute,patrol]" \
+                        -p "supervisor.scene_simulator.cmd=[$EXE_DIR/scene_simulator]" \
+                        -p "supervisor.compute.cmd=[$EXE_DIR/compute_container,--ros-args,-p,use_sim_time:=false,-p,guard_min_valid_echoes:=0]" \
+                        -p "supervisor.compute.depends_on=[scene_simulator]" \
+                        -p "supervisor.patrol.cmd=[$EXE_DIR/patrol_3c,--ros-args,-p,use_sim_time:=false]" \
+                        -p "supervisor.patrol.depends_on=[compute]" \
                         > /tmp/scene_launch.log 2>&1 &
-                    echo $! > /tmp/scene_launch.pid
                 fi
             fi
         elif [ -n "$blip_start" ]; then
