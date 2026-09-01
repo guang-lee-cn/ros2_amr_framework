@@ -48,6 +48,7 @@ MIN_VALID=${MIN_VALID:-50}
 if [ "$SCENE_MODE" = "scene" ]; then
   VICTIMS=${VICTIMS:-scene_simulator,compute}
   LAUNCH_FILE=${LAUNCH_FILE:-supervised_scene.launch.py}
+  MIN_VALID=${MIN_VALID:-1}  # scene 探针返回 0/1（有消息=1），不是回波数
 else
   VICTIMS=${VICTIMS:-bridge,gz}
   LAUNCH_FILE=${LAUNCH_FILE:-simulation.launch.py}
