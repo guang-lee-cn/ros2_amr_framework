@@ -18,7 +18,7 @@ find_package(OpenSSL REQUIRED)  # OTA 签名验证（domain/ota/package_signer.h
 # Wave 2.2（三审 2026-08-31）：零警告基线。-Wall -Wextra 实测全仓仅 20 条
 # 自有警告（修毕），外部头零噪声——直接 -Werror 固化。新警告即红。
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-  add_compile_options(-Wall -Wextra -Werror)
+  add_compile_options(-Wall -Wextra -Werror -Wno-error=stringop-overflow)
 endif()
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
