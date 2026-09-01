@@ -67,6 +67,10 @@ private:
   amr::domain::planning::GridUpdater grid_updater_{
       amr::domain::planning::GridUpdater::Params{0.55F, 0.75F, 3.0F}};
   amr::domain::planning::OccupancyGrid demo_grid_;
+  mutable std::mutex grid_mutex_;  // P0-B（三审 R3.1）：保护 demo_grid_ 的
+                                    // 写（raytrace/inflate）与读（A* plan）
+                                    // ——策略：锁内 160KB 快照拷贝，A* 在快照上
+                                    // 执行（读侧复制模式，plan 百毫秒不阻塞写）
 
   // ROS2 infrastructure
   // Own callback group: the sibling motor_ctrl's action server can starve

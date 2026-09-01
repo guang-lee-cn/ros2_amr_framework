@@ -29,13 +29,16 @@ MotorCtrlNode::on_configure(const rclcpp_lifecycle::State &)
   // guard_stop_dist must exceed the sim scan_filter cut (0.35 m) — a filtered
   // pipeline can never report nearer than that, so stop_dist below it made
   // the hard stop unreachable and the robot ground into racks at 0.05 m/s.
-  // guard_min_valid_echoes > 0 (sim) treats an echo-less scan as gpu_lidar
+  // guard_min_valid_echoes: fail-safe default（引用 kDefaultMinValidEchoes
+  // 单一事实源）——真机传感器失明默认硬停；空旷/仿真部署侧显式设 0 豁免
   // death instead of "open field" (2026-08-17 blind-drive-through incident).
   amr::domain::execution::CollisionGuard::Params guard_params{};
   guard_params.stop_dist =
       static_cast<float>(this->declare_parameter("guard_stop_dist", 0.30));
   guard_params.min_valid_echoes =
-      static_cast<int>(this->declare_parameter("guard_min_valid_echoes", 0));
+      static_cast<int>(this->declare_parameter(
+          "guard_min_valid_echoes",
+          amr::domain::execution::CollisionGuard::kDefaultMinValidEchoes));
   guard_.set_params(guard_params);
   action_server_ = rclcpp_action::create_server<MoveToPose>(
     this, "/cmd/move_to_pose",

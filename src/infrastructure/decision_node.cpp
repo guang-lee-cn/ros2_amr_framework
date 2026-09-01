@@ -88,11 +88,14 @@ DecisionNode::on_configure(const rclcpp_lifecycle::State &)
   // Initialize OccupancyGrid (400×400 grid, 5cm resolution, 20m×20m).
   // G1c: A* now plans in the map frame — warehouse obstacles sit at
   // map coords x[8,15] y[6,15], so a 20m grid is required (10m overflowed).
-  demo_grid_.width = 400;
-  demo_grid_.height = 400;
-  demo_grid_.resolution = 0.05F;
-  demo_grid_.origin = {0.0F, -10.0F};  // y∈[-10,10]：覆盖 factory_3c y∈[-6,6]
-  demo_grid_.cells.assign(400 * 400, amr::domain::planning::OccupancyGrid::FREE);
+  {  // configure 阶段单线程，锁以保持一致性习惯
+    std::lock_guard<std::mutex> lk(grid_mutex_);
+    demo_grid_.width = 400;
+    demo_grid_.height = 400;
+    demo_grid_.resolution = 0.05F;
+    demo_grid_.origin = {0.0F, -10.0F};  // y∈[-10,10]：覆盖 factory_3c y∈[-6,6]
+    demo_grid_.cells.assign(400 * 400, amr::domain::planning::OccupancyGrid::FREE);
+  }
 
   return CallbackReturn::SUCCESS;
 }
@@ -181,15 +184,20 @@ void DecisionNode::on_perception(const PerceptionObjects::SharedPtr& objs)
     // 发射，否则 hit 坐标整体偏前 0.25m，障碍本体漏标（box 本体在 hit 后）。
     const float lx = rx + 0.25F * std::cos(rtheta);
     const float ly = ry + 0.25F * std::sin(rtheta);
-    scan_to_grid_.raytrace(demo_grid_, ranges.data(), ranges.size(),
-                           amin, ainc, lx, ly, rtheta);
+    int box_cell_cost = 0;
+    {
+      std::lock_guard<std::mutex> lk(grid_mutex_);
+      scan_to_grid_.raytrace(demo_grid_, ranges.data(), ranges.size(),
+                             amin, ainc, lx, ly, rtheta);
+      box_cell_cost = demo_grid_.cost_at(160, 200);  // 锁内诊断读
+    }
     // 诊断：grid box 位置 cost。box (8,0) → cell (160,200)：
     // gx=(8-0)/0.05, gy=(0-(-10))/0.05（origin {0,-10}）。原 (160,0) 查错 cell
     // （世界 8,-10 空旷区），恒 0，曾误导以为 box 没进 grid。
     RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
         "raytrace: ranges=%zu robot=(%.2f,%.2f,%.0fdeg) box_cell(160,200)=%d",
         ranges.size(), rx, ry, rtheta * 180.0F / M_PI,
-        demo_grid_.cost_at(160, 200));
+        box_cell_cost);
   } else {
     RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
         "raytrace SKIP: has_scan=%d ranges=%zu", has_scan, ranges.size());
@@ -208,7 +216,10 @@ void DecisionNode::on_perception(const PerceptionObjects::SharedPtr& objs)
     const float mx = rx + oc * obj.x - os * obj.y;
     const float my = ry + os * obj.x + oc * obj.y;
     if (std::hypot(mx - rx, my - ry) < inscribed) continue;
-    grid_updater_.inflate(demo_grid_, mx, my);
+    {
+      std::lock_guard<std::mutex> lk(grid_mutex_);
+      grid_updater_.inflate(demo_grid_, mx, my);
+    }
   }
 
   // 2. Task-derived goal (launch param / fleet manager), NOT perception.
@@ -240,7 +251,14 @@ void DecisionNode::on_perception(const PerceptionObjects::SharedPtr& objs)
     return;
   }
 
-  auto path = astar_.plan(demo_grid_, start, goal_pose);
+  // P0-B 读侧复制模式：锁内 160KB 快照拷贝（~10-50µs），A*（最坏 200ms）
+  // 在快照上执行——perception 写侧不被阻塞，读侧数据一致性由拷贝保证。
+  amr::domain::planning::OccupancyGrid grid_snapshot;
+  {
+    std::lock_guard<std::mutex> lk(grid_mutex_);
+    grid_snapshot = demo_grid_;  // 160KB memcpy（值语义 OccupancyGrid）
+  }
+  auto path = astar_.plan(grid_snapshot, start, goal_pose);
   RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
       "plan: start=(%.1f,%.1f) goal=(%.1f,%.1f) inscribed=%.2f path_pts=%zu",
       start.x, start.y, gx, gy, grid_updater_.params().inscribed_radius, path.size());
@@ -248,18 +266,18 @@ void DecisionNode::on_perception(const PerceptionObjects::SharedPtr& objs)
     // 诊断（20260817 死锁排查）：空路径时 dump 端点 cost + 起点周边窗口，
     // 区分"起点被堵/目标被堵/搜索不可达"三种空因。
     int scx = 0, scy = 0, gcx = 0, gcy = 0;
-    amr::domain::planning::world_to_grid(demo_grid_, start.x, start.y, scx, scy);
-    amr::domain::planning::world_to_grid(demo_grid_, gx, gy, gcx, gcy);
+    amr::domain::planning::world_to_grid(grid_snapshot, start.x, start.y, scx, scy);
+    amr::domain::planning::world_to_grid(grid_snapshot, gx, gy, gcx, gcy);
     std::string win;
     for (int dy = -8; dy <= 8; ++dy) {
       for (int dx = -8; dx <= 8; ++dx)
-        win += std::to_string(demo_grid_.cost_at(scx + dx, scy + dy) > 252 ? '#' :
-                              demo_grid_.cost_at(scx + dx, scy + dy) > 0 ? '+' : '.');
+        win += std::to_string(grid_snapshot.cost_at(scx + dx, scy + dy) > 252 ? '#' :
+                              grid_snapshot.cost_at(scx + dx, scy + dy) > 0 ? '+' : '.');
       win += '\n';
     }
     RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
         "EMPTY path: start_cost=%d(%d,%d) goal_cost=%d(%d,%d) window16x16[#=inscribed/lthal +=decay . =free]:\n%s",
-        demo_grid_.cost_at(scx, scy), scx, scy, demo_grid_.cost_at(gcx, gcy), gcx, gcy, win.c_str());
+        grid_snapshot.cost_at(scx, scy), scx, scy, grid_snapshot.cost_at(gcx, gcy), gcx, gcy, win.c_str());
     // Goal blocked: no useless dispatch; re-plan on the next perception
     // cycle once the obstacle clears. An in-flight goal is kept.
     return;

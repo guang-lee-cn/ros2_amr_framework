@@ -63,6 +63,13 @@ observability）。C++17 · colcon · gtest · cppcheck 门禁 · 双 RMW CI 矩
 - ADR/复盘 → `docs/design/YYYYMMDD-主题.md`；`mdDoc/` 是本地笔记（已 gitignore）。
 - 提交信息：中文 conventional 格式（`feat/fix/chore(scope): 描述`）。
 
+## 元防线（复审三连击教训）
+
+- **修 bug 时 grep 同文件同类调用是否也需同修**——R1.1 的 --ignore-errors
+  只加给了 runtime 侧、initial 侧同样问题没查前例
+- **把别处的建议具体化为机制断言时，验证必须升级到命令级**——S-2 引用
+  的 supervisor 订阅机制不存在（grep -c create_subscription = 0 即可避免）
+
 ## 禁止清单
 
 - ❌ Domain 层出现任何 ROS 头文件

@@ -41,6 +41,35 @@
 
 ---
 
+## [2026-09-01] 复审整改 R1-R3 — 度量诚实/P0-G 反转/P0-B 竞态根治
+
+> 执行方案：docs/design/20260901-reaudit-fix-decision-record.md §四+§六。
+> 元纪律：每项修复的验证不引用自身产物（P0-I 教训），命令级取证。
+
+- **R1.1 initial capture 根修**：补 `--ignore-errors mismatch,gcov`（与
+  runtime 对齐）+ 去 `|| true` + 非空断言——消灭静默失败通道。
+  **验证【铁证】**：`grep supervisor_node coverage_full.txt` = **1 条**
+  （0.0%, 0/229 行）——initial 机制首次真正生效
+- **R1.2 门禁冲突裁决**：真分母 76.9% < 80% 门禁 → 路径②显式豁免
+  supervisor_node（domain 22 单测覆盖逻辑，infra 侧需真实进程环境）
+- **R1.4 排除注释**：fleet_manager/compute_container/supervisor_node
+  三行排除全部带理由
+- **附带修复**：R1.4 注释插入曾打断 bash 续行（`\\` 后 `#` = 注释掉续行）
+  导致 remove 段执行不到——教训：改脚本后 `bash -n` + 端到端跑一次
+- **R2.1 单一事实源**：`kDefaultMinValidEchoes = 50` 常量在 collision_guard
+  定义，domain Params 默认与 motor_ctrl_node declare_parameter **都引用它**
+  ——node 侧无法独立回退为 fail-open
+  验证：`grep kDefaultMinValidEchoes motor_ctrl_node.cpp` 引用而非字面量
+- **R2.2 注释口径**：三处 "(sim)" 框定统一改 "(fail-safe default)"
+- **R3.1 grid_mutex_ + 快照**：写侧（raytrace/inflate）锁保护、读侧锁内
+  160KB 快照拷贝后 A* 在快照上执行——perception 5Hz 写不被 plan 200ms 阻塞
+- **R3.2 竞态回归锁**：test_grid_race 两线程（独立 ranges 缓冲 + 被堵
+  goal 最大化交叠）持续 2s——TSAN 下修复前必红
+- **验证**：覆盖率 86.7%→81.6%（零覆盖文件真入分母后的真数字）；
+  38 模块全绿；cppcheck 0 错
+
+---
+
 ## [2026-08-31] 三审 Wave 4 宣称对账与度量真化 — 收官批（2.2.0 发布）
 
 - **README 四处宣称对账**：看门狗两分法（supervisor=真 / health_monitor

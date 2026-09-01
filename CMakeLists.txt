@@ -276,6 +276,9 @@ if(BUILD_TESTING)
   add_amr_test(test_package_signer quality/src/test_package_signer.cpp)
   # P0-C 验收：重启序列异步化后的行为证明（单线程 executor，生产同形态）
   add_amr_test(test_health_restart quality/src/test_health_restart.cpp)
+  # P0-B 竞态回归锁（R3.2）：TSAN 下修复前必红修复后必绿
+  add_amr_test(test_grid_race quality/src/test_grid_race.cpp)
+  set_tests_properties(test_grid_race PROPERTIES TIMEOUT 30)
   set_tests_properties(test_health_restart PROPERTIES TIMEOUT 60)
   add_amr_test(test_fusion         quality/src/test_fusion.cpp)
   add_amr_test(test_observability  quality/src/test_observability.cpp)

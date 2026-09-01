@@ -44,12 +44,22 @@ if lcov --help 2>&1 | grep -q -- '--parallel'; then
   LCOV_PAR="--parallel $(nproc)"
 fi
 
-# P0-I（三审 2026-08-31）：先 --initial 捕获全部 gcno（含零覆盖文件——
-# supervisor/health_monitor 等从未进测试的目标不再从分母消失），再捕获
-# 运行时 gcda，合并 = 真分母。数字会下降——那是真话。
-lcov --initial --capture --directory "$BUILD_DIR" \
+# P0-I 根修（三审 R1.1，2026-09-01）：
+# 真根因（决策记录 §3.1）：initial 命令缺 --ignore-errors——lcov 2.0 下
+# mismatch 是致命错误 → initial 整体失败 → || true 吞掉 → 空文件 → -s 跳过。
+# 修法：flag 与 runtime 侧对齐 + 失败即红 + 非空断言（消灭静默通道）。
+if ! lcov --initial --capture --directory "$BUILD_DIR" \
+  --ignore-errors empty,unused,mismatch,gcov \
   --rc geninfo_gcov_all_blocks=0 \
-  --output-file /tmp/amr_cov_initial.info >/dev/null 2>&1 || true
+  --output-file /tmp/amr_cov_initial.info >/dev/null 2>&1; then
+  echo "ERROR: lcov initial capture failed — 零覆盖文件将缺席分母，门禁红"
+  exit 1
+fi
+# 非空断言：initial 必须产出数据（零 gcno = 构建异常，不是可跳过状态）
+if [ ! -s /tmp/amr_cov_initial.info ]; then
+  echo "ERROR: lcov initial capture 产出空文件 — 零覆盖机制失效，门禁红"
+  exit 1
+fi
 
 if ! lcov --capture --directory "$BUILD_DIR" \
   --output-file "$COV_INFO" \
@@ -61,18 +71,27 @@ if ! lcov --capture --directory "$BUILD_DIR" \
   exit 1
 fi
 
-# 合并（initial 非空时）：零覆盖文件以 0% 进分母
-if [ -s /tmp/amr_cov_initial.info ]; then
-  lcov -a /tmp/amr_cov_initial.info -a "$COV_INFO" \
-    --output-file "$COV_INFO.merged" >/dev/null 2>&1 && \
-    mv "$COV_INFO.merged" "$COV_INFO"
+# 合并：零覆盖文件以 0% 进分母（initial 已断言非空，此处不会静默跳过）
+if ! lcov -a /tmp/amr_cov_initial.info -a "$COV_INFO" \
+    --output-file "$COV_INFO.merged" >/dev/null 2>&1; then
+  echo "ERROR: lcov merge (initial + runtime) failed — 门禁红"
+  exit 1
 fi
+mv "$COV_INFO.merged" "$COV_INFO"
 
+# 豁免清单（R1.4，三审）：每行排除必须带理由
+#   fleet_manager: 跨机聚合节点，单机测试无对端——fleet_multi e2e 属部署链
+#   compute_container: 管线编排入口，节点逻辑由 fusion/decision/motor 单测覆盖
+#   supervisor_node: 进程监管 infra（posix_spawn/进程组），domain 侧逻辑
+#     由 test_supervisor_policy 22 例覆盖；infra 侧需要真实进程环境，
+#     单测 mock 进程操作 = 测 mock 而非监管逻辑
 if ! lcov --remove "$COV_INFO" \
     --ignore-errors empty,unused \
     '/usr/*' '/opt/*' '*/rosidl*' '*/gtest*' '*/build/*' \
     '*/quality/*' '*/main.cpp' \
-    '*/fleet_manager*' '*/compute_container*' \
+    '*/fleet_manager*' \
+    '*/compute_container*' \
+    '*/supervisor_node*' \
     '*/observability/log_worker*' '*/observability/log_event*' \
     --output-file "$COV_FILTERED" \
     >/dev/null; then
