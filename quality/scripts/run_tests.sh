@@ -31,10 +31,17 @@ case "$MODE" in
     export LSAN_OPTIONS="suppressions=$PROJECT_DIR/quality/lsan.supp"
     # 2026-08-30 WSL OOM 事故教训：ASAN 编译单 cc1plus ~2.1GB，12 路并行
     # 峰值 ~25GB 撞穿 22GB WSL 上限 → 全局 OOM 杀掉 IDE 桥接进程。
-    # asan 模式强制限幅 + 低优先级（4×2GB=8GB 峰值，安全；慢但不断连）。
-    export CMAKE_BUILD_PARALLEL_LEVEL=${CMAKE_BUILD_PARALLEL_LEVEL:-4}
-    export MAKEFLAGS="-j${CMAKE_BUILD_PARALLEL_LEVEL}"
-    echo "[run_tests] 编译并行限幅: $CMAKE_BUILD_PARALLEL_LEVEL（OOM 纪律）"
+    # 限幅仅对 WSL/本地开发环境生效——CI runner 按自身资源配置：
+    #   GitHub Actions ubuntu-latest = 4 核 16GB → -j4 是满并行（不减慢）
+    #   本地 WSL2 22GB 12 核 → 必须限 -j4（OOM 纪律）
+    if [ -n "${GITHUB_ACTIONS:-}" ]; then
+      export CMAKE_BUILD_PARALLEL_LEVEL=${CMAKE_BUILD_PARALLEL_LEVEL:-$(nproc)}
+      echo "[run_tests] CI 环境: 并行 = $(nproc)（runner 自有资源）"
+    else
+      export CMAKE_BUILD_PARALLEL_LEVEL=${CMAKE_BUILD_PARALLEL_LEVEL:-4}
+      export MAKEFLAGS="-j${CMAKE_BUILD_PARALLEL_LEVEL}"
+      echo "[run_tests] 本地环境: 并行限幅 $CMAKE_BUILD_PARALLEL_LEVEL（OOM 纪律）"
+    fi
     ;;
   release)
     CXX_FLAGS="-O2 -DNDEBUG"
