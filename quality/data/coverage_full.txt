@@ -1,5 +1,5 @@
 # 由 coverage_report.py 从 lcov .info 直算（DA 行口径）
-# 聚合: 3042/3687 = 82.5%  文件数: 72
+# 聚合: 3055/3702 = 82.5%  文件数: 72
 domain/planning/target_selector.hpp                                      0.0%      0/    2
 observability/spdlog_adapter.hpp                                         0.0%      0/   16
 src/hal/diff_drive_system.cpp                                            0.0%      0/   65
@@ -14,7 +14,7 @@ src/infrastructure/supervisor_main.cpp                                   0.0%   
 src/infrastructure/temperature_main.cpp                                  0.0%      0/    9
 src/infrastructure/temperature_monitor_main.cpp                          0.0%      0/    9
 src/infrastructure/ultrasonic_main.cpp                                   0.0%      0/    9
-src/infrastructure/health_monitor_node.cpp                              53.4%    135/  253
+src/infrastructure/health_monitor_node.cpp                              53.5%    138/  258
 src/infrastructure/prometheus_http_server.cpp                           62.0%     31/   50
 src/infrastructure/camera_node.cpp                                      63.8%     37/   58
 hal/sensor/isensor.hpp                                                  64.7%     11/   17
@@ -36,8 +36,8 @@ domain/monitoring/supervisor_policy.hpp                                 86.6%   
 domain/ota/ota_coordinator.hpp                                          88.0%     66/   75
 domain/perception/degradation_policy.hpp                                88.2%     30/   34
 domain/device/device_registry.hpp                                       90.9%     20/   22
-src/infrastructure/ota_agent_node.cpp                                   93.8%    106/  113
 src/infrastructure/scene_simulator_node.cpp                             93.9%    139/  148
+src/infrastructure/ota_agent_node.cpp                                   94.3%    116/  123
 domain/execution/collision_guard.hpp                                    95.2%     79/   83
 domain/rpc/lightweight_rpc.hpp                                          95.2%     60/   63
 infrastructure/amr_node.hpp                                             95.2%     20/   21
