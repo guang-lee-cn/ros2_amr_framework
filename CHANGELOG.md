@@ -3,6 +3,17 @@
 
 ## [2.3.0] — 2026-09-01
 
+### Added — B3 API 稳定性策略（微缩 REP）
+- 三级稳定性等级（Stable/Growth/Internal）+ 变更流程 + 现有 API 基线
+  （docs/design/20260901-b3-api-stability.md）
+- CHANGELOG 纪律：Added/Changed/Deprecated/Removed 四节为接口变更唯一权威
+
+### Deprecated — B3 弃用演练
+-  重载——scenario 应经
+  set_parameter 注入而非工厂参数。替代：create_lidar(cfg) +
+  set_parameter("scenario")。移除：v2.4.0
+
+
 ### Fixed — 复审整改 R1-R5（度量诚实/安全默认/竞态/信任链）
 - R1: initial capture 补 --ignore-errors（supervisor_node 以 0% 真正入分母）
 - R2: kDefaultMinValidEchoes=50 单一事实源（真机 fail-safe 默认）
