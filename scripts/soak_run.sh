@@ -128,7 +128,8 @@ probe_val() {  # probe 的数字安全包装（bash 算术比较用）
 
 rss_sample() {  # 全进程 RSS 快照（ps 一次, 按名聚合多 pid）
     local ts; ts=$(date +%s)
-    local ps_out; ps_out=$(ps -eo rss=,args= 2>/dev/null)
+    # 排除僵尸（RSS 为 0 且 stat=Z）
+    local ps_out; ps_out=$(ps -eo rss=,stat=,args= 2>/dev/null | grep -v '^ *0 Z' | awk '{$2=""; print $1, $0}' | cut -d' ' -f1,3-)
     {
         echo "$ps_out" | grep -E 'gz sim |gz-sim-server' | awk -v t="$ts" '{s+=$1} END {if (s) print t",gz,"s}'
         echo "$ps_out" | grep -F 'parameter_bridge' | awk -v t="$ts" '{s+=$1} END {if (s) print t",bridge,"s}'
@@ -150,7 +151,14 @@ inject() {  # $1=victim → kill -9, 输出命中 pid 列表（空=没找到目�
         compute) pat='compute_container' ;;
         scene_simulator) pat='scene_simulator' ;;
     esac
-    local pids; pids=$(pgrep -f "$pat" | paste -sd' ' -)
+    # 排除僵尸进程（Z 状态）——僵尸不响应信号，注入在僵尸上无效
+    local pids=""
+    for p in $(pgrep -f "$pat" 2>/dev/null); do
+      if [ "$(readlink /proc/$p/exe 2>/dev/null)" != "" ] ||          [ "$(cat /proc/$p/stat 2>/dev/null | awk '{print $3}')" != "Z" ]; then
+        pids="$pids $p"
+      fi
+    done
+    pids=$(echo "$pids" | tr -s ' ' | sed 's/^ //')
     [ -n "$pids" ] && kill -9 $pids 2>/dev/null
     echo "$pids"
 }
