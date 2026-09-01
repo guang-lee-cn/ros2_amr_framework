@@ -49,6 +49,10 @@ public:
 
 private:
   /// Bresenham 直线：起点→终点路径标 FREE（clearing），终点标 LETHAL。
+  /// 穿货架修复（2026-09-01）：clearing 不降级已是 LETHAL 的格——机器人
+  /// 靠近料架时，近距回波 <0.35m 被 scan_filter 滤掉 → 该方向的射线
+  /// 全部超 max_range → 不清不标 → 但其他方向的射线 clearing 会把料架
+  /// 格清为 FREE → A* 规划穿过。障碍格一旦标记就不再被 clearing 降级。
   void bresenham(OccupancyGrid &grid,
                  float wx0, float wy0, float wx1, float wy1) const {
     int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
@@ -65,11 +69,17 @@ private:
         set_cost(grid, x, y, OccupancyGrid::LETHAL);  // hit 点 = 障碍本体
         break;
       }
-      set_cost(grid, x, y, OccupancyGrid::FREE);  // 射线 clearing
+      set_free_if_not_lethal(grid, x, y);  // clearing 不降级 LETHAL
       const int e2 = 2 * err;
       if (e2 > -dy) { err -= dy; x += sx; }
       if (e2 < dx)  { err += dx; y += sy; }
     }
+  }
+
+  static void set_free_if_not_lethal(OccupancyGrid &g, int gx, int gy) {
+    if (gx < 0 || gx >= g.width || gy < 0 || gy >= g.height) return;
+    auto &cell = g.cells[static_cast<size_t>(gy) * static_cast<size_t>(g.width) + static_cast<size_t>(gx)];
+    if (cell < OccupancyGrid::LETHAL) cell = OccupancyGrid::FREE;
   }
 
   static void set_cost(OccupancyGrid &g, int gx, int gy, uint8_t c) {
