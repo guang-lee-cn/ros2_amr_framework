@@ -70,9 +70,9 @@ IFS=',' read -ra VICTIM_ARR <<< "$VICTIMS"
 for v in "${VICTIM_ARR[@]}"; do
     case "$v" in
         bridge|gz) ;;
-        compute)
-            if [ "${LAUNCH_FILE:-simulation.launch.py}" != "supervised_sim.launch.py" ]; then
-                echo "[soak] ⛔ victim 'compute' 需要 LAUNCH_FILE=supervised_sim.launch.py（否则无人拉起）"
+        compute|scene_simulator)
+            if [ "$SCENE_MODE" != "scene" ] && [ "${LAUNCH_FILE:-}" != "supervised_sim.launch.py" ]; then
+                echo "[soak] ⛔ victim '$v' 需要 supervised 形态（supervised_sim 或 SCENE_MODE=scene）"
                 exit 1
             fi ;;
         *) echo "[soak] ⛔ 不支持 victim '$v'（无自动恢复链）"; exit 1 ;;
