@@ -192,7 +192,11 @@ fi
 
 # ── 就绪: watchdog（已有则复用——不动别人的实例）───────────────────────
 WD_PID=""
-if pgrep -f 'sim_watchdog' >/dev/null 2>&1; then
+if [ "$SCENE_MODE" = "scene" ]; then
+    # scene 模式不启动 sim_watchdog——它只会调 run_sim.sh（Gazebo 路径，
+    # 云端无 GPU 必挂）。恢复链由 supervisor + soak 自身的重试逻辑承担。
+    echo "[soak] scene 模式：跳过 sim_watchdog（supervisor 管恢复）"
+elif pgrep -f 'sim_watchdog' >/dev/null 2>&1; then
     echo "[soak] 复用已在运行的 sim_watchdog"
 else
     nohup bash "$SCRIPT_DIR/sim_watchdog.sh" > "$OUT/watchdog.log" 2>&1 &
@@ -243,11 +247,20 @@ while [ "$(date +%s)" -lt "$end_ts" ]; do
             pending_ts=""
         fi
     else
-        # 非注入劣化（WSL2 渲染劣化/栈自亡）——watchdog 应自愈, 这里记账
+        # 非注入劣化——scene 模式下由 soak 重拉栈，gz 模式由 watchdog 自愈
         if [ "${V:-0}" -lt "$MIN_VALID" ]; then
             if [ -z "$blip_start" ]; then
                 blip_start=$now
                 echo "[soak] ⚠️ 非注入劣化开始 (V=$V)"
+                # scene 模式：栈死了 → 重新拉起（5 分钟冷却防风暴）
+                if [ "$SCENE_MODE" = "scene" ] &&                    [ $(( now - ${last_restart:-0} )) -gt 300 ]; then
+                    last_restart=$now
+                    echo "[soak] scene 模式重拉栈..."
+                    pkill -f "ros2 launch" 2>/dev/null; sleep 2
+                    nohup ros2 launch ros2_robot_middleware supervised_scene.launch.py \
+                        > /tmp/scene_launch.log 2>&1 &
+                    echo $! > /tmp/scene_launch.pid
+                fi
             fi
         elif [ -n "$blip_start" ]; then
             echo "external,$now,degradation,$(( now - blip_start ))" >> "$OUT/inject_log.csv"
