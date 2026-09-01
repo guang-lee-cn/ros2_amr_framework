@@ -1,5 +1,5 @@
 # 由 coverage_report.py 从 lcov .info 直算（DA 行口径）
-# 聚合: 3047/3702 = 82.3%  文件数: 72
+# 聚合: 3051/3706 = 82.3%  文件数: 72
 domain/planning/target_selector.hpp                                      0.0%      0/    2
 observability/spdlog_adapter.hpp                                         0.0%      0/   16
 src/hal/diff_drive_system.cpp                                            0.0%      0/   65
@@ -58,7 +58,7 @@ domain/perception/stamp_gate.hpp                                       100.0%   
 domain/perception/tracker.hpp                                          100.0%     62/   62
 domain/planning/goal_dispatch_gate.hpp                                 100.0%     26/   26
 domain/planning/grid_updater.hpp                                       100.0%     31/   31
-domain/planning/scan_to_grid.hpp                                       100.0%     32/   32
+domain/planning/scan_to_grid.hpp                                       100.0%     36/   36
 domain/planning/track_error_monitor.hpp                                100.0%     44/   44
 domain/scheduling/task_scheduler.hpp                                   100.0%     27/   27
 domain/transform_provider.hpp                                          100.0%      1/    1
