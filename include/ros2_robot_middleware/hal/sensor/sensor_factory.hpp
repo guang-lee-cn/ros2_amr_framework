@@ -73,7 +73,7 @@ public:
     /// @deprecated B3 弃用演练（2026-09-01）：scenario 应经 set_parameter
     ///   注入而非工厂重载——真机路径不应看到此参数。移除：v2.4.0。
     ///   替代：create_lidar(cfg) + node->set_parameter("scenario", name)
-    [[deprecated("Use create_lidar(cfg) + set_parameter("scenario") instead. Removal: v2.4.0")]]
+    [[deprecated("Use create_lidar(cfg) + set_parameter(\"scenario\") instead. Removal: v2.4.0")]]
     static LidarPtr create_lidar(const SensorConfig &cfg, const Scenario &scenario) {
         if (cfg.type == "simulated") {
             return std::make_unique<SimulatedLidar>(scenario);
