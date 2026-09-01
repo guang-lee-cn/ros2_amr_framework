@@ -173,6 +173,20 @@ void OtaAgentNode::on_health_report(const std::string & report)
   ota_->on_health(ok);
   if (ota_->state() == domain::ota::State::COMMITTED) {
     if (int64_t v = ota_->active_version(); v > security_counter_) security_counter_ = v;
+    // R4.6（三审）：原子写持久化（temp+rename，OTA 同型教训）
+    {
+      const char *home = std::getenv("HOME");
+      namespace fs = std::filesystem;
+      const std::string state_dir =
+          home ? std::string(home) + "/.ros/amr_ota" : "/tmp/amr_ota";
+      std::error_code ec;
+      fs::create_directories(state_dir, ec);
+      const std::string counter_file = state_dir + "/security_counter";
+      const std::string tmp = counter_file + ".tmp";
+      { std::ofstream f(tmp, std::ios::trunc);
+        f << security_counter_ << "\n"; }
+      fs::rename(tmp, counter_file, ec);
+    }
     RCLCPP_INFO(get_logger(), "[commit] ✓ COMMITTED slot%c v%ld",
                 ota_->active_slot(), ota_->active_version());
   } else {

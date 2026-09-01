@@ -55,7 +55,9 @@ private:
     std::string node;
     size_t step = 0;       // 0..3: deactivate→cleanup→configure→activate
     bool in_progress = false;
+    double deadline = 0.0; // N-3（三审）：超时则放弃，不永久挂起
   };
+  static constexpr double kRestartTimeoutS = 30.0;  // 4 步 × DDS 往返 + 余量
   void begin_restart(const std::string &node_name);
   void send_next_transition();
   void handle_transition_response(

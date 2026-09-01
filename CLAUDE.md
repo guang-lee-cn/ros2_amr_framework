@@ -27,7 +27,9 @@ observability）。C++17 · colcon · gtest · cppcheck 门禁 · 双 RMW CI 矩
 
 - compute 容器内热路径发布一律 `std::unique_ptr`（fusion/decision 已示范，
   见 src/infrastructure/compute_container.cpp 头部注释）。
-- 传感器→fusion 的跨进程 DDS 是**故意保留**（故障隔离），不要"优化"掉。
+- 真机形态规划为传感器→fusion 跨进程 DDS（故障隔离），不要"优化"掉；
+  当前默认 launch 未接线话题（fusion 进程内实例化仿真传感器），见
+  ARCHITECTURE.md 数据流注——真传感器驱动上线时自然驱动接线。
 
 ## 节点形态
 

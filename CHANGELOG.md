@@ -1,7 +1,47 @@
 # Changelog
 
-## [2.2.0] — 2026-08-31
 
+## [2.3.0] — 2026-09-01
+
+### Fixed — 复审整改 R1-R5（度量诚实/安全默认/竞态/信任链）
+- R1: initial capture 补 --ignore-errors（supervisor_node 以 0% 真正入分母）
+- R2: kDefaultMinValidEchoes=50 单一事实源（真机 fail-safe 默认）
+- R3: demo_grid_ 加锁 + 160KB 快照拷贝（P0-B 竞态根治 + TSAN 回归锁）
+- R4: 重启超时 30s + 计数器原子写持久化 + P0-K 真话 + v2.2.0 tag 修复
+- R5: compose 单 compute 服务 + entrypoint 直通名 + package.xml 补 8 依赖
+
+## [2.2.0] — 2026-08-31（历史发布，带已知瑕疵）
+
+- TODO: Fast-DDS XML profile field testing
+- TODO: Multi-threaded executor for cancel-action test coverage
+
+## [2.1.0] — 2026-07-31
+
+### Added — 控制层自研闭环 (P3)
+- **路径平滑** `path_smoother.hpp`：内切圆弧圆角（无 overshoot），直线密集采样，6 测试
+- **跟踪误差监控** `track_error_monitor.hpp`：横向误差→降速/停止，接入 MotorCtrlNode，7 测试
+- **动态避障重规划** `grid_updater.hpp`：感知→膨胀标记→A* 重规划→平滑，4 测试
+- **商业部署方案** `deployment-plan.md`：Docker + OTA + 版本锁定
+
+### Added — 可观测性增强
+- **PerfRegistry → Prometheus**：compute_container :9091 端点暴露 AMR_PERF_PHASE 阶段延迟
+- **Grafana dashboard** `config/grafana/amr_dashboard.json`：5 面板（阶段延迟/健康/降级）
+
+### Changed — HAL 层重组 (P2)
+- `amr::hal` 命名空间 + `hal/` 目录（sensor/actuator/common）
+- **SensorFactory → Registry**：静态插件注册，加传感器零改框架
+- metrics_registry → .cpp 拆分（POSIX 头移出 header）
+
+### Changed — 融合层升级 (P1)
+- **DBSCAN → PCL** 策略模式（`IClusterAlgorithm`），3.2x 加速
+- **robot_localization EKF** 集成 → /odom 定位闭环
+- MotorCtrlNode 开环→闭环（订阅 /odom）
+- Camera 占位清理（删除 900KB 噪声生成）
+- IActuator 接口 + 驱动接入指南
+
+### Changed — 测试
+- 15 模块 98 用例（新增 astar/pure_pursuit/path_smoother/track_error/grid_updater）
+- test_motor_ctrl 从 CI 排除（spin_once 竞态待 P2 修复）
 ### Fixed — 三审 Wave 4 宣称对账与度量真化
 - README 四处宣称对账：看门狗两分法（supervisor 真/health_monitor 修复
   后真）+ 告警如实标注未实现；:9091 仅插桩构建存在；fleet_multi 标注
@@ -61,33 +101,21 @@
   修复两处未运行而未暴露的问题（仿真起点偏离路径起点、包围圈量化缝隙），9 用例全绿
 - 测试套件实况：**32 模块**（ctest 100% 通过），README 数据同步刷新
 
-## [2.1.0] — 2026-07-31
+### 补遗（2026-09-01 更正）
 
-### Added — 控制层自研闭环 (P3)
-- **路径平滑** `path_smoother.hpp`：内切圆弧圆角（无 overshoot），直线密集采样，6 测试
-- **跟踪误差监控** `track_error_monitor.hpp`：横向误差→降速/停止，接入 MotorCtrlNode，7 测试
-- **动态避障重规划** `grid_updater.hpp`：感知→膨胀标记→A* 重规划→平滑，4 测试
-- **商业部署方案** `deployment-plan.md`：Docker + OTA + 版本锁定
+**P0-I 更正**：v2.2.0 发布时的「真分母 86.7%」宣称——`--initial` 机制
+当时实际未生效（root cause: initial 命令缺 `--ignore-errors`，被 `|| true`
+吞掉），86.7% 的下降来自新增 test_health_restart 带来的 gcda，非零覆盖
+文件进分母。机制已在 v2.3.0 真正修通（supervisor_node 以 0% 入列验证）。
 
-### Added — 可观测性增强
-- **PerfRegistry → Prometheus**：compute_container :9091 端点暴露 AMR_PERF_PHASE 阶段延迟
-- **Grafana dashboard** `config/grafana/amr_dashboard.json`：5 面板（阶段延迟/健康/降级）
-
-### Changed — HAL 层重组 (P2)
-- `amr::hal` 命名空间 + `hal/` 目录（sensor/actuator/common）
-- **SensorFactory → Registry**：静态插件注册，加传感器零改框架
-- metrics_registry → .cpp 拆分（POSIX 头移出 header）
-
-### Changed — 融合层升级 (P1)
-- **DBSCAN → PCL** 策略模式（`IClusterAlgorithm`），3.2x 加速
-- **robot_localization EKF** 集成 → /odom 定位闭环
-- MotorCtrlNode 开环→闭环（订阅 /odom）
-- Camera 占位清理（删除 900KB 噪声生成）
-- IActuator 接口 + 驱动接入指南
-
-### Changed — 测试
-- 15 模块 98 用例（新增 astar/pure_pursuit/path_smoother/track_error/grid_updater）
-- test_motor_ctrl 从 CI 排除（spin_once 竞态待 P2 修复）
+**Wave 1-3 安全修复清单**（此前遗漏未入发布说明）：
+- P0-A: 感知主链路 stack-use-after-return 根治（std::array 值语义）
+- P0-C: health_monitor 重启序列异步化（死锁根治）
+- P0-D: OTA 验签绑定镜像内容 {version, sha256, size}
+- P0-E: 公钥构造期钉住（运行时不可替换）
+- P0-F: install 排除私钥分发
+- P0-L: motor_ctrl 独立形态 MultiThreadedExecutor（饿死修复）
+- P1: goal_pose/motor goal NaN 入口校验
 
 ## [2.0.0] — 2026-07-18
 
@@ -129,6 +157,22 @@
 
 ---
 
+## [0.2.0] — 2026-06-17
+
+### Added — Phase 13: Health Monitoring + Prometheus
+- `health_monitor_node`: heartbeat-based monitoring of 6 robot nodes
+- New messages: `HealthStatus` (node_name/status/last_seen/timeout), `HealthReport` (Header + HealthStatus[])
+- 1Hz heartbeat publishers on all 6 nodes (dedicated topics, std_msgs/String)
+- Health check service at `/health/check` (SetParam request/response)
+- Embedded Prometheus HTTP server on `:9090/metrics` (raw TCP socket, zero library deps)
+- Prometheus gauge metrics: `ros2_node_health_seconds`, `ros2_node_timeout_seconds`
+- Status classification: OK / WARN (80% timeout) / ERROR / STALE
+- Per-node configurable timeout via ROS2 parameters
+- Launch file and docker-compose updated to 7 services
+
+### Fixed
+- C++ name hiding bug: `HealthMonitorNode::create_publisher()` shadowed `rclcpp::Node::create_publisher<T>()` — fixed with qualified `rclcpp::Node::create_publisher<T>(...)` call
+
 ## [0.1.0] — 2026-06-17
 
 ### Added — Phase 9: Docker
@@ -161,23 +205,3 @@
 
 ### Docs
 - PRD (8 sections), Design Doc (topology + interfaces), Cost Estimation, ROS2 Guide, DDS Customization
-
-## [0.2.0] — 2026-06-17
-
-### Added — Phase 13: Health Monitoring + Prometheus
-- `health_monitor_node`: heartbeat-based monitoring of 6 robot nodes
-- New messages: `HealthStatus` (node_name/status/last_seen/timeout), `HealthReport` (Header + HealthStatus[])
-- 1Hz heartbeat publishers on all 6 nodes (dedicated topics, std_msgs/String)
-- Health check service at `/health/check` (SetParam request/response)
-- Embedded Prometheus HTTP server on `:9090/metrics` (raw TCP socket, zero library deps)
-- Prometheus gauge metrics: `ros2_node_health_seconds`, `ros2_node_timeout_seconds`
-- Status classification: OK / WARN (80% timeout) / ERROR / STALE
-- Per-node configurable timeout via ROS2 parameters
-- Launch file and docker-compose updated to 7 services
-
-### Fixed
-- C++ name hiding bug: `HealthMonitorNode::create_publisher()` shadowed `rclcpp::Node::create_publisher<T>()` — fixed with qualified `rclcpp::Node::create_publisher<T>(...)` call
-
-## [2.2.0] — 2026-08-31
-- TODO: Fast-DDS XML profile field testing
-- TODO: Multi-threaded executor for cancel-action test coverage
