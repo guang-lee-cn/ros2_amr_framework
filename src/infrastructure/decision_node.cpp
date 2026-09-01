@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include "ros2_robot_middleware/observability/lttng_tracepoints.hpp"
 #include <limits>
 #include <rclcpp_components/register_node_macro.hpp>
 

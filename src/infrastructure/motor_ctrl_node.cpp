@@ -10,6 +10,7 @@
 
 #include <chrono>
 #include <cmath>
+#include "ros2_robot_middleware/observability/lttng_tracepoints.hpp"
 #include <cstdint>
 #include <cstring>
 

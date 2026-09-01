@@ -303,6 +303,7 @@ void FusionNode::timer_callback() {
   // Debug 构建下 segfault 捕获：UB 在 Release 下不显形≠不存在）
   const auto n_objects = static_cast<int32_t>(msg->objects.size());
   fusion_pub_->publish(std::move(msg));
+  // C1: domain 级 tracepoint——LTTng 未启用时零开销（nop）
 
   // ── Observability ────────────────────────────────────────────────
   auto &m = amr::observability::shared_metrics();

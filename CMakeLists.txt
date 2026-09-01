@@ -13,7 +13,8 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
-find_package(OpenSSL REQUIRED)  # OTA 签名验证（domain/ota/package_signer.hpp）
+find_package(OpenSSL REQUIRED)  # OTA 签名验证
+find_package(tracetools QUIET)  # C1: rclcpp callback tracepoint 支持  # C1: ros2_tracing 生态
 
 # Wave 2.2（三审 2026-08-31）：零警告基线。-Wall -Wextra 实测全仓仅 20 条
 # 自有警告（修毕），外部头零噪声——直接 -Werror 固化。新警告即红。
@@ -84,6 +85,7 @@ ament_target_dependencies(robot_middleware_lib
 rosidl_get_typesupport_target(cpp_typesupport_target
   ${PROJECT_NAME} "rosidl_typesupport_cpp")
 target_link_libraries(robot_middleware_lib "${cpp_typesupport_target}" OpenSSL::Crypto)
+
 
 # Composable compute nodes — shared library loaded into a container process
 # fusion, decision, motor_ctrl share a process (zero-copy, low latency)
