@@ -1,5 +1,5 @@
 # 由 coverage_report.py 从 lcov .info 直算（DA 行口径）
-# 聚合: 3051/3706 = 82.3%  文件数: 72
+# 聚合: 3052/3713 = 82.2%  文件数: 72
 domain/planning/target_selector.hpp                                      0.0%      0/    2
 observability/spdlog_adapter.hpp                                         0.0%      0/   16
 src/hal/diff_drive_system.cpp                                            0.0%      0/   65
@@ -23,8 +23,8 @@ src/infrastructure/imu_node.cpp                                         71.4%   
 src/infrastructure/lidar_node.cpp                                       71.8%     51/   71
 src/infrastructure/temperature_node.cpp                                 74.1%     40/   54
 src/infrastructure/ultrasonic_node.cpp                                  75.4%     43/   57
+src/infrastructure/decision_node.cpp                                    76.8%    229/  298
 domain/monitoring/heartbeat_analyzer.hpp                                76.9%     10/   13
-src/infrastructure/decision_node.cpp                                    78.4%    228/  291
 src/infrastructure/motor_ctrl_node.cpp                                  81.0%    201/  248
 src/infrastructure/temperature_monitor_node.cpp                         81.6%     40/   49
 src/infrastructure/fusion_node.cpp                                      82.9%    180/  217
