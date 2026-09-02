@@ -18,6 +18,8 @@ void SceneSimulatorNode::init() {
   amr::domain::simulation::SceneParams params;
   this->declare_parameter<std::string>("scene_name", "rack_3c");
   params.scene_name = this->get_parameter("scene_name").as_string();
+  // NAV2+SLAM 组合下置 false：map→odom 归 slam_toolbox，两个发布者同帧会打架
+  this->declare_parameter<bool>("broadcast_map_tf", true);
   scene_ = amr::domain::simulation::SimulatedScene(params);
 
   cmd_sub_ = create_subscription<geometry_msgs::msg::Twist>(
@@ -84,12 +86,15 @@ void SceneSimulatorNode::tick() {
   amcl_pub_->publish(amcl);
 
   // ── TF: map→amr/odom (fixed identity) + amr/odom→amr/chassis (robot) ─
+  // broadcast_map_tf=false 时跳过 map→odom（见 init() 声明处注释）
   geometry_msgs::msg::TransformStamped t;
   t.header.stamp = now;
   t.header.frame_id = "map";
   t.child_frame_id = "amr/odom";
   t.transform.rotation.w = 1.0;
-  tf_broadcaster_->sendTransform(t);
+  if (this->get_parameter("broadcast_map_tf").as_bool()) {
+    tf_broadcaster_->sendTransform(t);
+  }
 
   t.header.frame_id = "amr/odom";
   t.child_frame_id = "amr/chassis";
