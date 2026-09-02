@@ -38,7 +38,12 @@ set -o pipefail
 
 source /opt/ros/jazzy/setup.bash
 source "$(dirname "$(readlink -f "$0")")/../../../../install/setup.bash" 2>/dev/null || \
-    source ~/code/ros2_ws/install/setup.bash
+    source ~/code/ros2_ws/install/setup.bash 2>/dev/null || \
+    source /ws/install/setup.bash 2>/dev/null
+if ! command -v ros2 &>/dev/null; then
+    echo "[soak] ⛔ ROS2 环境未设置——三个 source 路径均失败——退出"
+    exit 1
+fi
 
 DURATION_MIN=${DURATION_MIN:-4320}
 INJECT_INTERVAL_MIN=${INJECT_INTERVAL_MIN:-30}

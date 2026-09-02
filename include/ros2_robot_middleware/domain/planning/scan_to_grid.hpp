@@ -76,10 +76,14 @@ private:
     }
   }
 
+  /// 穿货架修复的衰减版：LETHAL(254=障碍本体) 永久 sticky（静态料架不会
+  /// 移走）；INSCRIBED(253=膨胀区) 可被 clearing 衰减（动态障碍移走后
+  /// 膨胀区应恢复通行——膨胀区是安全距离不是障碍本身）。
   static void set_free_if_not_lethal(OccupancyGrid &g, int gx, int gy) {
     if (gx < 0 || gx >= g.width || gy < 0 || gy >= g.height) return;
     auto &cell = g.cells[static_cast<size_t>(gy) * static_cast<size_t>(g.width) + static_cast<size_t>(gx)];
-    if (cell < OccupancyGrid::LETHAL) cell = OccupancyGrid::FREE;
+    if (cell < OccupancyGrid::INSCRIBED) cell = OccupancyGrid::FREE;
+    // INSCRIBED 可清（动态障碍恢复），LETHAL 不可清（静态障碍永久）
   }
 
   static void set_cost(OccupancyGrid &g, int gx, int gy, uint8_t c) {
