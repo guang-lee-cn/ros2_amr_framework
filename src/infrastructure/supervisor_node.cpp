@@ -153,9 +153,22 @@ bool SupervisorNode::spawn_child(ProcChild &c) {
 
 void SupervisorNode::kill_child(ProcChild &c) {
   if (c.pid <= 0) return;
-  kill(-c.pid, SIGKILL);  // 组杀：含孙进程
-  kill(c.pid, SIGKILL);
-  RCLCPP_WARN(get_logger(), "✂ %s (pgid %d) 已杀", c.spec.name.c_str(), c.pid);
+  const pid_t pid = c.pid;
+  kill(-pid, SIGKILL);  // 组杀：含孙进程
+  kill(pid, SIGKILL);
+  // F-1 修复（2026-09-02 Docker soak 12 僵尸根因）：SIGKILL 后必须 waitpid
+  // 回收——僵尸持有 DDS 端口/SHM/PID 号，不回收则重启的子进程可能因资源
+  // 冲突再死（compute 反复死活循环的疑似根因）。WNOHANG 重试 ≤200ms。
+  int status = 0;
+  for (int retry = 0; retry < 20; ++retry) {
+    if (waitpid(pid, &status, WNOHANG) == pid) {
+      RCLCPP_WARN(get_logger(), "✂ %s (pgid %d) 已杀并回收", c.spec.name.c_str(), pid);
+      c.pid = -1;
+      return;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  RCLCPP_WARN(get_logger(), "⚠ %s (pgid %d) 杀后 200ms 未回收（罕见）", c.spec.name.c_str(), pid);
   c.pid = -1;
 }
 
