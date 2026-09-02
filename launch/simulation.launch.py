@@ -109,6 +109,7 @@ def generate_launch_description():
             # stale/empty 检测拦不住），fail-safe 硬停而非按"空旷场地"放行。
             # 健康 ~300 回波 / 扇区失明 ~160 / 全盲 0；0 = 禁用（真机默认）。
             "guard_min_valid_echoes": 50,
+            "static_obstacles": True,
         }])
 
     return LaunchDescription([

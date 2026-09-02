@@ -97,6 +97,22 @@ DecisionNode::on_configure(const rclcpp_lifecycle::State &)
     demo_grid_.resolution = 0.05F;
     demo_grid_.origin = {0.0F, -10.0F};  // y∈[-10,10]：覆盖 factory_3c y∈[-6,6]
     demo_grid_.cells.assign(400 * 400, amr::domain::planning::OccupancyGrid::FREE);
+
+    // 穿货架根治（2026-09-02 实证第二击）：激光 raytrace 动态标记在覆盖
+    // 不足时留缝隙 → A* 穿过。静态障碍预注入（参数控制，默认关——单测
+    // 用的自定义场景不受影响，simulation.launch 开启）。
+    // 真机部署时按实际地图注入。
+    if (this->declare_parameter<bool>("static_obstacles", false)) {
+      // 1m 间隔沿料架长度注入——0.55m 内切半径 + 1m 间距 = 无缝隙屏障
+      for (float ry : {2.2F, 0.0F, -2.2F}) {
+        for (float rx = 4.0F; rx <= 10.0F; rx += 1.0F) {
+          grid_updater_.inflate(demo_grid_, rx, ry);
+        }
+      }
+      grid_updater_.inflate(demo_grid_, 18.0F, 4.0F);
+      grid_updater_.inflate(demo_grid_, 18.0F, -4.0F);
+      RCLCPP_INFO(get_logger(), "静态障碍预注入: 3 排料架(1m 间隔) + 2 机台");
+    }
   }
 
   return CallbackReturn::SUCCESS;
