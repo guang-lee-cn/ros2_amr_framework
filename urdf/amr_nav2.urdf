@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<robot name="amr">
+  <link name="amr/chassis">
+    <visual>
+      <geometry><box size="0.6 0.4 0.2"/></geometry>
+      <origin xyz="0 0 0.15"/>
+    </visual>
+    <collision>
+      <geometry><box size="0.6 0.4 0.2"/></geometry>
+      <origin xyz="0 0 0.15"/>
+    </collision>
+  </link>
+  <link name="amr/chassis/lidar">
+    <visual>
+      <geometry><cylinder radius="0.03" length="0.05"/></geometry>
+      <origin xyz="0 0 0.02"/>
+    </visual>
+  </link>
+  <joint name="lidar_joint" type="fixed">
+    <parent link="amr/chassis"/>
+    <child link="amr/chassis/lidar"/>
+    <origin xyz="0.25 0 1.0"/>
+  </joint>
+</robot>
