@@ -1,0 +1,68 @@
+<?xml version="1.0"?>
+<!-- 3C 车间仿真 world — 料架阵窄通道穿行 + 机台对接 + 送料往返。
+     车间 20×12m（x 0-20, y -6~6）；3 排料架（y=2.2/0/-2.2，排间 1.2m 通道）；
+     2 机台（东墙 (18,±4)，1m×1m）；AMR spawn (1,0)，送料到机台旁 goal。
+     先简化：3 排长料架测通道穿行；分列料架阵（x+y 通道）后续。 -->
+<sdf version="1.9">
+  <world name="factory_3c">
+    <gravity>0 0 -9.8</gravity>
+    <scene><ambient>0.4 0.4 0.4</ambient><background>0.7 0.7 0.7</background><shadows>true</shadows></scene>
+    <physics type="dartsim"><real_time_update_rate>1000</real_time_update_rate><max_step_size>0.001</max_step_size></physics>
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"><engine>gz-physics-dartsim-plugin</engine></plugin>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors"><render_engine>ogre2</render_engine></plugin>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+
+    <!-- 地面 20×12 -->
+    <model name="ground"><static>true</static>
+      <link name="l"><collision name="c"><geometry><plane><normal>0 0 1</normal><size>20 12</size></plane></geometry></collision>
+        <visual name="v"><geometry><plane><normal>0 0 1</normal><size>20 12</size></plane></geometry><material><ambient>0.3 0.3 0.3</ambient><diffuse>0.5 0.5 0.5</diffuse></material></visual></link></model>
+
+    <!-- 墙 4 面（车间边界）-->
+    <model name="wall_west"><static>true</static><pose>0 0 1 0 0 0</pose><link name="l"><collision name="c"><geometry><box><size>0.2 12 2</size></box></geometry></collision><visual name="v"><geometry><box><size>0.2 12 2</size></box></geometry><material><ambient>0.5 0.5 0.5</ambient></material></visual></link></model>
+    <model name="wall_east"><static>true</static><pose>20 0 1 0 0 0</pose><link name="l"><collision name="c"><geometry><box><size>0.2 12 2</size></box></geometry></collision><visual name="v"><geometry><box><size>0.2 12 2</size></box></geometry><material><ambient>0.5 0.5 0.5</ambient></material></visual></link></model>
+    <model name="wall_south"><static>true</static><pose>10 -6 1 0 0 0</pose><link name="l"><collision name="c"><geometry><box><size>20 0.2 2</size></box></geometry></collision><visual name="v"><geometry><box><size>20 0.2 2</size></box></geometry><material><ambient>0.5 0.5 0.5</ambient></material></visual></link></model>
+    <model name="wall_north"><static>true</static><pose>10 6 1 0 0 0</pose><link name="l"><collision name="c"><geometry><box><size>20 0.2 2</size></box></geometry></collision><visual name="v"><geometry><box><size>20 0.2 2</size></box></geometry><material><ambient>0.5 0.5 0.5</ambient></material></visual></link></model>
+
+    <!-- 料架阵 3 排（每排 6m×0.5m，x 中心 7 即 x=4-10；y=2.2/0/-2.2，排间 1.2m 通道）-->
+    <model name="rack_row1"><static>true</static><pose>7 2.2 0.75 0 0 0</pose><link name="l"><collision name="c"><geometry><box><size>6 0.5 1.5</size></box></geometry></collision><visual name="v"><geometry><box><size>6 0.5 1.5</size></box></geometry><material><ambient>0.6 0.5 0.3</ambient><diffuse>0.6 0.5 0.3</diffuse></material></visual></link></model>
+    <model name="rack_row2"><static>true</static><pose>7 0 0.75 0 0 0</pose><link name="l"><collision name="c"><geometry><box><size>6 0.5 1.5</size></box></geometry></collision><visual name="v"><geometry><box><size>6 0.5 1.5</size></box></geometry><material><ambient>0.6 0.5 0.3</ambient><diffuse>0.6 0.5 0.3</diffuse></material></visual></link></model>
+    <model name="rack_row3"><static>true</static><pose>7 -2.2 0.75 0 0 0</pose><link name="l"><collision name="c"><geometry><box><size>6 0.5 1.5</size></box></geometry></collision><visual name="v"><geometry><box><size>6 0.5 1.5</size></box></geometry><material><ambient>0.6 0.5 0.3</ambient><diffuse>0.6 0.5 0.3</diffuse></material></visual></link></model>
+
+    <!-- 机台 2（1m×1m，东墙旁，对接 goal 在机台西侧）-->
+    <model name="machine1"><static>true</static><pose>18 4 0.75 0 0 0</pose><link name="l"><collision name="c"><geometry><box><size>1 1 1.5</size></box></geometry></collision><visual name="v"><geometry><box><size>1 1 1.5</size></box></geometry><material><ambient>0.2 0.4 0.6</ambient><diffuse>0.3 0.5 0.7</diffuse></material></visual></link></model>
+    <model name="machine2"><static>true</static><pose>18 -4 0.75 0 0 0</pose><link name="l"><collision name="c"><geometry><box><size>1 1 1.5</size></box></geometry></collision><visual name="v"><geometry><box><size>1 1 1.5</size></box></geometry><material><ambient>0.2 0.4 0.6</ambient><diffuse>0.3 0.5 0.7</diffuse></material></visual></link></model>
+
+    <light type="directional" name="sun"><cast_shadows>true</cast_shadows><pose>0 0 10 0 0 0</pose><diffuse>1 1 1 1</diffuse><specular>0.5 0.5 0.5 1</specular><direction>-0.5 0.1 -0.9</direction></light>
+  
+  <model name="crate1"><static>true</static><pose>10.5 -1.2 0.75 0 0 0</pose>
+    <link name="l"><collision name="c"><geometry><box><size>0.8 0.8 1.5</size></box></geometry></collision>
+    <visual name="v"><geometry><box><size>0.8 0.8 1.5</size></box></geometry>
+    <material><ambient>0.9 0.4 0.1</ambient><diffuse>0.9 0.4 0.1</diffuse></material></visual></link>
+  </model>
+  <model name="crate2"><static>true</static><pose>10.5 -0.4 0.75 0 0 0</pose>
+    <link name="l"><collision name="c"><geometry><box><size>0.8 0.8 1.5</size></box></geometry></collision>
+    <visual name="v"><geometry><box><size>0.8 0.8 1.5</size></box></geometry>
+    <material><ambient>0.9 0.4 0.1</ambient><diffuse>0.9 0.4 0.1</diffuse></material></visual></link>
+  </model>
+  <model name="crate3"><static>true</static><pose>10.5 0.4 0.75 0 0 0</pose>
+    <link name="l"><collision name="c"><geometry><box><size>0.8 0.8 1.5</size></box></geometry></collision>
+    <visual name="v"><geometry><box><size>0.8 0.8 1.5</size></box></geometry>
+    <material><ambient>0.9 0.4 0.1</ambient><diffuse>0.9 0.4 0.1</diffuse></material></visual></link>
+  </model>
+  <model name="crate4"><static>true</static><pose>13.0 3.0 0.75 0 0 0</pose>
+    <link name="l"><collision name="c"><geometry><box><size>0.8 0.8 1.5</size></box></geometry></collision>
+    <visual name="v"><geometry><box><size>0.8 0.8 1.5</size></box></geometry>
+    <material><ambient>0.9 0.4 0.1</ambient><diffuse>0.9 0.4 0.1</diffuse></material></visual></link>
+  </model>
+  <model name="crate5"><static>true</static><pose>6.0 -4.5 0.75 0 0 0</pose>
+    <link name="l"><collision name="c"><geometry><box><size>0.8 0.8 1.5</size></box></geometry></collision>
+    <visual name="v"><geometry><box><size>0.8 0.8 1.5</size></box></geometry>
+    <material><ambient>0.9 0.4 0.1</ambient><diffuse>0.9 0.4 0.1</diffuse></material></visual></link>
+  </model>
+  <model name="crate6"><static>true</static><pose>4.5 4.0 0.75 0 0 0</pose>
+    <link name="l"><collision name="c"><geometry><box><size>0.8 0.8 1.5</size></box></geometry></collision>
+    <visual name="v"><geometry><box><size>0.8 0.8 1.5</size></box></geometry>
+    <material><ambient>0.9 0.4 0.1</ambient><diffuse>0.9 0.4 0.1</diffuse></material></visual></link>
+  </model>
+</world>
+</sdf>

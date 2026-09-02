@@ -8,15 +8,19 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess, IncludeLaunchDescription, TimerAction
+from launch.actions import (ExecuteProcess, IncludeLaunchDescription, TimerAction,
+                            SetEnvironmentVariable)
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 
 
 def generate_launch_description():
     pkg_dir = get_package_share_directory("ros2_robot_middleware")
-    world_path = os.path.join(pkg_dir, "worlds", "factory_3c.sdf")
+    # world 可选：factory_3c.sdf（基线）/ factory_3c_boxes.sdf（含 6 个静态障碍箱）
+    world = LaunchConfiguration("world", default="factory_3c.sdf")
+    world_path = PathJoinSubstitution(
+        [pkg_dir, "worlds", world])
     nav2_params = os.path.join(pkg_dir, "config", "nav2_params.yaml")
     use_sim_time = LaunchConfiguration("use_sim_time", default="true")
 
@@ -25,7 +29,7 @@ def generate_launch_description():
         PythonLaunchDescriptionSource([
             os.path.join(get_package_share_directory("ros_gz_sim"),
                          "launch", "gz_sim.launch.py")]),
-        launch_arguments={"gz_args": f"-s -r --headless-rendering -v4 {world_path}"}.items())
+        launch_arguments={"gz_args": ["-s -r --headless-rendering -v4 ", world_path]}.items())
 
     spawn_amr = Node(
         package="ros_gz_sim", executable="create",
@@ -107,6 +111,9 @@ def generate_launch_description():
         parameters=[{"port": 8765}], output="screen")
 
     return LaunchDescription([
+        # WSL2 下 GPU 渲染线程（ogre2/EGL）会静默死亡（雷达全 inf，~40s 复现三次）。
+        # 软件渲染兜底：360 线激光 llvmpipe 完全够用。真机/GPU 服务器上可移除。
+        SetEnvironmentVariable("LIBGL_ALWAYS_SOFTWARE", "1"),
         ExecuteProcess(cmd=["rm", "-f", "/dev/shm/amr_metrics_registry"]),
         gazebo,
         TimerAction(period=5.0, actions=[spawn_amr]),
