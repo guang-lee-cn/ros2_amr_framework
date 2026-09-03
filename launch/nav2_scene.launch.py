@@ -23,12 +23,13 @@ def generate_launch_description():
     pkg_dir = get_package_share_directory("ros2_robot_middleware")
     nav2_params = os.path.join(pkg_dir, "config", "nav2_params.yaml")
     use_sim_time = LaunchConfiguration("use_sim_time", default="false")
+    scene_name = LaunchConfiguration("scene", default="rack_3c")  # rack_3c|rack_4box|warehouse_open
 
     # ── 1. 场景仿真器（纯 CPU 射线投射，替代 Gazebo+bridge+robot_state_pub）──
     scene = Node(
         package="ros2_robot_middleware", executable="scene_simulator",
         name="scene_simulator",
-        parameters=[{"scene_name": "rack_3c",
+        parameters=[{"scene_name": scene_name,
                      "broadcast_map_tf": False,   # map→odom 让位给 slam_toolbox
                      "use_sim_time": use_sim_time}],
         remappings=[("/scan", "/scan_raw")],      # NAV2 参数表期望 /scan_raw
