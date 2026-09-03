@@ -96,3 +96,103 @@ TEST_F(SimulatedSceneTest, GivenRotationCommand_WhenStep_HeadingChanges) {
   auto p = SimulatedScene::step({0.0F, 0.0F, 0.0F}, 0.0F, 1.0F, 0.1F);
   EXPECT_NEAR(p.theta, 0.1F, 1e-4);
 }
+
+// ── 随机障碍：同种子同场景（部署可复现），异种子异场景 ──────────────────
+TEST(SimulatedSceneRandom, GivenSameSeed_WhenConstruct_ThenSameBoxes) {
+  amr::domain::simulation::SceneParams p;
+  p.scene_name = "warehouse_open";
+  p.random_boxes = 5;
+  p.random_seed = 7u;
+  SimulatedScene a(p), b(p);
+  EXPECT_EQ(a.random_boxes(), b.random_boxes());
+  EXPECT_EQ(a.random_boxes().size(), 5u);
+
+  p.random_seed = 8u;
+  SimulatedScene c(p);
+  EXPECT_NE(a.random_boxes(), c.random_boxes());
+}
+
+// 随机箱不得落在出生点 2.5m 内（机器人出生 (2,0)）
+TEST(SimulatedSceneRandom, GivenRandomBoxes_WhenPlaced_ThenAwayFromSpawn) {
+  amr::domain::simulation::SceneParams p;
+  p.scene_name = "warehouse_open";
+  p.random_boxes = 8;
+  for (unsigned seed = 1; seed <= 5; ++seed) {
+    p.random_seed = seed;
+    SimulatedScene s(p);
+    for (const auto &[x, y] : s.random_boxes()) {
+      EXPECT_GT(std::hypot(x - 2.0F, y), 2.5F) << "seed=" << seed;
+    }
+  }
+}
+
+// 随机箱必须被雷达看见：空场 + 1 箱（种子定位在 (10,0) 右侧路径上）→
+// 东行机器人在箱前必有 < range_max 的回波变化
+TEST(SimulatedSceneRandom, GivenRandomBox_WhenScanEast_ThenBoxIsVisible) {
+  amr::domain::simulation::SceneParams p_empty;
+  p_empty.scene_name = "warehouse_open";
+  SimulatedScene empty(p_empty);
+  amr::domain::simulation::SceneParams p_box = p_empty;
+  p_box.random_boxes = 1;
+  p_box.random_seed = 3u;
+  SimulatedScene with_box(p_box);
+  ASSERT_FALSE(with_box.random_boxes().empty());
+  // 机器人在出生点 (2,0) 朝东扫：任何随机箱位置 (bx,by) ∈ [3,17]×[-4,4]
+  // 都应在某一束上产生 < 10m 的回波差异
+  const auto r0 = empty.generate_scan(2.0F, 0.0F, 0.0F);
+  const auto r1 = with_box.generate_scan(2.0F, 0.0F, 0.0F);
+  bool differs = false;
+  for (std::size_t i = 0; i < r0.size(); ++i) {
+    if (std::fabs(r0[i] - r1[i]) > 0.05F) { differs = true; break; }
+  }
+  EXPECT_TRUE(differs);
+}
+
+// ── 移动障碍：update 推进 + 碰墙反弹 ────────────────────────────────────
+TEST(SimulatedSceneMover, GivenMover_WhenUpdate_ThenMovesAndBounces) {
+  amr::domain::simulation::SceneParams p;
+  p.scene_name = "warehouse_open";
+  p.movers = 1;
+  p.mover_speed = 1.0F;
+  p.random_seed = 1u;
+  SimulatedScene s(p);
+  ASSERT_EQ(s.movers().size(), 1u);
+  const auto m0 = s.movers()[0];
+  // 推进 1s：位移 = 速度 × 1（未撞墙时）
+  s.update(1.0F);
+  const auto m1 = s.movers()[0];
+  EXPECT_NEAR(std::hypot(m1.cx - m0.cx, m1.cy - m0.cy), 1.0F, 1e-3F);
+
+  // 连续推进 60s：始终在场内 x∈(0,19) y∈(-5,5)（反弹保证）
+  for (int i = 0; i < 1200; ++i) s.update(0.05F);
+  const auto m2 = s.movers()[0];
+  EXPECT_GT(m2.cx, 0.0F);
+  EXPECT_LT(m2.cx, 19.0F);
+  EXPECT_GT(m2.cy, -5.0F);
+  EXPECT_LT(m2.cy, 5.0F);
+}
+
+// mover 必须被雷达看见：把 mover 推到机器人正东 3m 处，朝东回波 < 3.5m
+TEST(SimulatedSceneMover, GivenMoverAhead_WhenScanForward_ThenDetected) {
+  amr::domain::simulation::SceneParams p;
+  p.scene_name = "warehouse_open";
+  p.movers = 1;
+  p.mover_speed = 0.5F;
+  SimulatedScene s(p);
+  ASSERT_EQ(s.movers().size(), 1u);
+  // 用公共接口无法直接设位——通过 update 多步把 mover 推离出生点方向后，
+  // 断言扫描与无 mover 场景存在差异（可见性即可，不锁定具体回波值）
+  amr::domain::simulation::SceneParams p_none = p;
+  p_none.movers = 0;
+  SimulatedScene none(p_none);
+  bool differs = false;
+  for (int t = 0; t < 40 && !differs; ++t) {
+    s.update(0.5F);
+    const auto r0 = none.generate_scan(2.0F, 0.0F, 0.0F);
+    const auto r1 = s.generate_scan(2.0F, 0.0F, 0.0F);
+    for (std::size_t i = 0; i < r0.size(); ++i) {
+      if (std::fabs(r0[i] - r1[i]) > 0.05F) { differs = true; break; }
+    }
+  }
+  EXPECT_TRUE(differs);
+}

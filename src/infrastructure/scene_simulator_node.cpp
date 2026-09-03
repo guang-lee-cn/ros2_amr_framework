@@ -18,6 +18,18 @@ void SceneSimulatorNode::init() {
   amr::domain::simulation::SceneParams params;
   this->declare_parameter<std::string>("scene_name", "rack_3c");
   params.scene_name = this->get_parameter("scene_name").as_string();
+  // 随机静态障碍（任意场景叠加；种子固定保证部署可复现）
+  this->declare_parameter<int>("random_boxes", 0);
+  params.random_boxes = this->get_parameter("random_boxes").as_int();
+  this->declare_parameter<int>("random_seed", 42);
+  params.random_seed =
+      static_cast<unsigned>(this->get_parameter("random_seed").as_int());
+  // 移动障碍（动态绕行测试）：N 个匀速箱，碰墙反弹
+  this->declare_parameter<int>("movers", 0);
+  params.movers = this->get_parameter("movers").as_int();
+  this->declare_parameter<double>("mover_speed", 0.6);
+  params.mover_speed =
+      static_cast<float>(this->get_parameter("mover_speed").as_double());
   // NAV2+SLAM 组合下置 false：map→odom 归 slam_toolbox，两个发布者同帧会打架
   this->declare_parameter<bool>("broadcast_map_tf", true);
   scene_ = amr::domain::simulation::SimulatedScene(params);
@@ -47,6 +59,7 @@ void SceneSimulatorNode::tick() {
   constexpr float kDt = 0.05F;  // 20 Hz control period
   pose_ = amr::domain::simulation::SimulatedScene::step(
       pose_, cmd_.linear.x, cmd_.angular.z, kDt);
+  scene_.update(kDt);  // 移动障碍推进（无 mover 时零开销）
   const auto now = this->now();
 
   // ── /odom (motor's closed-loop pose source) ─────────────────────────
@@ -167,6 +180,15 @@ visualization_msgs::msg::MarkerArray SceneSimulatorNode::build_obstacle_markers(
     add_box(id++, 5.0, 3.0, 0.25, 0.5, 0.5, 0.5, 0.9, 0.2, 0.2);
     add_box(id++, 12.0, -3.0, 0.25, 0.5, 0.5, 0.5, 0.9, 0.2, 0.2);
     add_box(id++, 14.0, 3.0, 0.25, 0.5, 0.5, 0.5, 0.9, 0.2, 0.2);
+  }
+  // 随机静态箱（橙 0.7m）——每 tick 重发，位置不变
+  for (const auto &[x, y] : scene_.random_boxes()) {
+    add_box(id++, x, y, 0.35, 0.7, 0.7, 0.7, 0.9, 0.5, 0.1);
+  }
+  // 移动障碍（黄 0.6m）——每 tick 重发，位置随 scene_.update() 流动
+  for (const auto &m : scene_.movers()) {
+    add_box(id++, m.cx, m.cy, 0.4, 2.0 * m.half, 2.0 * m.half, 0.8,
+            0.95, 0.85, 0.2);
   }
   return ma;
 }
