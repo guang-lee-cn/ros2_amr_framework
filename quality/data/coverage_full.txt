@@ -1,9 +1,10 @@
 # 由 coverage_report.py 从 lcov .info 直算（DA 行口径）
-# 聚合: 3052/3713 = 82.2%  文件数: 72
+# 聚合: 3133/3841 = 81.6%  文件数: 73
 domain/planning/target_selector.hpp                                      0.0%      0/    2
 observability/spdlog_adapter.hpp                                         0.0%      0/   16
 src/hal/diff_drive_system.cpp                                            0.0%      0/   65
 src/infrastructure/camera_main.cpp                                       0.0%      0/    9
+src/infrastructure/cmd_vel_guard_node.cpp                                0.0%      0/   45
 src/infrastructure/fusion_main.cpp                                       0.0%      0/    9
 src/infrastructure/health_monitor_main.cpp                               0.0%      0/    9
 src/infrastructure/imu_main.cpp                                          0.0%      0/    9
@@ -28,7 +29,6 @@ domain/monitoring/heartbeat_analyzer.hpp                                76.9%   
 src/infrastructure/motor_ctrl_node.cpp                                  81.0%    201/  248
 src/infrastructure/temperature_monitor_node.cpp                         81.6%     40/   49
 src/infrastructure/fusion_node.cpp                                      82.9%    180/  217
-domain/simulation/simulated_scene.hpp                                   83.9%     52/   62
 hal/sensor/sensor_factory.hpp                                           84.4%     27/   32
 src/observability/metrics_registry.cpp                                  85.2%     23/   27
 infrastructure/diagnostics_publisher.hpp                                85.7%     24/   28
@@ -36,7 +36,8 @@ domain/monitoring/supervisor_policy.hpp                                 86.6%   
 domain/ota/ota_coordinator.hpp                                          88.0%     66/   75
 domain/perception/degradation_policy.hpp                                88.2%     30/   34
 domain/device/device_registry.hpp                                       90.9%     20/   22
-src/infrastructure/scene_simulator_node.cpp                             93.9%    139/  148
+domain/simulation/simulated_scene.hpp                                   92.2%    118/  128
+src/infrastructure/scene_simulator_node.cpp                             93.3%    154/  165
 src/infrastructure/ota_agent_node.cpp                                   94.3%    116/  123
 domain/execution/collision_guard.hpp                                    95.2%     79/   83
 domain/rpc/lightweight_rpc.hpp                                          95.2%     60/   63
