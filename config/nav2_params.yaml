@@ -79,10 +79,12 @@ planner_server:
     expected_planner_frequency: 1.0
     planner_plugins: ["GridBased"]
     GridBased:
-      plugin: "nav2_navfn_planner::NavfnPlanner"
-      tolerance: 0.5
-      use_astar: true
-      allow_unknown: true     # SLAM 在线建图：未扫过区域是 UNKNOWN，禁止穿越则无路可规划
+      plugin: "nav2_smac_planner::SmacPlanner2D"   # NavFn 换 Smac：NavFn 的
+      tolerance: 0.5                                # "from potential" 间歇失败三次咬人
+      allow_unknown: true                           # （通道起点/贴障冲入/角落夹击各 10s 级停滞）
+      max_iterations: 1000000                       # -1 无限制
+      max_on_approach_iterations: 1000
+      cost_travel_multiplier: 2.0
 
 local_costmap:
   local_costmap:

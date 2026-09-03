@@ -196,3 +196,23 @@ TEST(SimulatedSceneMover, GivenMoverAhead_WhenScanForward_ThenDetected) {
   }
   EXPECT_TRUE(differs);
 }
+
+// ── mover 避让机器人：任何时刻不进入 1.2m 邻域 ──────────────────────────
+TEST(SimulatedSceneMover, GivenRobot_WhenMoversWander_ThenNeverOverlapRobot) {
+  amr::domain::simulation::SceneParams p;
+  p.scene_name = "warehouse_open";
+  p.movers = 2;
+  p.mover_speed = 1.5F;  // 高速也必须弹开
+  SimulatedScene s(p);
+  float rx = 2.0F, ry = 0.0F;  // 机器人出生点
+  for (int i = 0; i < 4000; ++i) {  // 200s 模拟
+    // 机器人也在动（斜穿场），mover 必须全程避让
+    rx = 2.0F + 3.5F * std::sin(i * 0.005F);
+    ry = 3.0F * std::sin(i * 0.003F);
+    s.update(0.05F, rx, ry);
+    for (const auto &m : s.movers()) {
+      EXPECT_GT(std::hypot(m.cx - rx, m.cy - ry), 1.0F)
+          << "i=" << i << " mover=(" << m.cx << "," << m.cy << ")";
+    }
+  }
+}

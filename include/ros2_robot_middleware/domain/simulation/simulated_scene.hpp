@@ -127,8 +127,12 @@ public:
     return out;
   }
 
-  /// Advance moving obstacles one tick; bounce off walls (inner margin).
-  void update(float dt) {
+  /// Advance moving obstacles one tick; bounce off walls (inner margin) and
+  /// deflect around the robot（行人/叉车不会穿过 AMR：进入 kRobotClearance
+  /// 邻域即反射折向，否则 mover 覆盖机器人时雷达 0 距离回波会把自己格子
+  /// 标成 lethal，规划器 'Start occupied' 必死）。
+  void update(float dt, float robot_x, float robot_y) {
+    constexpr float kRobotClearance = 1.2F;  // mover 中心距机器人中心最小距
     for (auto &m : movers_) {
       m.cx += m.vx * dt;
       m.cy += m.vy * dt;
@@ -137,8 +141,24 @@ public:
       if (m.cx > lim_x) { m.cx = 2.0F * lim_x - m.cx; m.vx = -m.vx; }
       if (m.cy < -lim_y) { m.cy = 2.0F * -lim_y - m.cy; m.vy = -m.vy; }
       if (m.cy > lim_y) { m.cy = 2.0F * lim_y - m.cy; m.vy = -m.vy; }
+      // 机器人邻域反弹：把 mover 推出 clear 圈并将速度沿法线反射
+      const float dx = m.cx - robot_x, dy = m.cy - robot_y;
+      const float d = std::hypot(dx, dy);
+      if (d < kRobotClearance && d > 1e-3F) {
+        const float nx = dx / d, ny = dy / d;
+        m.cx = robot_x + nx * kRobotClearance;
+        m.cy = robot_y + ny * kRobotClearance;
+        const float vn = m.vx * nx + m.vy * ny;
+        if (vn < 0.0F) {  // 只在朝机器人运动时反射
+          m.vx -= 2.0F * vn * nx;
+          m.vy -= 2.0F * vn * ny;
+        }
+      }
     }
   }
+
+  /// 兼容旧签名：机器人不在场（无穷远）
+  void update(float dt) { update(dt, 1.0e6F, 1.0e6F); }
 
   const SceneParams &params() const { return params_; }
   const std::vector<MovingBox> &movers() const { return movers_; }

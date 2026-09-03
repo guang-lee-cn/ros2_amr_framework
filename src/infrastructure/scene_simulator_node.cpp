@@ -59,7 +59,7 @@ void SceneSimulatorNode::tick() {
   constexpr float kDt = 0.05F;  // 20 Hz control period
   pose_ = amr::domain::simulation::SimulatedScene::step(
       pose_, cmd_.linear.x, cmd_.angular.z, kDt);
-  scene_.update(kDt);  // 移动障碍推进（无 mover 时零开销）
+  scene_.update(kDt, pose_.x, pose_.y);  // 移动障碍推进+避让机器人（无 mover 时零开销）
   const auto now = this->now();
 
   // ── /odom (motor's closed-loop pose source) ─────────────────────────
