@@ -61,7 +61,8 @@ controller_server:
       stateful: true
       critics: ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign",
                 "PathAlign", "PathDist", "GoalDist"]
-      BaseObstacle.scale: 0.02
+      BaseObstacle.scale: 0.15   # 0.02→0.15：高速(1.5m/s)贴障惯性冲入 inscribed 环(0.35m)后
+                                 # NavFn 无法从禁区格重规划；加大贴障惩罚让 DWB 主动留边
       PathAlign.scale: 32.0
       PathAlign.forward_point_distance: 0.1
       GoalAlign.scale: 24.0
