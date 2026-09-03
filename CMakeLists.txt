@@ -146,6 +146,13 @@ add_executable(scene_simulator
 target_link_libraries(scene_simulator robot_middleware_lib)
 install(TARGETS scene_simulator DESTINATION lib/${PROJECT_NAME})
 
+# L3 分层共存：NAV2 输出的独立安全闸（域 CollisionGuard 复用，
+# 话题链 NAV2 /cmd_vel_raw → guard → /cmd_vel → 底盘）
+add_executable(cmd_vel_guard_node
+  src/infrastructure/cmd_vel_guard_node.cpp)
+target_link_libraries(cmd_vel_guard_node robot_middleware_lib)
+install(TARGETS cmd_vel_guard_node DESTINATION lib/${PROJECT_NAME})
+
 # ── ros2_control hardware plugin ────────────────────────────────────
 # DiffDriveSystem: AMR HAL 的第一个 ros2_control 落地（对标强脑 JD U4 单元）。
 # 接口内存由框架持有（Jazzy on_export/set_state 风格），插件零序列化直通。
