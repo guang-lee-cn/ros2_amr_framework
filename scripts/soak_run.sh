@@ -53,7 +53,9 @@ MIN_VALID=${MIN_VALID:-50}
 if [ "$SCENE_MODE" = "scene" ]; then
   VICTIMS=${VICTIMS:-scene_simulator,compute}
   LAUNCH_FILE=${LAUNCH_FILE:-supervised_scene.launch.py}
-  MIN_VALID=${MIN_VALID:-1}  # scene 探针返回 0/1（有消息=1），不是回波数
+  MIN_VALID=1  # scene 探针返回 0/1（有消息=1），不是回波数。必须无条件覆写：
+               # 上面 ${MIN_VALID:-50} 已赋值，再用 :-1 只在未设时生效——
+               # 55h soak 因此在启动门反复假失败（外层重启环救场，2026-09-04 溯源）
 else
   VICTIMS=${VICTIMS:-bridge,gz}
   LAUNCH_FILE=${LAUNCH_FILE:-simulation.launch.py}
