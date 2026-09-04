@@ -76,8 +76,10 @@ stale 超时、StampGate）是 NAV2 没有的。L3 验证：安全闸串接后 4
 
 ## 5. 风险与开放项
 
-1. **安全闸单点**：guard 挂掉 = 无 /cmd_vel 输出（fail-safe 方向正确），
-   但需纳入 supervisor 监管清单（roadmap：node_names 增补）
+1. **安全闸单点**：guard 挂掉 = 无 /cmd_vel 输出（fail-safe 方向正确）。
+   **已关闭（launch 级，2026-09-04）**：三份 nav2 launch 为 guard 与
+   scene_simulator 配 respawn=True（崩溃 2s 自动拉起）。supervisor 级
+   预算管理（retry→FATAL 语义）随 system.launch NAV2 接线一并做（roadmap）
 2. **真机未验**：sick_tim781 真实点云特征（密度/噪声/遮挡）与场景仿真
    差异，AMCL/代价地图参数需上机重调——参数文件已按场景隔离便于替换
 3. **ISO 3691-4**：软件安全闸不替代双通道安全回路（审计 P0-H 维持原判）

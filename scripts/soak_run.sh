@@ -131,6 +131,24 @@ probe_val() {  # probe 的数字安全包装（bash 算术比较用）
     echo "${v:-0}"
 }
 
+probe_cmd_ok() {  # cmd_vel 活性探针：~4s 窗口内收到 ≥3 条 = 控制链路在工作。
+    # 恢复判据的第二条腿（2026-09-04 终期报告 §4：goals.csv 事件流从未
+    # 写入，旧判据 0/109 全假超时）。 patrol 到站间隙会有秒级零速期，
+    # 取「窗口内见过流量」而非「持续流量」避免假阴性。
+    timeout 8 python3 -c "
+import rclpy, time
+from geometry_msgs.msg import Twist
+rclpy.init()
+n = rclpy.create_node('soak_cmdprobe%d' % int(time.time()))
+cnt = [0]
+n.create_subscription(Twist, '/cmd_vel', lambda m: cnt.__setitem__(0, cnt[0]+1), 10)
+end = time.time() + 4
+while time.time() < end:
+    rclpy.spin_once(n, timeout_sec=0.2)
+print(1 if cnt[0] >= 3 else 0)
+rclpy.shutdown()" 2>/dev/null | grep -E '^[01]$' | tail -n1
+}
+
 rss_sample() {  # 全进程 RSS 快照（ps 一次, 按名聚合多 pid）
     local ts; ts=$(date +%s)
     # 排除僵尸（RSS 为 0 且 stat=Z）
@@ -254,16 +272,20 @@ while [ "$(date +%s)" -lt "$end_ts" ]; do
     echo "$now,$V" >> "$OUT/samples.csv"
     rss_sample
 
-    # 恢复判定（注入未决时）: scan 健康 + 注入后新 goal 事件
+    # 恢复判定（注入未决时）: 探针健康 + 注入后 cmd_vel 恢复过流量。
+    # 旧判据（goals.csv 新事件）已废弃——该事件流从未被写入，55.1h soak
+    # 0/109 全假超时（docs/design/20260904-soak-72h-final-report.md §4）。
     if [ -n "$pending_ts" ]; then
-        new_goals=$(awk -F, -v t="$pending_ts" 'NR>1 && $1+0 > t' "$OUT/goals.csv" 2>/dev/null | wc -l)
-        if [ "${V:-0}" -ge "$MIN_VALID" ] && [ "${new_goals:-0}" -ge 1 ]; then
+        if [ -z "$pending_cmd_ok" ]; then
+            [ "$(probe_cmd_ok)" = "1" ] && pending_cmd_ok=1
+        fi
+        if [ "${V:-0}" -ge "$MIN_VALID" ] && [ "${pending_cmd_ok:-0}" = "1" ]; then
             echo "recovered,$now,$pending_victim,$(( now - pending_ts ))" >> "$OUT/inject_log.csv"
-            echo "[soak] ✅ $pending_victim 注入后 $(( now - pending_ts ))s 恢复"
+            echo "[soak] ✅ $pending_victim 注入后 $(( now - pending_ts ))s 恢复（V=$V cmd_vel 活性确认）"
             pending_ts=""
         elif [ $(( now - pending_ts )) -gt "$RECOVERY_TIMEOUT_S" ]; then
             echo "timeout,$now,$pending_victim,$(( now - pending_ts ))" >> "$OUT/inject_log.csv"
-            echo "[soak] ❌ $pending_victim 恢复超时(${RECOVERY_TIMEOUT_S}s) — 记录并继续"
+            echo "[soak] ❌ $pending_victim 恢复超时(${RECOVERY_TIMEOUT_S}s, V=${V:-0} cmd_ok=${pending_cmd_ok:-0}) — 记录并继续"
             pending_ts=""
         fi
     else
@@ -300,7 +322,7 @@ while [ "$(date +%s)" -lt "$end_ts" ]; do
                 echo "external,$now,degradation(merged into inject $vict),$(( now - blip_start ))" >> "$OUT/inject_log.csv"
                 blip_start=""
             fi
-            pending_ts=$now; pending_victim=$vict
+            pending_ts=$now; pending_victim=$vict; pending_cmd_ok=""
             echo "inject,$now,$vict(pids:$pids),0" >> "$OUT/inject_log.csv"
             echo "[soak] 💉 注入 kill -9 $vict (pids: $pids), 等待 watchdog 恢复链"
         else

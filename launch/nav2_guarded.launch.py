@@ -92,6 +92,7 @@ def generate_launch_description():
     guard = Node(
         package="ros2_robot_middleware", executable="cmd_vel_guard_node",
         name="cmd_vel_guard",
+        respawn=True, respawn_delay=2.0,   # ADR §5.1: 安全闸崩溃自动拉起
         parameters=[{"guard_stop_dist": 0.30,
                      "guard_safe_dist": 0.80,
                      "guard_min_valid_echoes": 50}],
