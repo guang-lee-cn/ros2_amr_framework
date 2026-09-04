@@ -277,11 +277,12 @@ flowchart LR
 
 ### 范围排除
 
-- ❌ SLAM（同步定位与建图）
-- ❌ 路径规划
-- ❌ 真实电机驱动（使用 Gazebo 仿真）
-- ❌ 多 AMR 集群调度（FleetManager 为骨架实现）
-- ❌ 硬件安全回路（ISO 13849 功能安全）
+> 2026-09-04 收敛后：SLAM（部署期 slam_toolbox 建图）与路径规划
+> （NAV2 Smac/DWB）已入范围——原排除项移除。
+
+- ❌ 多 AMR 集群调度（FleetManager 为被动聚合骨架；VDA5050 治理为 roadmap）
+- ❌ 硬件安全回路（ISO 13849 双通道；软件安全闸不替代，ADR §5.3）
+- ❌ 真机 bring-up（sick_tim781 未上硬件；system.launch NAV2 接线为 roadmap）
 
 ---
 
@@ -289,10 +290,11 @@ flowchart LR
 
 | 模块 | 数据流 | 控制流 | 状态流 | 子系统文档 |
 |------|:---:|:---:|:---:|------|
+| **NAV2 导航栈（生产）** | ✅ | ✅ Action/行为树 | ✅ 恢复行为 | [nav2-stack.md](subsystems/nav2-stack.md) |
 | 传感器管线 | ✅ | — | — | [sensor-pipeline.md](subsystems/sensor-pipeline.md) |
-| 融合管线 | ✅ | ✅ TF 变换 | ✅ 降级 | [fusion-pipeline.md](subsystems/fusion-pipeline.md) |
-| 决策管线 | ✅ | ✅ Action | — | [decision-pipeline.md](subsystems/decision-pipeline.md) |
-| 执行管线 | ✅ | ✅ Action | — | [actuation-pipeline.md](subsystems/actuation-pipeline.md) |
+| 融合管线（A/B 基线） | ✅ | ✅ TF 变换 | ✅ 降级 | [fusion-pipeline.md](subsystems/fusion-pipeline.md) |
+| 决策管线（A/B 基线） | ✅ | ✅ Action | — | [decision-pipeline.md](subsystems/decision-pipeline.md) |
+| 执行管线（A/B 基线） | ✅ | ✅ Action | — | [actuation-pipeline.md](subsystems/actuation-pipeline.md) |
 | 健康监控 | — | ✅ 看门狗 | — | [health-monitor.md](subsystems/health-monitor.md) |
 | 可观测性 | — | — | — | [observability.md](subsystems/observability.md) |
 | 通信中间件 | ✅ | — | — | [communication.md](subsystems/communication.md) |

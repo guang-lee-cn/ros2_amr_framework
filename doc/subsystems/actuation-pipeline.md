@@ -1,5 +1,10 @@
 # 执行管线
 
+> **状态注记（2026-09-04 导航收敛后）**：本文描述的管线属遗留计算链路
+> （compute_container），已退居 **A/B 基线与测试载体**——生产导航归 NAV2，
+> 安全域经 cmd_vel_guard 独立接入。详见 docs/design/20260904-nav2-convergence-decision.md
+> 与 doc/subsystems/nav2-stack.md。本文保留作为该管线的设计文档与
+> 域算法（KF/规划器/控制器）的测试资产说明。
 ## 一、位置
 
 ```mermaid
