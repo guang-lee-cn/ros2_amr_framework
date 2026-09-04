@@ -27,9 +27,17 @@ observability）。C++17 · colcon · gtest · cppcheck 门禁 · 双 RMW CI 矩
 
 - compute 容器内热路径发布一律 `std::unique_ptr`（fusion/decision 已示范，
   见 src/infrastructure/compute_container.cpp 头部注释）。
-- 真机形态规划为传感器→fusion 跨进程 DDS（故障隔离），不要"优化"掉；
-  当前默认 launch 未接线话题（fusion 进程内实例化仿真传感器），见
-  ARCHITECTURE.md 数据流注——真传感器驱动上线时自然驱动接线。
+
+## 导航架构（2026-09-04 收敛决策后）
+
+- **规划归 NAV2**（map_server+AMCL 定位、Smac 规划、DWB 控制），不要往
+  fusion→decision→motor 计算管线新增导航功能——它已退居 A/B 基线与测试
+  载体，见 docs/design/20260904-nav2-convergence-decision.md
+- **安全归自研闸**：NAV2 的 /cmd_vel_raw 必须经 cmd_vel_guard_node
+  （域 CollisionGuard）再到 /cmd_vel，launch 接线别绕过它
+- 生产 launch = nav2_localized，开发建图 = nav2_scene；场景仿真器
+  （SimulatedScene）是 CI 级仿真底座，不要用 Gazebo 跑长时（gz 雷达
+  渲染线程静默死亡，平台无关，有案底）
 
 ## 节点形态
 

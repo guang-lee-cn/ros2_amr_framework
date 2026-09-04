@@ -150,19 +150,28 @@ flowchart TB
 
 ### 数据流（感知→执行链路明细）
 
-> **P0-K 注（三审 2026-09-01）**：下表第一行为真机目标架构。当前所有
-> launch 形态下 fusion 默认进程内实例化仿真传感器（SensorFactory 路径），
-> 独立传感器进程的话题当前无消费者——真机话题接线属 roadmap
-> （sick_tim781 上硬件时驱动）。这不是缺陷声明，是现状对齐。
+> **导航收敛注（2026-09-04）**：规划职责已移交 NAV2（决策记录见
+> docs/design/20260904-nav2-convergence-decision.md，A/B 对照 4/4 vs 0/4）。
+> 下表为**当前生产链路**；其后的"遗留管线"表为 fusion→decision→motor
+> 计算管线的现状（A/B 基线与测试载体，不再新增导航功能）。
 
 | 边 | 类型 | Topic / 接口 | QoS |
 |---|------|-------------|-----|
-| 传感器 → Fusion | DDS（**roadmap**） | `/sensor/lidar`, `/sensor/imu`, `/sensor/camera` | best_effort / reliable |
+| 雷达 → NAV2 代价地图/AMCL/安全闸 | DDS | `/scan_raw` | best_effort |
+| 底盘里程计 → NAV2/AMCL | DDS | `/odom` + TF `amr/odom→amr/chassis` | reliable |
+| NAV2 控制器 → 安全闸 | DDS | `/cmd_vel_raw`（controller/behavior 重映射） | reliable |
+| 安全闸 → 底盘 | DDS | `/cmd_vel`（域 CollisionGuard 钳制） | reliable |
+| map_server → 全局代价地图 static_layer | DDS（latched） | `/map` | transient_local |
+| AMCL → TF | TF | `map→amr/odom` | — |
+
+**遗留管线**（compute_container 内，A/B 基线）：
+
+| 边 | 类型 | Topic / 接口 | QoS |
+|---|------|-------------|-----|
+| 传感器 → Fusion | DDS（**roadmap，随 NAV2 收敛调整为历史项**） | `/sensor/lidar` 等 | best_effort / reliable |
 | Fusion → Decision | DDS | `/perception/objects` | reliable |
 | Decision → Motor | DDS Action | `/cmd/move_to_pose` | — |
-| 各节点 → Health | DDS | `/*/heartbeat`, `/cmd/status` | reliable |
-| Health → Fleet | DDS | `/health/report` | reliable |
-| Motor → Robot | (planned) | `/cmd_vel` | — |
+| Motor → 执行 | DDS | `/cmd_vel`（仅 A/B 形态） | reliable |
 
 ### 控制流（关键场景）
 

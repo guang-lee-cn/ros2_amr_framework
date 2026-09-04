@@ -1,6 +1,37 @@
 # Changelog
 
 
+## [2.4.0] — 2026-09-04
+
+### Changed — 导航栈收敛：规划移交 NAV2，安全域保留（重大架构变更）
+- 规划/控制/定位/建图由 NAV2 承担（SmacPlanner2D + DWB + AMCL +
+  map_server），自研 fusion→decision→motor 管线退居 A/B 基线与测试载体
+  （A/B 实证 4/4 vs 0/4，见 docs/design/20260904-nav2-convergence-decision.md）
+- 安全域以独立安全闸形态保留：cmd_vel_guard_node（域 CollisionGuard
+  全复用）串接 NAV2 输出，/cmd_vel_raw → guard → /cmd_vel
+- 定位生产形态：nav2_localized.launch（预建地图+AMCL，波动 RMS 68mm
+  vs SLAM 模式 300mm+ 走廊漂移）；开发建图 nav2_scene.launch（在线 SLAM）
+- 仿真底座切换：SimulatedScene（纯 CPU 射线投射）替代 Gazebo——gz-sim
+  gpu_lidar 渲染线程静默死亡为平台无关通病（WSL2 GPU/llvmpipe、云端
+  Ubuntu 三环境实证）；场景仿真器新增随机箱（种子复现）与移动障碍
+  （避让机器人）
+
+### Added
+- maps/rack_3c：首个预建占用栅格地图（19.1×10.1m @0.05m）
+- launch 形态谱系：nav2_localized（生产）/ nav2_scene（建图）/
+  nav2_guarded（L3 演示）/ ab_custom（A/B 跑台）
+- 域测 +7：随机障碍确定性/出生点距离/可见性、移动障碍反弹/避让约束
+
+### Fixed — NAV2 调参三课（每课带失败复现与验证）
+- 膨胀半径 0.55→0.45：窄通道（1.1m）内起点必带代价致重规划死
+- BaseObstacle 权重 0.02→0.15：高速贴障冲入 inscribed 环后无法重规划
+- NavFn→SmacPlanner2D："from potential" 间歇失败家族清零（26→0）
+
+### Deprecated — 顺延声明
+- 2.3.0 预定 v2.4.0 移除的 SensorFactory scenario 工厂参数**顺延至
+  v2.5.0**：本轮周期为 NAV2 收敛占用；移除需独立回归（e2e + A/B 跑台
+  全绿）后执行，避免与架构切换混在同一验证面
+
 ## [2.3.0] — 2026-09-01
 
 ### Added — B3 API 稳定性策略（微缩 REP）
