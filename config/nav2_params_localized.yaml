@@ -1,0 +1,215 @@
+# NAV2 参数 — AMR 差速底盘（factory_3c 场景）
+# 结构对齐 nav2_bringup：local_costmap/global_costmap 必须是顶层段
+# （ROS2 参数文件按节点名匹配：/local_costmap/local_costmap、/global_costmap/global_costmap）
+# 定位方案：slam_toolbox 在线建图（无 map_server/amcl，map→odom TF 由 SLAM 提供）
+
+bt_navigator:
+  ros__parameters:
+    use_sim_time: true
+    global_frame: map
+    robot_base_frame: amr/chassis
+    odom_topic: /odom
+    bt_loop_duration: 10
+    default_server_timeout: 20
+
+controller_server:
+  ros__parameters:
+    use_sim_time: true
+    controller_frequency: 20.0
+    min_x_velocity_threshold: 0.001
+    min_theta_velocity_threshold: 0.001
+    failure_tolerance: 0.3
+    progress_checker_plugin: "progress_checker"
+    goal_checker_plugins: ["goal_checker"]
+    controller_plugins: ["FollowPath"]
+
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.5
+      movement_time_allowance: 10.0
+
+    goal_checker:
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance: 0.25
+      yaw_goal_tolerance: 0.25
+      stateful: true
+
+    FollowPath:
+      plugin: "dwb_core::DWBLocalPlanner"
+      debug_trajectory_details: false
+      min_vel_x: 0.0
+      min_vel_y: 0.0
+      max_vel_x: 1.5
+      max_vel_y: 0.0
+      max_vel_theta: 1.0
+      min_speed_xy: 0.0
+      max_speed_xy: 1.5
+      min_speed_theta: 0.0
+      acc_lim_x: 1.5
+      acc_lim_theta: 2.0
+      decel_lim_x: -1.5
+      decel_lim_theta: -2.0
+      vx_samples: 20
+      vtheta_samples: 40
+      sim_time: 1.5
+      linear_granularity: 0.05
+      angular_granularity: 0.025
+      transform_tolerance: 0.2
+      xy_goal_tolerance: 0.25
+      trans_stopped_velocity: 0.25
+      short_circuit_trajectory_evaluation: true
+      stateful: true
+      critics: ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign",
+                "PathAlign", "PathDist", "GoalDist"]
+      BaseObstacle.scale: 0.15   # 0.02→0.15：高速(1.5m/s)贴障惯性冲入 inscribed 环(0.35m)后
+                                 # NavFn 无法从禁区格重规划；加大贴障惩罚让 DWB 主动留边
+      PathAlign.scale: 32.0
+      PathAlign.forward_point_distance: 0.1
+      GoalAlign.scale: 24.0
+      GoalAlign.forward_point_distance: 0.1
+      PathDist.scale: 32.0
+      GoalDist.scale: 24.0
+      RotateToGoal.scale: 32.0
+      RotateToGoal.slowing_factor: 5.0
+      RotateToGoal.lookahead_time: -1.0
+
+planner_server:
+  ros__parameters:
+    use_sim_time: true
+    expected_planner_frequency: 1.0
+    planner_plugins: ["GridBased"]
+    GridBased:
+      plugin: "nav2_smac_planner::SmacPlanner2D"   # NavFn 换 Smac：NavFn 的
+      tolerance: 0.5                                # "from potential" 间歇失败三次咬人
+      allow_unknown: true                           # （通道起点/贴障冲入/角落夹击各 10s 级停滞）
+      max_iterations: 1000000                       # -1 无限制
+      max_on_approach_iterations: 1000
+      cost_travel_multiplier: 2.0
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      use_sim_time: true
+      update_frequency: 5.0
+      publish_frequency: 2.0
+      global_frame: amr/odom
+      robot_base_frame: amr/chassis
+      rolling_window: true
+      width: 5
+      height: 5
+      resolution: 0.05
+      robot_radius: 0.35
+      plugins: ["obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        observation_sources: "scan"
+        scan:
+          topic: /scan_raw
+          max_obstacle_height: 2.0
+          clearing: true
+          marking: true
+          data_type: "LaserScan"
+          raytrace_max_range: 6.5
+          raytrace_min_range: 0.0
+          obstacle_max_range: 6.0
+          obstacle_min_range: 0.0
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 3.5
+        inflation_radius: 0.45
+      always_send_full_costmap: true
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      use_sim_time: true
+      update_frequency: 1.0
+      publish_frequency: 1.0
+      global_frame: map
+      robot_base_frame: amr/chassis
+      rolling_window: false        # 固定大窗一次覆盖全厂（20×12m），保留全部已见障碍
+      origin_x: -11.0              # 无 static layer 时固定窗原点默认 (0,0)——必须显式设置，
+      origin_y: -15.0              # 否则机器人(map 0,0)在地图角落，起点即"越界"
+      width: 40
+      height: 30                   # map 系工厂范围 x∈[-1,19] y∈[-6,6]，含漂移余量
+      resolution: 0.05
+      track_unknown_space: true
+      robot_radius: 0.35
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: true   # 晚加入也能拿到 latched 地图
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        observation_sources: "scan"
+        scan:
+          topic: /scan_raw
+          max_obstacle_height: 2.0
+          clearing: true
+          marking: true
+          data_type: "LaserScan"
+          raytrace_max_range: 10.0
+          obstacle_max_range: 8.0
+      # 局部代价地图不变（滚动窗，仅动态障碍）
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 3.5
+        inflation_radius: 0.45
+      always_send_full_costmap: true
+
+behavior_server:
+  ros__parameters:
+    use_sim_time: true
+    local_costmap_topic: local_costmap/costmap_raw
+    local_footprint_topic: local_costmap/published_footprint
+    cycle_frequency: 10.0
+    behavior_plugins: ["spin", "backup", "wait"]
+    spin:
+      plugin: "nav2_behaviors::Spin"
+    backup:
+      plugin: "nav2_behaviors::BackUp"
+    wait:
+      plugin: "nav2_behaviors::Wait"
+    local_frame: amr/odom
+    global_frame: amr/odom
+    robot_base_frame: amr/chassis
+    transform_tolerance: 0.1
+    simulate_ahead_time: 2.0
+    max_rotational_vel: 1.0
+    min_rotational_vel: 0.4
+    rotational_acc_lim: 3.2
+
+# ── 生产定位形态（nav2_localized.launch）─────────────────────────────
+map_server:
+  ros__parameters:
+    use_sim_time: false
+    yaml_filename: ""            # launch 注入实际路径（share/maps/rack_3c.yaml）
+    topic_name: /map
+
+amcl:
+  ros__parameters:
+    use_sim_time: false
+    base_frame_id: amr/chassis
+    odom_frame_id: amr/odom
+    global_frame_id: map
+    scan_topic: /scan_raw
+    robot_model_type: "nav2_amcl::DifferentialMotionModel"
+    tf_broadcast: true
+    set_initial_pose: true
+    initial_pose:
+      x: 2.0
+      y: 0.0
+      z: 0.0
+      yaw: 0.0
+    # 匹配场景：室内小厂，先验收敛优先
+    min_particles: 300
+    max_particles: 1500
+    laser_model_type: "likelihood_field"
+    laser_max_range: 10.0
+    laser_min_range: 0.1
+    update_min_d: 0.10
+    update_min_a: 0.15
+    recovery_alpha_slow: 0.001
+    recovery_alpha_fast: 0.1
