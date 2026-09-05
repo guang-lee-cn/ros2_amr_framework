@@ -1,5 +1,6 @@
 #include "ros2_robot_middleware/infrastructure/fusion_node.hpp"
 #include "ros2_robot_middleware/infrastructure/qos_profiles.hpp"
+#include "ros2_robot_middleware/hal/sensor/simulated_sensors.hpp"
 #include "generated/perf_instrumentation.hpp"
 #include "ros2_robot_middleware/observability/logging.hpp"
 #include "ros2_robot_middleware/observability/metrics_registry.hpp"
@@ -87,7 +88,11 @@ void FusionNode::create_sensors() {
   lidar_cfg_.topic = this->get_parameter("sensors.lidar.topic").as_string();
   // 演示场景：Simulated LiDAR 按场景生成障碍物点云
   auto scenario = load_scenario(this->get_parameter("scenario").as_string());
-  lidar_  = SensorFactory::create_lidar(lidar_cfg_, scenario);
+  lidar_  = SensorFactory::create_lidar(lidar_cfg_);
+  // B3 弃用移除（v2.5.0）：scenario 经 IScenarioSensor 注入，工厂签名纯净
+  if (auto *s = dynamic_cast<amr::hal::sensor::IScenarioSensor *>(lidar_.get())) {
+    s->set_scenario(scenario);
+  }
 
   imu_cfg_.type  = this->get_parameter("sensors.imu.type").as_string();
   imu_cfg_.topic = this->get_parameter("sensors.imu.topic").as_string();
@@ -96,7 +101,10 @@ void FusionNode::create_sensors() {
   camera_cfg_.type  = this->get_parameter("sensors.camera.type").as_string();
   camera_cfg_.topic = this->get_parameter("sensors.camera.topic").as_string();
   // 场景同样驱动相机深度：低矮障碍补盲（lidar 看不到的由深度检测到）。
-  camera_ = SensorFactory::create_camera(camera_cfg_, scenario);
+  camera_ = SensorFactory::create_camera(camera_cfg_);
+  if (auto *s = dynamic_cast<amr::hal::sensor::IScenarioSensor *>(camera_.get())) {
+    s->set_scenario(scenario);   // 低矮障碍盲区补扫与 lidar 同布局
+  }
 }
 
 // ── Lifecycle callbacks ──────────────────────────────────────────────

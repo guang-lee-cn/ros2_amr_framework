@@ -68,19 +68,6 @@ public:
         return make_sensor<LidarScan>("lidar", cfg.type);
     }
 
-    /// Create simulated LiDAR with a scenario (obstacle layout) — for demo
-    /// scenarios where the robot must navigate around known obstacles.
-    /// @deprecated B3 弃用演练（2026-09-01）：scenario 应经 set_parameter
-    ///   注入而非工厂重载——真机路径不应看到此参数。移除：v2.4.0。
-    ///   替代：create_lidar(cfg) + node->set_parameter("scenario", name)
-    [[deprecated("Use create_lidar(cfg) + set_parameter(\"scenario\") instead. Removal: v2.4.0")]]
-    static LidarPtr create_lidar(const SensorConfig &cfg, const Scenario &scenario) {
-        if (cfg.type == "simulated") {
-            return std::make_unique<SimulatedLidar>(scenario);
-        }
-        return create_lidar(cfg);  // real adapter ignores scenario
-    }
-
     static ImuPtr create_imu(const SensorConfig &cfg) {
         register_builtin_sensors();
         return make_sensor<ImuData>("imu", cfg.type);
@@ -91,8 +78,10 @@ public:
         return make_sensor<CameraFrame>("camera", cfg.type);
     }
 
-    /// Create simulated camera with a scenario — generates FOV depth from the
-    /// same obstacle layout as the lidar (low-obstacle blind-spot detection).
+    /// @deprecated v2.5.0 起弃用（与已移除的 lidar 重载同型）：scenario 经
+    ///   IScenarioSensor 接口注入。替代：create_camera(cfg) +
+    ///   dynamic_cast<IScenarioSensor*>()->set_scenario()。移除：v2.6.0
+    [[deprecated("Use create_camera(cfg) + IScenarioSensor::set_scenario. Removal: v2.6.0")]]
     static CameraPtr create_camera(const SensorConfig &cfg, const Scenario &scenario) {
         if (cfg.type == "simulated") {
             return std::make_unique<SimulatedCamera>(scenario);

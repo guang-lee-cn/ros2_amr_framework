@@ -63,10 +63,20 @@ inline float ray_obstacle_dist(float angle, const Obstacle &obs, float miss_rang
     return entry > 0.0F ? entry : miss_range;
 }
 
+/// 场景注入接口：仿真传感器运行期设置障碍布局。
+/// B3 弃用移除（v2.5.0）的替代路径——scenario 经 ISensor* 动态发现注入，
+/// 工厂签名不再携带 scenario（真机路径看不到仿真概念）。
+class IScenarioSensor {
+public:
+    virtual ~IScenarioSensor() = default;
+    virtual void set_scenario(Scenario s) = 0;
+};
+
 /// SimulatedLidar — 场景驱动点云生成。
 /// 默认：空旷环境（远处点云）。配置障碍物后，在障碍方向返回障碍表面距离。
 class SimulatedLidar : public amr::hal::sensor::SensorBase<SimulatedLidar,
-                        amr::hal::sensor::LidarScan> {
+                        amr::hal::sensor::LidarScan>,
+                       public IScenarioSensor {
 public:
     /// 无效距离：未命中障碍的射线返回此值（> 量程），
     /// 下游 DBSCAN 的 max_range 过滤会将其剔除，避免把远空当成"物体"。
@@ -97,7 +107,7 @@ public:
     }
 
     const Scenario &scenario() const { return scenario_; }
-    void set_scenario(Scenario s) { scenario_ = std::move(s); }
+    void set_scenario(Scenario s) override { scenario_ = std::move(s); }
 
 private:
     Scenario scenario_;
@@ -162,12 +172,15 @@ struct CameraParams {
 /// 场景驱动深度相机 — 生成前方 FOV 深度扫描线（补 lidar 盲区：低矮障碍）。
 /// RGB 图像缓冲管线未用（保持空）；read() 成功仍驱动降级。
 class SimulatedCamera : public amr::hal::sensor::SensorBase<SimulatedCamera,
-                          amr::hal::sensor::CameraFrame> {
+                          amr::hal::sensor::CameraFrame>,
+                        public IScenarioSensor {
 public:
     static constexpr float kInvalidDepth = 0.0F;  // 哨兵：无返回（毫米值不可能为 0）
 
     explicit SimulatedCamera(Scenario scenario = {}, CameraParams params = {})
         : scenario_(std::move(scenario)), params_(params) {}
+
+    void set_scenario(Scenario s) override { scenario_ = std::move(s); }
 
     bool read_impl(amr::hal::sensor::CameraFrame &out) {
         out.data     = nullptr;

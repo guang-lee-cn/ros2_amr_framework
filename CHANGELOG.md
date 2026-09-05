@@ -1,6 +1,21 @@
 # Changelog
 
 
+## [2.5.0] — Unreleased
+
+### Removed — B3 弃用移除兑现（2.3.0 预约，v2.4.0 顺延至本期）
+- SensorFactory::create_lidar(cfg, scenario) 重载删除。替代路径：
+  create_lidar(cfg) + dynamic_cast<IScenarioSensor*>()->set_scenario()——
+  scenario 经接口注入，工厂签名不再携带仿真概念（真机路径不可见）
+- IScenarioSensor 接口新增（simulated_sensors.hpp），SimulatedLidar/
+  SimulatedCamera 实现；fusion_node 两处调用点已迁移
+- 验证：e2e 3/3（导航全链路，接口注入路径）
+
+### Deprecated — 新弃用（同型收口）
+- SensorFactory::create_camera(cfg, scenario) 标记弃用，移除预约 v2.6.0
+  （调用点已迁移完毕，仅剩兼容窗口）
+
+
 ## [2.4.0] — 2026-09-04
 
 ### Changed — 导航栈收敛：规划移交 NAV2，安全域保留（重大架构变更）
