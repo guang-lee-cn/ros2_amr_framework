@@ -66,10 +66,17 @@ if samples:
     t0, t1 = float(samples[0][0]), float(samples[-1][0])
     dur = t1 - t0
     vals = [int(r[1]) for r in samples]
-    degraded = sum(1 for v in vals if v < 50)
     add(f"- 时长: {fmt_h(dur)}（{len(samples)} 个采样点）")
-    add(f"- scan 健康: 中位 {sorted(vals)[len(vals)//2]} 回波, "
-        f"劣化采样点 {degraded}/{len(samples)} ({100*degraded/len(samples):.1f}%)")
+    if set(vals) <= {0, 1}:
+        # scene 模式二值探针：V=1 = /odom 有消息 = 健康。当回波数解读会
+        # 把健康误报成"劣化 100%"（2026-09-04 验证报告实证）。
+        dead = sum(1 for v in vals if v == 0)
+        add(f"- 探针（scene 二值）: 健康 {len(vals)-dead}/{len(vals)} "
+            f"({100*(len(vals)-dead)/len(vals):.1f}%), 劣化 {dead} 点")
+    else:
+        degraded = sum(1 for v in vals if v < 50)
+        add(f"- scan 健康: 中位 {sorted(vals)[len(vals)//2]} 回波, "
+            f"劣化采样点 {degraded}/{len(samples)} ({100*degraded/len(samples):.1f}%)")
 else:
     dur = 0.0
     add("- ⚠️ 无采样数据")
@@ -84,8 +91,13 @@ def station(x, y):
 
 
 if dur > 0:
-    per_h = len(goals) / (dur / 3600)
-    add(f"- 吞吐: {len(goals)} 个 goal 事件（≈{per_h:.1f}/h, patrol 一轮 3 站 ≈{per_h/3:.1f} 循环/h）")
+    if not goals:
+        # scene 模式 patrol 内生目标不落 goals.csv（旧判定器 bug 的同源），
+        # 控制链路活性以健康探针与 inject 恢复为准——非零吞吐缺失异常
+        add("- 吞吐: goal 事件未记录（scene 模式 patrol 目标内生；活性见探针行）")
+    else:
+        per_h = len(goals) / (dur / 3600)
+        add(f"- 吞吐: {len(goals)} 个 goal 事件（≈{per_h:.1f}/h, patrol 一轮 3 站 ≈{per_h/3:.1f} 循环/h）")
     if goals:
         names = [station(float(g[1]), float(g[2])) for g in goals]
         add(f"  站序: {' → '.join(names[:12])}{' …' if len(names) > 12 else ''}")

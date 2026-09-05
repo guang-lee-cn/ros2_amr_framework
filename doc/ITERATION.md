@@ -5,6 +5,11 @@
 > 仿真底座切换至 SimulatedScene（纯 CPU，随机/移动障碍）。ADR：
 > docs/design/20260904-nav2-convergence-decision.md · 运维手册：
 > doc/subsystems/nav2-stack.md
+> **B2 重裁决（2026-09-05）**：B2（运行时插拔，迁 rclcpp_components 容器）
+> **按收敛决策取消**——目标对象（自研计算管线）已退居 A/B 基线，运行时
+> 装卸的生产收益不再成立；节点侧组件注册已就位（fusion/decision/motor
+> register_node_macro ×3），如未来基线升级可复用。现状保留
+> pipeline.nodes 声明式组合（启动期插拔）。见 20260904 收敛决策 §3。
 > **A2 关闭（2026-09-04）**：72h soak 终期报告入库——55.1h 连续段，109 次
 > kill -9 注入零持续中断（5s 分辨率）、内存零增长、零僵尸；发现并记录
 > 恢复判定器缺陷（判据与 goals.csv 空流脱钩）。见
