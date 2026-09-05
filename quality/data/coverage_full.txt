@@ -1,5 +1,5 @@
 # 由 coverage_report.py 从 lcov .info 直算（DA 行口径）
-# 聚合: 3133/3841 = 81.6%  文件数: 73
+# 聚合: 3137/3840 = 81.7%  文件数: 73
 domain/planning/target_selector.hpp                                      0.0%      0/    2
 observability/spdlog_adapter.hpp                                         0.0%      0/   16
 src/hal/diff_drive_system.cpp                                            0.0%      0/   65
@@ -28,8 +28,7 @@ src/infrastructure/decision_node.cpp                                    76.8%   
 domain/monitoring/heartbeat_analyzer.hpp                                76.9%     10/   13
 src/infrastructure/motor_ctrl_node.cpp                                  81.0%    201/  248
 src/infrastructure/temperature_monitor_node.cpp                         81.6%     40/   49
-src/infrastructure/fusion_node.cpp                                      82.9%    180/  217
-hal/sensor/sensor_factory.hpp                                           84.4%     27/   32
+src/infrastructure/fusion_node.cpp                                      83.3%    184/  221
 src/observability/metrics_registry.cpp                                  85.2%     23/   27
 infrastructure/diagnostics_publisher.hpp                                85.7%     24/   28
 domain/monitoring/supervisor_policy.hpp                                 86.6%     97/  112
@@ -63,8 +62,9 @@ domain/planning/scan_to_grid.hpp                                       100.0%   
 domain/planning/track_error_monitor.hpp                                100.0%     44/   44
 domain/scheduling/task_scheduler.hpp                                   100.0%     27/   27
 domain/transform_provider.hpp                                          100.0%      1/    1
+hal/sensor/sensor_factory.hpp                                          100.0%     24/   24
 hal/sensor/sick_tim781_adapter.hpp                                     100.0%     38/   38
-hal/sensor/simulated_sensors.hpp                                       100.0%     57/   57
+hal/sensor/simulated_sensors.hpp                                       100.0%     60/   60
 hal/sensor/temperature_sensor.hpp                                      100.0%     23/   23
 hal/sensor/ultrasonic_sensor.hpp                                       100.0%     27/   27
 infrastructure/prometheus_http_server.hpp                              100.0%      3/    3
