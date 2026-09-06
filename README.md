@@ -138,6 +138,22 @@ curl localhost:9091/metrics   # AMR_PERF_PHASE 阶段延迟 (ON 构建)
 | CI | GitHub Actions (静态分析 → 构建 → 测试 → 覆盖率) |
 | Language | C++17 |
 
+## 工程能力索引（按子系统）
+
+> 给想快速定位某类工程实践的读者：每项能力都有对应的代码、测试与
+> 过程记录（ADR/CHANGELOG），可审计、可复现。
+
+| 能力 | 载体 | 证据 |
+|---|---|---|
+| **仿真工程**（射线投射/确定性场景/动态障碍） | SimulatedScene + 场景仿真器 | 13 域测、种子复现、mover 避让约束 |
+| **评测验证**（A/B 对照/验证门/回归基线） | ab_custom 跑台 + nav2-stack §七 | 4/4 vs 0/4 对照、CI 四门禁 |
+| **可靠性测试**（故障注入/长时 soak/恢复判定） | soak_run.sh + 判定器 | 55h+72h soak、109 次 kill -9、判定器打假记录 |
+| **根因分析**（跨平台取证/假设排除） | gz-sim 雷达死亡调查 | 三环境实证、渲染引擎对照实验 |
+| **导航集成**（定位/规划/控制/安全闸） | nav2_localized 全栈 | AMCL RMS 68mm、调参三课 ADR |
+| **安全工程**（fail-safe 矩阵/独立安全层） | CollisionGuard + cmd_vel_guard | 22 域测、L3 带闸验证 |
+| **中间件工程**（DDS 选型/双 RMW/QoS 治理） | benchmarks + amr::qos | 双 RMW CI 矩阵、基准报告 |
+| **治理**（版本纪律/弃用流程/文档同步） | CHANGELOG/ADR 链 | 三轮外部审计整改全闭环 |
+
 ## Docs
 
 | Document | Description |
