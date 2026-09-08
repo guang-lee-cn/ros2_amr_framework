@@ -49,30 +49,23 @@ if grep -q "Goal was rejected" /tmp/smoke_goal.log; then
   WAIT_GOAL || { echo "::error::重试目标无响应"; cat /tmp/smoke_goal.log; exit 1; }
 fi
 grep -q "Goal accepted" /tmp/smoke_goal.log || { echo "::error::目标被拒（重试后仍拒）"; cat /tmp/smoke_goal.log; exit 1; }
-sleep 10  # 加速窗口，控制器 20Hz 建立流量
-RAW=$(timeout 8 python3 -c "
-import rclpy, time
-from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
-from geometry_msgs.msg import Twist
-rclpy.init(); n = Node('probe')
-got = [0]
-n.create_subscription(Twist, '/cmd_vel_raw', lambda m: got.__setitem__(0, got[0]+1), 10)
-end = time.time()+5
-while time.time() < end: rclpy.spin_once(n, timeout_sec=0.2)
-print(got[0])
-rclpy.shutdown()" 2>/dev/null | grep -E '^[0-9]+$' | tail -n1)
-OUTV=$(timeout 8 python3 -c "
+sleep 6  # 航程中段采样窗口（17m@0.5m/s≈34s，+6~12s 安全避开到站停发）
+# 单进程同窗双订阅（时序教训：先后两探针会跨过到站点——17m 目标 ~35s
+# 完成，第二探针落在停发期假红；同窗采样 + 航程中段窗口根治）
+FLOW=$(timeout 15 python3 -c "
 import rclpy, time
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
-rclpy.init(); n = Node('probe')
-got = [0]
-n.create_subscription(Twist, '/cmd_vel', lambda m: got.__setitem__(0, got[0]+1), 10)
-end = time.time()+5
+rclpy.init(); n = Node('flowprobe')
+raw = [0]; out = [0]
+n.create_subscription(Twist, '/cmd_vel_raw', lambda m: raw.__setitem__(0, raw[0]+1), 10)
+n.create_subscription(Twist, '/cmd_vel', lambda m: out.__setitem__(0, out[0]+1), 10)
+end = time.time()+6
 while time.time() < end: rclpy.spin_once(n, timeout_sec=0.2)
-print(got[0])
-rclpy.shutdown()" 2>/dev/null | grep -E '^[0-9]+$' | tail -n1)
+print(raw[0], out[0])
+rclpy.shutdown()" 2>/dev/null | grep -E '^[0-9]+ [0-9]+$' | tail -n1)
+RAW=$(echo ${FLOW:-"0 0"} | cut -d' ' -f1)
+OUTV=$(echo ${FLOW:-"0 0"} | cut -d' ' -f2)
 [ "${RAW:-0}" -gt 0 ] || { echo "::error::/cmd_vel_raw 零流量——NAV2→闸链路死"; exit 1; }
 [ "${OUTV:-0}" -gt 0 ] || { echo "::error::/cmd_vel 零流量——闸→底盘链路死"; exit 1; }
 echo "[smoke] ✓ 链路流量 raw=$RAW out=$OUTV"
