@@ -1,5 +1,5 @@
 # 由 coverage_report.py 从 lcov .info 直算（DA 行口径）
-# 聚合: 3139/3845 = 81.6%  文件数: 73
+# 聚合: 3148/3854 = 81.7%  文件数: 73
 domain/planning/target_selector.hpp                                      0.0%      0/    2
 observability/spdlog_adapter.hpp                                         0.0%      0/   16
 src/hal/diff_drive_system.cpp                                            0.0%      0/   65
@@ -35,8 +35,8 @@ domain/monitoring/supervisor_policy.hpp                                 86.6%   
 domain/ota/ota_coordinator.hpp                                          88.0%     66/   75
 domain/perception/degradation_policy.hpp                                88.2%     30/   34
 domain/device/device_registry.hpp                                       90.9%     20/   22
-domain/simulation/simulated_scene.hpp                                   92.2%    118/  128
-src/infrastructure/scene_simulator_node.cpp                             93.3%    154/  165
+domain/simulation/simulated_scene.hpp                                   92.4%    122/  132
+src/infrastructure/scene_simulator_node.cpp                             93.5%    159/  170
 src/infrastructure/ota_agent_node.cpp                                   94.3%    116/  123
 domain/execution/collision_guard.hpp                                    95.2%     79/   83
 domain/rpc/lightweight_rpc.hpp                                          95.2%     60/   63
