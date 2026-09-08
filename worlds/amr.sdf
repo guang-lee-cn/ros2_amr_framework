@@ -30,7 +30,9 @@
 
       <!-- =============================================================
            LiDAR (GPU Ray Sensor) — 发布到 /world/warehouse/model/amr/link/chassis/sensor/lidar/scan
-           + point cloud /points。gz-sim Harmonic 仅支持 gpu_lidar（ray 类型不支持）。
+           + point cloud /points。2026-09-08 翻案复核：CPU type="lidar" 在 gz-sim 8.14 仍被
+           + SdfEntityCreator 拒绝（"Sensor type LIDAR not supported yet"）——
+           + gpu_lidar 是唯一路径，渲染死亡风险由外层看护管理（scripts/run_gz_demo.sh）。
            产数据的前提是 world 加载 Sensors 系统插件（见 warehouse.sdf）。
            通过 ros_gz_bridge 桥接到 /scan + /points (sensor_msgs/LaserScan + PointCloud2)
            ============================================================= -->
