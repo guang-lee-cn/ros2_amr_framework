@@ -1,0 +1,161 @@
+# Soak 报告
+
+- 数据目录: `/tmp/amr_soak_20260905_074736`
+- 时长: 72.0h（4155 个采样点）
+- 探针（scene 二值）: 健康 4155/4155 (100.0%), 劣化 0 点
+- 吞吐: goal 事件未记录（scene 模式 patrol 目标内生；活性见探针行）
+
+## 故障注入
+- 注入 **142** 次, 恢复 **142** 次
+- 恢复时延: 中位 63s / 最大 64s —— ✅ 恢复次数=注入次数
+  - t+63s ← scene_simulator
+  - t+63s ← compute
+  - t+63s ← scene_simulator
+  - t+61s ← compute
+  - t+63s ← scene_simulator
+  - t+63s ← compute
+  - t+62s ← scene_simulator
+  - t+63s ← compute
+  - t+61s ← scene_simulator
+  - t+61s ← compute
+  - t+64s ← scene_simulator
+  - t+63s ← compute
+  - t+62s ← scene_simulator
+  - t+63s ← compute
+  - t+61s ← scene_simulator
+  - t+63s ← compute
+  - t+63s ← scene_simulator
+  - t+61s ← compute
+  - t+61s ← scene_simulator
+  - t+61s ← compute
+  - t+63s ← scene_simulator
+  - t+62s ← compute
+  - t+63s ← scene_simulator
+  - t+63s ← compute
+  - t+62s ← scene_simulator
+  - t+61s ← compute
+  - t+63s ← scene_simulator
+  - t+63s ← compute
+  - t+63s ← scene_simulator
+  - t+61s ← compute
+  - t+63s ← scene_simulator
+  - t+61s ← compute
+  - t+63s ← scene_simulator
+  - t+62s ← compute
+  - t+63s ← scene_simulator
+  - t+63s ← compute
+  - t+63s ← scene_simulator
+  - t+63s ← compute
+  - t+61s ← scene_simulator
+  - t+63s ← compute
+  - t+61s ← scene_simulator
+  - t+61s ← compute
+  - t+63s ← scene_simulator
+  - t+63s ← compute
+  - t+63s ← scene_simulator
+  - t+63s ← compute
+  - t+63s ← scene_simulator
+  - t+62s ← compute
+  - t+63s ← scene_simulator
+  - t+63s ← compute
+  - t+63s ← scene_simulator
+  - t+63s ← compute
+  - t+63s ← scene_simulator
+  - t+62s ← compute
+  - t+62s ← scene_simulator
+  - t+63s ← compute
+  - t+63s ← scene_simulator
+  - t+63s ← compute
+  - t+60s ← scene_simulator
+  - t+63s ← compute
+  - t+63s ← scene_simulator
+  - t+61s ← compute
+  - t+63s ← scene_simulator
+  - t+61s ← compute
+  - t+63s ← scene_simulator
+  - t+63s ← compute
+  - t+63s ← scene_simulator
+  - t+61s ← compute
+  - t+61s ← scene_simulator
+  - t+63s ← compute
+  - t+62s ← scene_simulator
+  - t+60s ← compute
+  - t+62s ← scene_simulator
+  - t+62s ← compute
+  - t+62s ← scene_simulator
+  - t+60s ← compute
+  - t+63s ← scene_simulator
+  - t+64s ← compute
+  - t+63s ← scene_simulator
+  - t+62s ← compute
+  - t+63s ← scene_simulator
+  - t+63s ← compute
+  - t+60s ← scene_simulator
+  - t+63s ← compute
+  - t+63s ← scene_simulator
+  - t+61s ← compute
+  - t+62s ← scene_simulator
+  - t+63s ← compute
+  - t+63s ← scene_simulator
+  - t+63s ← compute
+  - t+60s ← scene_simulator
+  - t+62s ← compute
+  - t+61s ← scene_simulator
+  - t+60s ← compute
+  - t+62s ← scene_simulator
+  - t+63s ← compute
+  - t+63s ← scene_simulator
+  - t+62s ← compute
+  - t+63s ← scene_simulator
+  - t+61s ← compute
+  - t+63s ← scene_simulator
+  - t+63s ← compute
+  - t+63s ← scene_simulator
+  - t+63s ← compute
+  - t+63s ← scene_simulator
+  - t+63s ← compute
+  - t+63s ← scene_simulator
+  - t+61s ← compute
+  - t+62s ← scene_simulator
+  - t+63s ← compute
+  - t+63s ← scene_simulator
+  - t+61s ← compute
+  - t+61s ← scene_simulator
+  - t+61s ← compute
+  - t+62s ← scene_simulator
+  - t+60s ← compute
+  - t+61s ← scene_simulator
+  - t+63s ← compute
+  - t+63s ← scene_simulator
+  - t+63s ← compute
+  - t+63s ← scene_simulator
+  - t+60s ← compute
+  - t+61s ← scene_simulator
+  - t+61s ← compute
+  - t+61s ← scene_simulator
+  - t+63s ← compute
+  - t+61s ← scene_simulator
+  - t+63s ← compute
+  - t+64s ← scene_simulator
+  - t+62s ← compute
+  - t+63s ← scene_simulator
+  - t+60s ← compute
+  - t+63s ← scene_simulator
+  - t+61s ← compute
+  - t+62s ← scene_simulator
+  - t+61s ← compute
+  - t+64s ← scene_simulator
+  - t+61s ← compute
+  - t+63s ← scene_simulator
+  - t+60s ← compute
+  - t+63s ← scene_simulator
+  - t+63s ← compute
+
+## 进程内存 (RSS)
+| 进程 | 均值MB | 峰值MB | 首小时MB | 末小时MB | 斜率MB/h | 判定 |
+|------|-------:|-------:|---------:|---------:|---------:|------|
+| compute | 45 | 46 | 45 | 45 | -0.00 | 平稳 |
+| patrol | 66 | 67 | 66 | 66 | 0.00 | 平稳 |
+
+## 时延快照
+- :9091 快照 0 份 — 端点未启用（需 AMR_PERF_INSTRUMENTATION=ON 构建）

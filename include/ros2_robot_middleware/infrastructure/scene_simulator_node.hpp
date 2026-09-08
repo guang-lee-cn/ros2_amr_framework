@@ -49,6 +49,7 @@ private:
   // Start mid-warehouse (not pressed against the west wall x=0) so the robot
   // can steer without the guard tripping on the wall during the first turn.
   amr::domain::simulation::Pose pose_{2.0F, 0.0F, 0.0F};
+  std::chrono::steady_clock::time_point last_cmd_time_{};  // F1 超时契约
   amr::domain::simulation::SimulatedScene scene_;
   geometry_msgs::msg::Twist cmd_{};
 

@@ -216,3 +216,31 @@ TEST(SimulatedSceneMover, GivenRobot_WhenMoversWander_ThenNeverOverlapRobot) {
     }
   }
 }
+
+// ── F1 指令超时契约（商用差距 20260908）：遗言指令熔断 ─────────────────
+TEST(SimulatedSceneCmdTimeout,
+     GivenNoFreshCommand_WhenStep_ThenStopsWithinContract) {
+  using amr::domain::simulation::SimulatedScene;
+  using amr::domain::simulation::Pose;
+  Pose p{0.0F, 0.0F, 0.0F};
+
+  // 新鲜指令：正常积分
+  auto moved = SimulatedScene::step_governed(
+      p, 0.5F, 0.0F, 0.05F, std::chrono::milliseconds(100),
+      std::chrono::milliseconds(500));
+  EXPECT_NEAR(moved.x, 0.5F * 0.05F, 1e-5);
+
+  // 恰在边界：仍执行（<= 契约）
+  auto edge = SimulatedScene::step_governed(
+      p, 0.5F, 0.0F, 0.05F, std::chrono::milliseconds(500),
+      std::chrono::milliseconds(500));
+  EXPECT_NEAR(edge.x, 0.5F * 0.05F, 1e-5);
+
+  // 超时（guard 崩溃 respawn 窗口内）：遗言指令熔断，v/w 归零
+  auto frozen = SimulatedScene::step_governed(
+      p, 0.5F, 1.0F, 0.05F, std::chrono::milliseconds(2000),
+      std::chrono::milliseconds(500));
+  EXPECT_FLOAT_EQ(frozen.x, 0.0F);
+  EXPECT_FLOAT_EQ(frozen.y, 0.0F);
+  EXPECT_FLOAT_EQ(frozen.theta, 0.0F);
+}

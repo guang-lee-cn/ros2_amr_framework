@@ -5,6 +5,13 @@
 > 仿真底座切换至 SimulatedScene（纯 CPU，随机/移动障碍）。ADR：
 > docs/design/20260904-nav2-convergence-decision.md · 运维手册：
 > doc/subsystems/nav2-stack.md
+> **商用差距排期（2026-09-08，gap 分析落盘 20260908-commercial-readiness-
+> iteration-map.md）**：W5 已修 F1（指令超时契约）+ M1（NAV2 冒烟进 CI）+
+> P2 半项（soak 二轮数据入库 quality/data/soak/round2/）。显式排期：
+> **F2** 生产形态 supervisor/health 接入 + v2 心跳门（1 批次）；**F6**
+> 电池分级与回充调度（特性开发，2 批次）；**O5** SLO/错误预算定义 +
+> soak 报告改数据生成（1 批次）；**P2 后半** soak 三轮切 nav2_localized
+> （部署中）。真机/认证/供应链四块维持 roadmap 不变。
 > **B2 重裁决（2026-09-05）**：B2（运行时插拔，迁 rclcpp_components 容器）
 > **按收敛决策取消**——目标对象（自研计算管线）已退居 A/B 基线，运行时
 > 装卸的生产收益不再成立；节点侧组件注册已就位（fusion/decision/motor

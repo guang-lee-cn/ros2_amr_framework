@@ -223,3 +223,35 @@ jobs:
             ./build/ros2_robot_middleware/test_decision 2>&1 | tee /tmp/tsan.log
           grep -q "ThreadSanitizer" /tmp/tsan.log && { echo "::error::TSAN 报告自家数据竞争"; exit 1; } || true
           echo "TSAN 并发核心零报告"
+
+  # ── M1（商用差距 20260908）：NAV2 冒烟——绕闸类缺陷的永久 CI 锁 ──────
+  # N-2（launch 直出 /cmd_vel 绕闸）只有人工审计能抓；本 job 让它变红灯：
+  # 启动 nav2_scene，断言 guard 在 + /cmd_vel_raw 流量 + /cmd_vel 流量 +
+  # 目标到达。60-90s 预算（含 launch bringup ~40s）。
+  nav2-smoke:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ROS Jazzy + NAV2 stack
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq curl gnupg
+          sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+            -o /usr/share/keyrings/ros-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu noble main" \
+            | sudo tee /etc/apt/sources.list.d/ros2.list
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ros-jazzy-ros-base \
+            ros-jazzy-nav2-bringup ros-jazzy-slam-toolbox \
+            ros-jazzy-foxglove-bridge ros-jazzy-robot-state-publisher \
+            python3-colcon-common-extensions
+      - name: Build package
+        run: |
+          . /opt/ros/jazzy/setup.sh
+          mkdir -p ws/src && ln -s "$GITHUB_WORKSPACE" ws/src/ros2_robot_middleware
+          cd ws && colcon build --packages-select ros2_robot_middleware
+      - name: NAV2 smoke (guard wired + link flow + goal reach)
+        shell: bash
+        run: |
+          . /opt/ros/jazzy/setup.sh
+          cd ws && source install/setup.bash
+          timeout 240 bash src/ros2_robot_middleware/quality/scripts/nav2_smoke.sh

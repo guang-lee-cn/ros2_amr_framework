@@ -14,6 +14,7 @@
 /// step() is a static pure function.
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <functional>
 #include <limits>
@@ -125,6 +126,19 @@ public:
     out.x += v * std::cos(out.theta) * dt;
     out.y += v * std::sin(out.theta) * dt;
     return out;
+  }
+
+  /// F1（商用差距 2026-09-08）：指令超时契约——真实底盘固件在指令流
+  /// 断流后会主动停车（典型 0.5s）；仿真器此前无限积分最后一条指令，
+  /// guard 崩溃的 2s respawn 窗口内机器人会带着遗言指令继续走。
+  /// 本函数实现该语义：超过 timeout 无新指令 → v、w 归零。
+  static Pose step_governed(const Pose &p, float v, float w, float dt,
+                            std::chrono::milliseconds since_cmd,
+                            std::chrono::milliseconds timeout) {
+    if (since_cmd > timeout) {
+      return step(p, 0.0F, 0.0F, dt);  // 遗言指令熔断：超时后只积分零速
+    }
+    return step(p, v, w, dt);
   }
 
   /// Advance moving obstacles one tick; bounce off walls (inner margin) and

@@ -36,7 +36,10 @@ void SceneSimulatorNode::init() {
 
   cmd_sub_ = create_subscription<geometry_msgs::msg::Twist>(
       "/cmd_vel", 10,
-      [this](geometry_msgs::msg::Twist::SharedPtr m) { cmd_ = *m; });
+      [this](geometry_msgs::msg::Twist::SharedPtr m) {
+        cmd_ = *m;
+        last_cmd_time_ = std::chrono::steady_clock::now();  // F1 超时契约
+      });
 
   odom_pub_ = create_publisher<nav_msgs::msg::Odometry>("/odom", 10);
   scan_pub_ = create_publisher<sensor_msgs::msg::LaserScan>("/scan", 10);
@@ -57,8 +60,13 @@ void SceneSimulatorNode::init() {
 
 void SceneSimulatorNode::tick() {
   constexpr float kDt = 0.05F;  // 20 Hz control period
-  pose_ = amr::domain::simulation::SimulatedScene::step(
-      pose_, cmd_.linear.x, cmd_.angular.z, kDt);
+  // F1（商用差距 2026-09-08）：指令超时契约——500ms 无指令按真实底盘
+  /// 固件语义停车。guard 崩溃 respawn 窗口（2s）内不再执行遗言指令。
+  pose_ = amr::domain::simulation::SimulatedScene::step_governed(
+      pose_, cmd_.linear.x, cmd_.angular.z, kDt,
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::steady_clock::now() - last_cmd_time_),
+      std::chrono::milliseconds(500));
   scene_.update(kDt, pose_.x, pose_.y);  // 移动障碍推进+避让机器人（无 mover 时零开销）
   const auto now = this->now();
 
