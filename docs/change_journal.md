@@ -650,3 +650,18 @@
 - W1: N-1 sticky 语义（红绿证据链）/N-2 全 launch 接闸/N-3 soak 勘误
 - W2: package.xml 依赖去重 ×8 / README 失真宣称修正 / 本补记
 - 未了：三审清单剩余项、CI 机制接线（tag 守卫/TSAN/告警）——显式排期
+
+## 2026-09-08 — W3 未了项批次（三审①②③⑤⑥⑧ + 四审次生项）
+
+- ① tag 守卫：ci.yml tag-guard job（可达性+三宇宙对齐）+ v2.3.0 重打
+  至 20b34c4（可达锚点，force-move 留痕于 tag 注记）
+- ⑤ TSAN：ci.yml tsan-nightly（cron）+ 本地首跑零报告（runbook 回填）；
+  附带发现 BlockedGoal 本地 flaky（DDS 发现竞态，CI 同代码绿——测试
+  加重复发布加固，环境归因记录在案）
+- ⑥⑧ 伪告警接线：env 配置改 enabled: false + 裁决注记（真接线 roadmap）；
+  README 告警句对账（规则入库未接线，如实）
+- ③ R4.1/R4.7 显式裁决：docs/design/20260908-r43-dds-security-adjudication.md
+  （system_secure 降级开发态参考；0600/双 CA 推迟真机批次挂账）
+- 四审次生：guarded/localized 的 scene respawn 补齐（respawn 宣称对齐）；
+  ab_runner.py 入库 toolkit/ab/（/tmp 三度被清的教训）；文档残留×3
+  （localized 头注释/ARCHITECTURE 头/system.launch docstring）

@@ -60,8 +60,9 @@ AMR 参考架构：**NAV2 导航 + 自研安全域**双层形态。基于 ROS 2 
 - **进程隔离**：传感器/安全闸独立进程，health_monitor 独立
 - **降级与恢复**：传感器超时 → 5 级降级；两级看门狗——supervisor 进程级
   （kill -9 秒级按策略恢复）+ health_monitor lifecycle 级（异步四步重启，
-  行为测试实证）。Prometheus 指标可观测；**告警规则未实现**（观测"只看不叫"，
-  见 deployment-plan）
+  行为测试实证）。Prometheus 指标可观测；**告警规则已入库未接线**
+  （config/prometheus/amr_alerts.yml 四组规则；Alertmanager 通道
+  roadmap——env 配置如实标 enabled: false，四审 N-⑥⑧ 裁决）
 
 ## Quick Start
 

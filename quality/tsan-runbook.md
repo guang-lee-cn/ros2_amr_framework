@@ -43,4 +43,5 @@ cd /tmp/tsan_build/ros2_robot_middleware
 
 | 日期 | 结果 | 备注 |
 |------|------|------|
-| （待首次夜跑回填） | | |
+| 2026-09-08 本地首跑（WSL2, 6.6 内核） | test_decision 8 测试 | **零 ThreadSanitizer 报告**（含 P0-B 并发压力回归锁）；ASLR 需 setarch -R；BlockedGoal 一测本地 flaky（DDS 发现时序，同代码 CI 四腿绿——本地环境不可信家族，非代码回归） |
+| 2026-09-08 起 CI nightly | ci.yml tsan-nightly job（cron 02:00 北京，并发核心） | 自动化防线（三审⑤关闭） |

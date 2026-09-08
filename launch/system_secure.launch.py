@@ -1,5 +1,9 @@
 """SROS2 secure launch — DDS-Security keys for all nodes.
 
+> 开发态参考（2026-09-08 裁决 docs/design/20260908-r43-dds-security-adjudication.md）：
+> install 形态已知断裂（CMake EXCLUDE keystore 路径）；生产导航已收敛
+> NAV2 谱系，本文件不进入交付面。
+
 2026-08-30 修通（此前从未工作过）：per-node 身份必须经 ros args
 `--ros-args --enclave /<name>` 传递——仅设 ROS_SECURITY_* 环境变量时
 fqn 不会拼入安全目录路径（strace 实证，见 verify_dds_security.sh 头注）。

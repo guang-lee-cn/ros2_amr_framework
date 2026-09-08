@@ -1,4 +1,9 @@
-"""Launch the full AMR pipeline — production process layout.
+"""Launch the full AMR pipeline — 自研栈形态（A/B 基线；非生产导航）。
+
+> 收敛注记（2026-09-04 ADR）：生产导航已移交 NAV2（nav2_localized）。
+> 本 launch 启动的 fusion→decision→motor 管线是 A/B 对照基线与测试
+> 载体；真机 NAV2 接线（本文件的 NAV2 化改写）为 roadmap。
+> 原 docstring 自称 production process layout ——四审文档一致性项修正。
 
 Process model:
   Process 1: lidar_node       — independent (driver isolation)

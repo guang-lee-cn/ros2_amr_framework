@@ -17,6 +17,8 @@ on:
       - 'doc/**'
       - 'mdDoc/**'
   workflow_dispatch: {}   # 手动触发（push 事件偶发丢失时的兜底，2026-08-25 实证需要）
+  schedule:
+    - cron: '0 18 * * *'   # TSAN nightly（UTC 18:00 = 北京 02:00，三审⑤）
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -160,3 +162,64 @@ jobs:
           else
             echo "badge 数据无变化（覆盖率未变）——新鲜度正常"
           fi
+
+  # ── 三审①/四审：tag 守卫——tag 必须 main 可达 + 三宇宙对齐 ──────────
+  # v2.2.0 曾打在 history-rewrite 后的死 commit 上（merge-base 失败），
+  # v2.3.0 同病（四审亲验）。守卫让"tag 打在不可达提交"从此 CI 红。
+  tag-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # merge-base 判可达需要全历史
+      - name: Verify tags reachable & version-universe aligned
+        shell: bash
+        run: |
+          set -e
+          FAIL=0
+          for tag in $(git tag -l 'v*'); do
+            if git merge-base --is-ancestor "$(git rev-parse "$tag")" HEAD; then
+              echo "✓ $tag 可达"
+            else
+              echo "::error::$tag 不在 HEAD 祖先链上（history rewrite 死提交）——需重打（见 journal 治理动作留痕）"
+              FAIL=1
+            fi
+          done
+          # 三宇宙对齐：package.xml == CHANGELOG 最新节 == 最新 tag
+          VER=$(grep -m1 -oP '(?<=<version>)[^<]+' package.xml)
+          LATEST=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          grep -q "\[$VER\]" CHANGELOG.md || { echo "::error::CHANGELOG 缺 [$VER] 节"; FAIL=1; }
+          [ "v$VER" = "$LATEST" ] || { echo "::error::package.xml=$VER 但最新 tag=$LATEST"; FAIL=1; }
+          exit $FAIL
+
+  # ── 三审⑤/四审：TSAN nightly——P0-B 类竞态的自动防线 ────────────────
+  # 全量测试对 TSAN 噪声大（DDS 内部数据竞争已知），只跑并发核心：
+  # decision 并发压力（P0-B 回归锁）+ collision_guard + scene。
+  tsan-nightly:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ROS Jazzy
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq curl gnupg
+          sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+            -o /usr/share/keyrings/ros-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu noble main" \
+            | sudo tee /etc/apt/sources.list.d/ros2.list
+          sudo apt-get update -qq && sudo apt-get install -y -qq ros-jazzy-ros-base \
+            python3-colcon-common-versions python3-colcon-common-extensions
+      - name: Build + run concurrency-core tests (TSan)
+        shell: bash
+        run: |
+          . /opt/ros/jazzy/setup.sh
+          mkdir -p tsan_ws/src && ln -s "$GITHUB_WORKSPACE" tsan_ws/src/ros2_robot_middleware
+          cd tsan_ws
+          colcon build --packages-select ros2_robot_middleware --cmake-args \
+            -DCMAKE_CXX_FLAGS="-fsanitize=thread -g -O1" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread" -DBUILD_TESTING=ON
+          . install/setup.bash
+          TSAN_OPTIONS="halt_on_error=1 second_deadlock_stack=1" \
+            ./build/ros2_robot_middleware/test_decision 2>&1 | tee /tmp/tsan.log
+          grep -q "ThreadSanitizer" /tmp/tsan.log && { echo "::error::TSAN 报告自家数据竞争"; exit 1; } || true
+          echo "TSAN 并发核心零报告"

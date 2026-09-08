@@ -184,12 +184,21 @@ TEST_F(DecisionTest, BlockedGoal_DoesNotSendGoal) {
   // Let the static TF reach decision's listener first (see above).
   spin_until(decision->get_node_base_interface(),
              [] { return false; }, std::chrono::milliseconds(300));
-  pub->publish(perception);
 
-  // Spin a fixed window; the goal must never arrive.
+  // 窗口内重复发布而非单发（2026-09-08 flaky 修复）：volatile QoS 下
+  // 单发发布与订阅发现的竞态——发现慢于发布时消息静默丢失，空图规划
+  // 出路径 → goal 发出 → 断言翻红。同二进制同日先后 8/8 与连红实证。
+  // 每 100ms 重发幂等（grid 标记 set_cost_max），发现完成后必达。
+  auto t0 = std::chrono::steady_clock::now();
+  while (std::chrono::steady_clock::now() - t0 < std::chrono::milliseconds(1500)
+         && !goal_received) {
+    pub->publish(perception);
+    spin_until(decision->get_node_base_interface(),
+               [] { return false; }, std::chrono::milliseconds(100));
+  }
+  // 再留一个静默窗确认无迟发 goal
   spin_until(decision->get_node_base_interface(),
-             [&goal_received] { return goal_received; },
-             std::chrono::milliseconds(1500));
+             [] { return false; }, std::chrono::milliseconds(500));
   EXPECT_FALSE(goal_received);
 }
 

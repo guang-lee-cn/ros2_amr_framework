@@ -9,5 +9,6 @@ amr:
   perf:
     instrumentation: false
   alerts:
-    enabled: true
+    # 四审 N(⑥⑧) 裁决：规则入库但通道未接线，enabled 如实为 false（详见 production.yaml 注）
+    enabled: false
     prometheus_rules: /etc/amr/prometheus/amr_alerts.yml

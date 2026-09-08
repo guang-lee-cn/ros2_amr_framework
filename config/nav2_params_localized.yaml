@@ -1,7 +1,8 @@
 # NAV2 参数 — AMR 差速底盘（factory_3c 场景）
 # 结构对齐 nav2_bringup：local_costmap/global_costmap 必须是顶层段
 # （ROS2 参数文件按节点名匹配：/local_costmap/local_costmap、/global_costmap/global_costmap）
-# 定位方案：slam_toolbox 在线建图（无 map_server/amcl，map→odom TF 由 SLAM 提供）
+# 定位方案：生产定位形态——map_server 预建图 + AMCL（map→odom TF 由 AMCL 提供；
+# 底部含 map_server/amcl 专用段。SLAM 在线建图属 nav2_params.yaml/nav2_scene 开发态）
 
 bt_navigator:
   ros__parameters:

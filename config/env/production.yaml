@@ -12,6 +12,11 @@ amr:
   perf:
     instrumentation: false
   alerts:
-    enabled: true
+    # 四审 N(⑥⑧) 裁决（2026-09-08）：规则文件已入库
+    # （config/prometheus/amr_alerts.yml）但 Alertmanager/告警通道零接线——
+    # 此前 enabled: true + alertmanager: localhost:9093 无任何消费者，
+    # 构成"已接线"假象。真接线（compose 挂 prometheus+alertmanager）为
+    # roadmap；在此之前 enabled 必须为 false（观测只看不叫，如实）。
+    enabled: false
     prometheus_rules: /etc/amr/prometheus/amr_alerts.yml
-    alertmanager: localhost:9093
+    alertmanager: ""  # 未接线——接入时回填

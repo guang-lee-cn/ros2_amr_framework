@@ -30,6 +30,7 @@ def generate_launch_description():
     scene = Node(
         package="ros2_robot_middleware", executable="scene_simulator",
         name="scene_simulator",
+        respawn=True, respawn_delay=2.0,  # 四审respawn宣称补齐：里程计+雷达单点
         parameters=[{"scene_name": scene_name,
                      "random_boxes": random_boxes,
                      "movers": movers,
