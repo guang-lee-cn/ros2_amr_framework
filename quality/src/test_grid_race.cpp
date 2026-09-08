@@ -74,6 +74,9 @@ TEST(GridRaceTest, ConcurrentReadWrite_NoDataRace) {
         updater.inflate(*grid, 5.0F, 0.0F);
       }
       write_iterations.fetch_add(1, std::memory_order_relaxed);
+      // 感知节拍（5-20Hz 而非自旋）——自旋写者会在锁竞争下饥饿读者
+      //（CI coverage 构建实测 snap/plan 轮数塌到 1-5）
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
   });
 
@@ -101,8 +104,10 @@ TEST(GridRaceTest, ConcurrentReadWrite_NoDataRace) {
   reader.join();
 
   // 断言两线程都真实工作了（交叠窗口存在）
-  EXPECT_GT(write_iterations.load(), 100) << "写线程未充分运行";
-  EXPECT_GT(plan_iterations.load(), 5) << "读线程未充分运行（被堵 goal 最坏 200ms/次）";
+  // 阈值语义 = "有意义交叠"而非吞吐：coverage 构建（-O0）下 A* ~400ms/次
+  // + 锁串行化，2s 窗口读线程下限取 2（TSAN/竞态检出不依赖计数）
+  EXPECT_GT(write_iterations.load(), 20) << "写线程未充分运行";
+  EXPECT_GT(plan_iterations.load(), 2) << "读线程未充分运行（被堵 goal 最坏 200ms/次）";
 
   // TSAN 下此测试若存在未保护的数据竞争会直接 abort（不需要 assert——
   // TSAN 的报告本身就是失败信号）。非 TSAN 构建下此测试验证功能不崩。
@@ -145,6 +150,7 @@ TEST(GridRaceTest, N_R1_InjectionVsSnapshot_NoDataRace) {
         updater.inflate(grid, 18.0F, -4.0F);
       }
       inject_rounds.fetch_add(1, std::memory_order_relaxed);
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));  // 感知节拍，防读者饥饿
     }
   });
 
@@ -164,6 +170,6 @@ TEST(GridRaceTest, N_R1_InjectionVsSnapshot_NoDataRace) {
   stop.store(true, std::memory_order_relaxed);
   injector.join();
   snapshotter.join();
-  EXPECT_GT(inject_rounds.load(), 5);
-  EXPECT_GT(snap_rounds.load(), 5);
+  EXPECT_GT(inject_rounds.load(), 3);
+  EXPECT_GT(snap_rounds.load(), 2);  // coverage 构建下锁串行化，下限 2
 }
