@@ -87,10 +87,16 @@ def main():
                 g.pose.orientation.w = 1.0
                 n.goal_pub.publish(g)
                 n.spin_for(0.2)
+        last_resend = 0.0
         while time.time() - t0 < 90 and rclpy.ok() and not n.arrived(gx, gy):
             n.spin_for(0.1)
-            if MODE == "nav2" and time.time() - t0 > 12 and n.speed < 0.01:
-                n.ac.send_goal_async(goal)  # 假成功/丢目标重发
+            # 假成功/丢目标重发（三轮观测教训：无节流时每 0.1s 重发=机枪，
+            # 每个新目标抢占上一个造成 Begin 假象 + CPU 负载反馈恶化——
+            # 节流 15s 一次）
+            if (MODE == "nav2" and time.time() - t0 > 12 and n.speed < 0.01
+                    and time.time() - last_resend > 15):
+                n.ac.send_goal_async(goal)
+                last_resend = time.time()
                 n.spin_for(1.0)
         status = "ARRIVED" if n.arrived(gx, gy) else "TIMEOUT"
         dt = time.time() - t0
