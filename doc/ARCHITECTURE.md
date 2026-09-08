@@ -43,44 +43,56 @@
 flowchart TB
     subgraph drivers["外部驱动 · 监控"]
         SICK["sick_scan2 (LiDAR)"]
-        BMI["BMI088 (IMU)"]
-        REAL["RealSense (Camera)"]
         PROM["Prometheus"]
     end
 
-    subgraph infra["基础设施服务 PID 5/6"]
+    subgraph nav2["导航生产链（v2.4.0 起）"]
+        MAPSRV["map_server 预建图"]
+        AMCL["AMCL 定位"]
+        NAV["NAV2 规划/控制<br/>(Smac + DWB + 行为树)"]
+        GUARD["cmd_vel_guard<br/>(自研安全闸)"]
+    end
+
+    subgraph infra["基础设施服务"]
         HEALTH["HealthMonitor"]
+        SUP["amr_supervisor<br/>(进程级监管)"]
         FLEET["FleetManager"]
     end
 
-    subgraph compute["计算容器 PID 4"]
+    subgraph legacy["计算容器（A/B 基线，非生产）"]
         FUSION["FusionNode"]
         DECISION["DecisionNode"]
         MOTOR["MotorCtrlNode"]
     end
 
-    SICK -->|"LaserScan"| FUSION
-    BMI  -->|"Imu"| FUSION
-    REAL -->|"Image"| FUSION
-    FUSION -->|"PerceptionObjects"| DECISION
-    DECISION -->|"MoveToPose Action"| MOTOR
+    SICK -->|"/scan_raw"| MAPSRV
+    SICK -->|"/scan_raw"| AMCL
+    SICK -->|"/scan_raw"| GUARD
+    MAPSRV -->|"/map latched"| NAV
+    AMCL -->|"map→odom TF"| NAV
+    NAV -->|"/cmd_vel_raw"| GUARD
+    GUARD -->|"/cmd_vel 底盘"| DRIVE["底盘/场景仿真"]
 
     FUSION -.->|heartbeat| HEALTH
     DECISION -.->|heartbeat| HEALTH
     MOTOR -.->|status| HEALTH
+    SUP -.->|"respawn 状态机"| HEALTH
     HEALTH -.->|"HealthReport"| FLEET
     PROM -.->|"pull /metrics"| HEALTH
 
     style drivers fill:#fff3e0,stroke:#e65100
+    style nav2 fill:#e8f5e9,stroke:#2e7d32
     style infra fill:#e3f2fd,stroke:#1565c0
-    style compute fill:#f5f5f5,stroke:#333
+    style legacy fill:#f5f5f5,stroke:#999,stroke-dasharray:5
+    style DRIVE fill:#e8f5e9,stroke:#2e7d32
 ```
 
 | 层 | 说明 | 物理边界 |
 |----|------|---------|
 | **外部系统** | 传感器驱动、监控采集、可视化 | 独立 ROS2 节点 / 独立容器 |
 | **基础设施服务** | 健康监控、集群编排 | 独立进程 (PID 5/6) |
-| **计算容器** | 融合→决策→执行管线 | 单进程 (PID 4)，SHM 零拷贝 |
+| **导航生产链** | NAV2 + 自研安全闸（v2.4.0 收敛） | 独立进程组，respawn 韧性 |
+| **计算容器（A/B 基线）** | 融合→决策→执行管线（非生产导航） | 单进程 (PID 4)，SHM 零拷贝 |
 | ⊳ **Domain** | 领域业务逻辑（感知/规划/执行/监控算法） | 编译期禁止依赖 ROS2 |
 | ⊳ **HAL** | 硬件抽象层 (ISensor<T> + IActuator + Registry) | 插件注册，加传感器零改框架 |
 | **横切关注点** | 可观测性、配置管理 | 库形式链接到所有节点 |
@@ -93,58 +105,56 @@ flowchart TB
 flowchart TB
     subgraph sensors["传感器层 (独立进程)"]
         L["LiDAR<br/>10Hz"]
-        I["IMU<br/>100Hz"]
-        C["Camera<br/>5Hz"]
     end
 
-    subgraph compute["计算层 (compute_container 单进程)"]
+    subgraph nav2["导航生产链 (NAV2 + 安全闸)"]
+        LOC["map_server + AMCL<br/>预建图定位"]
+        NAV["NAV2<br/>Smac 规划 · DWB 控制 · 行为树"]
+        GUARD["cmd_vel_guard<br/>减速→硬停 fail-safe"]
+    end
+
+    subgraph infra["基础设施 (独立进程)"]
+        HEALTH["HealthMonitor<br/>心跳 · 看门狗 · Prometheus"]
+        SUP["amr_supervisor<br/>kill -9 → 状态机重启 ~5s"]
+    end
+
+    subgraph legacy["计算层 (A/B 基线，非生产)"]
         FUSION["FusionNode<br/>DBSCAN · EKF · Tracker"]
         DECISION["DecisionNode<br/>目标分发 · 抢占"]
         MOTOR["MotorCtrlNode<br/>插值 · Action"]
     end
 
-    subgraph infra["基础设施 (独立进程)"]
-        HEALTH["HealthMonitor<br/>心跳 · 看门狗 · Prometheus"]
-    end
-
-    L -->|"LaserScan"| FUSION
-    I -->|"Imu"| FUSION
-    C -->|"Image"| FUSION
-    FUSION -->|"PerceptionObjects"| DECISION
-    DECISION -->|"MoveToPose Action"| MOTOR
-    MOTOR -->|"cmd_vel"| ROBOT["Robot 底盘"]
+    L -->|"/scan_raw + /odom"| LOC
+    LOC -->|"map→odom TF"| NAV
+    L -->|"/scan_raw"| GUARD
+    NAV -->|"/cmd_vel_raw"| GUARD
+    GUARD -->|"/cmd_vel"| ROBOT["Robot 底盘"]
 
     L -.-|"health 1Hz"| HEALTH
-    I -.-|"health 1Hz"| HEALTH
-    C -.-|"health 1Hz"| HEALTH
-    FUSION -.-|"health 1Hz"| HEALTH
-    DECISION -.-|"health 1Hz"| HEALTH
-    MOTOR -.-|"health 1Hz"| HEALTH
+    LOC -.-|"bond"| NAV
+    NAV -.-|"bond"| HEALTH
+    GUARD -.-|"respawn"| SUP
+    FUSION -.->|"A/B 形态"| DECISION
 
-    HEALTH -.-|"lifecycle restart"| L
-    HEALTH -.-|"lifecycle restart"| I
-    HEALTH -.-|"lifecycle restart"| C
-
-    style FUSION fill:#e1f5fe,stroke:#0288d1
-    style DECISION fill:#fff3e0,stroke:#f57c00
-    style MOTOR fill:#e8f5e9,stroke:#388e3c
+    style LOC fill:#f3e5f5,stroke:#7b1fa2
+    style NAV fill:#e8f5e9,stroke:#388e3c
+    style GUARD fill:#fff3e0,stroke:#ef6c00
     style HEALTH fill:#fce4ec,stroke:#c62828
+    style SUP fill:#fce4ec,stroke:#c62828
+    style FUSION fill:#f5f5f5,stroke:#999
+    style DECISION fill:#f5f5f5,stroke:#999
+    style MOTOR fill:#f5f5f5,stroke:#999
 
     linkStyle 0 stroke:#d32f2f,stroke-width:2px
     linkStyle 1 stroke:#d32f2f,stroke-width:2px
     linkStyle 2 stroke:#d32f2f,stroke-width:2px
     linkStyle 3 stroke:#d32f2f,stroke-width:2px
     linkStyle 4 stroke:#d32f2f,stroke-width:2px
-    linkStyle 5 stroke:#d32f2f,stroke-width:2px
+    linkStyle 5 stroke:#1976d2,stroke-width:1.5px,stroke-dasharray:5
     linkStyle 6 stroke:#1976d2,stroke-width:1.5px,stroke-dasharray:5
     linkStyle 7 stroke:#1976d2,stroke-width:1.5px,stroke-dasharray:5
     linkStyle 8 stroke:#1976d2,stroke-width:1.5px,stroke-dasharray:5
-    linkStyle 9 stroke:#1976d2,stroke-width:1.5px,stroke-dasharray:5
-    linkStyle 10 stroke:#1976d2,stroke-width:1.5px,stroke-dasharray:5
-    linkStyle 11 stroke:#1976d2,stroke-width:1.5px,stroke-dasharray:5
-    linkStyle 12 stroke:#1976d2,stroke-width:1.5px,stroke-dasharray:5
-    linkStyle 13 stroke:#1976d2,stroke-width:1.5px,stroke-dasharray:5
-    linkStyle 14 stroke:#1976d2,stroke-width:1.5px,stroke-dasharray:5
+    linkStyle 9 stroke:#999,stroke-width:1px,stroke-dasharray:3
 ```
 
 > 红色实线 = 数据流 &nbsp;|&nbsp; 蓝色虚线 = 控制流 &nbsp;|&nbsp; 状态流见下方状态图

@@ -160,6 +160,13 @@ DecisionNode::on_shutdown(const rclcpp_lifecycle::State &)
 // ── Perception callback — delegates to PlanningService ───────────────────────
 
 void DecisionNode::inject_static_obstacles() {
+  // N-R1 修复（五审 2026-09-08）：注入自锁。W1 把注入从 on_configure 搬进
+  // on_perception 时成了全文件唯一无锁的 demo_grid_ 写者——与 :246 单格
+  // inflate 持锁、:284 快照持锁对照，MultiThreadedExecutor 下 UB 级并发
+  // 读写。元防线教训：搬代码时 grep 同类调用的同步约定（相邻行就是范本）。
+  // 26 次 inflate 持锁 ~百µs 级，与一帧 raytrace 等价，无可观测争用。
+  // 注意：不得在已持 grid_mutex_ 的路径调用（当前无此调用方）。
+  std::lock_guard<std::mutex> lk(grid_mutex_);
   // 1m 间隔沿料架长度——0.55m 内切半径 + 1m 间距 = 无缝屏障；
   // 每 tick 重刷（set_cost_max 幂等），N-1 衰减语义下不依赖持久性
   for (float ry : {2.2F, 0.0F, -2.2F}) {

@@ -665,3 +665,13 @@
 - 四审次生：guarded/localized 的 scene respawn 补齐（respawn 宣称对齐）；
   ab_runner.py 入库 toolkit/ab/（/tmp 三度被清的教训）；文档残留×3
   （localized 头注释/ARCHITECTURE 头/system.launch docstring）
+
+## 2026-09-08 — W4 批次（五审 N-R1 + P2×2 + TSAN 首跑战果）
+
+- N-R1（五审新 P1）：注入函数上锁（W1 搬家时未抄相邻行的锁模式——
+  元防线教训入代码注释）；新增注入×快照并发回归变体
+- P2：README 手写数字×4 清零（指向 CI/报告，数字漂移第 5 次后根治）；
+  ARCHITECTURE 两张主 mermaid 重画（NAV2 生产链主图 + 遗留管线虚线降级）
+- TSAN 首跑战果：揪出 P0-B 回归锁测试自身无锁（NoDataRace 名不副实，
+  从未被 TSAN 真跑）——测试锁模式对齐生产后 ×3 零报告
+- BlockedGoal 本地 flaky 维持环境归因（CI 同代码绿；W4 delta 未触其路径）

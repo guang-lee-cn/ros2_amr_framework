@@ -56,15 +56,23 @@ TEST(GridRaceTest, ConcurrentReadWrite_NoDataRace) {
   std::atomic<bool> stop{false};
   std::atomic<int> plan_iterations{0};
   std::atomic<int> write_iterations{0};
+  // P0-B 回归锁自纠（2026-09-08，TSAN 首跑实证）：本测试此前全程无锁
+  // ——写者裸写、读者裸拷贝，测试名 NoDataRace 名不副实；它一直"绿"
+  // 是因为 TSAN 从未真跑（runbook 占位至当日）。锁模式对齐生产：
+  // grid_mutex_ 内写 / grid_mutex_ 内快照。
+  std::mutex mtx;
 
   // 写线程：循环 raytrace + inflate（模拟 perception 5Hz → 加速为持续循环）
   std::thread writer([&]() {
     std::vector<float> ranges(360, 5.0F);  // 独立缓冲（不与读线程共享）
     float amin = -M_PI, ainc = 2.0F * M_PI / 360.0F;
     while (!stop.load(std::memory_order_relaxed)) {
-      scan_to_grid.raytrace(*grid, ranges.data(), ranges.size(),
-                            amin, ainc, 2.0F, 0.0F, 0.0F);
-      updater.inflate(*grid, 5.0F, 0.0F);
+      {
+        std::lock_guard<std::mutex> lk(mtx);
+        scan_to_grid.raytrace(*grid, ranges.data(), ranges.size(),
+                              amin, ainc, 2.0F, 0.0F, 0.0F);
+        updater.inflate(*grid, 5.0F, 0.0F);
+      }
       write_iterations.fetch_add(1, std::memory_order_relaxed);
     }
   });
@@ -75,8 +83,12 @@ TEST(GridRaceTest, ConcurrentReadWrite_NoDataRace) {
     // 被堵 goal：在膨胀盘内 → A* 迭代到 max_iterations 才返回空
     Pose blocked_goal{5.05F, 0.05F};
     while (!stop.load(std::memory_order_relaxed)) {
-      // 模拟修复后行为：值语义拷贝（快照）
-      OccupancyGrid snapshot = *grid;  // 160KB memcpy ~10-50µs
+      // 生产同构：锁内快照（锁外裸拷贝本身仍是竞争——TSAN 首跑实证）
+      OccupancyGrid snapshot;
+      {
+        std::lock_guard<std::mutex> lk(mtx);
+        snapshot = *grid;  // 160KB memcpy ~10-50µs
+      }
       auto path = planner.plan(snapshot, start, blocked_goal);
       plan_iterations.fetch_add(1, std::memory_order_relaxed);
     }
@@ -99,3 +111,59 @@ TEST(GridRaceTest, ConcurrentReadWrite_NoDataRace) {
 }
 
 }  // namespace
+
+// ── N-R1 变体（五审 2026-09-08）：注入×快照 并发竞争 ──────────────────
+// 复发背景：静态注入从 on_configure 搬进 on_perception 后成为无锁写者
+// （on_perception 与持锁快照在 MultiThreadedExecutor 下真并发）。原
+// test_grid_race 只锤 raytrace×plan，注入路径零覆盖。本变体补齐：
+// 写线程跑与 decision 注入同构的 inflate 序列（多点位栅格屏障），
+// 读线程持续取 160KB 快照做 A*——锁正确则 TSAN 零报告。
+TEST(GridRaceTest, N_R1_InjectionVsSnapshot_NoDataRace) {
+  amr::domain::planning::ScanToGrid stg;
+  amr::domain::planning::GridUpdater updater;
+  OccupancyGrid grid;
+  grid.width = 400; grid.height = 400; grid.resolution = 0.05F;
+  grid.origin = {0.0F, -10.0F};
+  grid.cells.assign(400 * 400, OccupancyGrid::FREE);
+  AStarPlanner planner;
+  Pose start{0.5F, 0.5F};
+  Pose blocked_goal{7.0F, 0.0F};  // 注入屏障带内 → A* 最大化迭代
+  std::atomic<bool> stop{false};
+  std::atomic<int> inject_rounds{0}, snap_rounds{0};
+  std::mutex mtx;  // 与生产同构：锁内注入 / 锁内快照
+
+  std::thread injector([&]() {
+    while (!stop.load(std::memory_order_relaxed)) {
+      {  // decision_node::inject_static_obstacles 同构序列
+        std::lock_guard<std::mutex> lk(mtx);
+        for (float ry : {2.2F, 0.0F, -2.2F}) {
+          for (float rx = 4.0F; rx <= 10.0F; rx += 1.0F) {
+            updater.inflate(grid, rx, ry);
+          }
+        }
+        updater.inflate(grid, 18.0F, 4.0F);
+        updater.inflate(grid, 18.0F, -4.0F);
+      }
+      inject_rounds.fetch_add(1, std::memory_order_relaxed);
+    }
+  });
+
+  std::thread snapshotter([&]() {
+    while (!stop.load(std::memory_order_relaxed)) {
+      OccupancyGrid snap;
+      {
+        std::lock_guard<std::mutex> lk(mtx);
+        snap = grid;  // 生产同构：锁内 160KB 拷贝
+      }
+      planner.plan(snap, start, blocked_goal);
+      snap_rounds.fetch_add(1, std::memory_order_relaxed);
+    }
+  });
+
+  std::this_thread::sleep_for(std::chrono::seconds(2));
+  stop.store(true, std::memory_order_relaxed);
+  injector.join();
+  snapshotter.join();
+  EXPECT_GT(inject_rounds.load(), 5);
+  EXPECT_GT(snap_rounds.load(), 5);
+}
