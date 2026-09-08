@@ -43,6 +43,7 @@ public:
 
 private:
   void on_perception(const ros2_robot_middleware::msg::PerceptionObjects::SharedPtr &objs);
+  void inject_static_obstacles();  ///< N-1 后每 tick 重刷（自愈屏障）
   void on_amcl_pose(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
   void on_fusion_heartbeat(const std_msgs::msg::String::SharedPtr msg);
   void on_goal_pose(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
@@ -66,6 +67,7 @@ private:
   //（inflate 跳过 robot inscribed 内的 object，否则 lidar 自命中把 robot cell 标 INSCRIBED）。
   amr::domain::planning::GridUpdater grid_updater_{
       amr::domain::planning::GridUpdater::Params{0.55F, 0.75F, 3.0F}};
+  bool static_obstacles_{false};
   amr::domain::planning::OccupancyGrid demo_grid_;
   mutable std::mutex grid_mutex_;  // P0-B（三审 R3.1）：保护 demo_grid_ 的
                                     // 写（raytrace/inflate）与读（A* plan）

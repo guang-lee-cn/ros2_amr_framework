@@ -102,16 +102,11 @@ DecisionNode::on_configure(const rclcpp_lifecycle::State &)
     // 不足时留缝隙 → A* 穿过。静态障碍预注入（参数控制，默认关——单测
     // 用的自定义场景不受影响，simulation.launch 开启）。
     // 真机部署时按实际地图注入。
-    if (this->declare_parameter<bool>("static_obstacles", false)) {
-      // 1m 间隔沿料架长度注入——0.55m 内切半径 + 1m 间距 = 无缝隙屏障
-      for (float ry : {2.2F, 0.0F, -2.2F}) {
-        for (float rx = 4.0F; rx <= 10.0F; rx += 1.0F) {
-          grid_updater_.inflate(demo_grid_, rx, ry);
-        }
-      }
-      grid_updater_.inflate(demo_grid_, 18.0F, 4.0F);
-      grid_updater_.inflate(demo_grid_, 18.0F, -4.0F);
-      RCLCPP_INFO(get_logger(), "静态障碍预注入: 3 排料架(1m 间隔) + 2 机台");
+    static_obstacles_ = this->declare_parameter<bool>("static_obstacles", false);
+    if (static_obstacles_) {
+      RCLCPP_INFO(get_logger(),
+                  "静态障碍注入: 每感知 tick 重刷（N-1 后 253 可衰减，"
+                  "一次性注入会被 clearing 侵蚀——屏障改为自愈式）");
     }
   }
 
@@ -164,11 +159,24 @@ DecisionNode::on_shutdown(const rclcpp_lifecycle::State &)
 
 // ── Perception callback — delegates to PlanningService ───────────────────────
 
+void DecisionNode::inject_static_obstacles() {
+  // 1m 间隔沿料架长度——0.55m 内切半径 + 1m 间距 = 无缝屏障；
+  // 每 tick 重刷（set_cost_max 幂等），N-1 衰减语义下不依赖持久性
+  for (float ry : {2.2F, 0.0F, -2.2F}) {
+    for (float rx = 4.0F; rx <= 10.0F; rx += 1.0F) {
+      grid_updater_.inflate(demo_grid_, rx, ry);
+    }
+  }
+  grid_updater_.inflate(demo_grid_, 18.0F, 4.0F);
+  grid_updater_.inflate(demo_grid_, 18.0F, -4.0F);
+}
+
 void DecisionNode::on_perception(const PerceptionObjects::SharedPtr& objs)
 {
   AMR_PERF_PHASE("decision:on_perception");
   TRACE_SCOPE(amr::trace::DECISION_ON_PERCEPTION);
   auto t_start = std::chrono::steady_clock::now();
+  if (static_obstacles_) inject_static_obstacles();
 
   auto &m = amr::observability::shared_metrics();
   m.object_count.store(static_cast<int32_t>(objs->objects.size()),

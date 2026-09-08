@@ -16,11 +16,16 @@
 #include <cstddef>
 #include <cstdint>
 
+// N-1 裁决单测的白盒锚点：gtest 生成类在全局命名空间，先声明后友元
+class ScanToGridStickySemantics_GivenInscribedCell_WhenCleared_ThenDecays_ButLethalStays_Test;
+
 namespace amr {
 namespace domain {
 namespace planning {
 
 class ScanToGrid {
+  // N-1 裁决单测的白盒锚点（前向声明，域头零 gtest 依赖）
+  friend class ::ScanToGridStickySemantics_GivenInscribedCell_WhenCleared_ThenDecays_ButLethalStays_Test;
 public:
   struct Params {
     float max_range = 6.5F;  // 超出视为无效射线（不清不标）
@@ -82,8 +87,11 @@ private:
   static void set_free_if_not_lethal(OccupancyGrid &g, int gx, int gy) {
     if (gx < 0 || gx >= g.width || gy < 0 || gy >= g.height) return;
     auto &cell = g.cells[static_cast<size_t>(gy) * static_cast<size_t>(g.width) + static_cast<size_t>(gx)];
-    if (cell < OccupancyGrid::INSCRIBED) cell = OccupancyGrid::FREE;
-    // INSCRIBED 可清（动态障碍恢复），LETHAL 不可清（静态障碍永久）
+    if (cell < OccupancyGrid::LETHAL) cell = OccupancyGrid::FREE;
+    // N-1 修复（四审 2026-09-07）：5db0f02 误写 < INSCRIBED——恰好不清
+    // 253，与注释宣称的语义相反，动态障碍膨胀环固化为永久疤痕。
+    // 正确语义：INSCRIBED(253) 可衰减（膨胀区是安全距离非障碍本体），
+    // LETHAL(254) sticky。静态屏障的持久性改由每 tick 重注入保证。
   }
 
   static void set_cost(OccupancyGrid &g, int gx, int gy, uint8_t c) {

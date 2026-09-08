@@ -91,7 +91,9 @@ def generate_launch_description():
 
     controller_server = Node(
         package="nav2_controller", executable="controller_server",
-        name="controller_server", **nav2, output="screen")
+        name="controller_server", **nav2,
+        remappings=[("/cmd_vel", "/cmd_vel_raw")],  # N-2: 经安全闸（四审）
+        output="screen")
 
     planner_server = Node(
         package="nav2_planner", executable="planner_server",
@@ -99,13 +101,24 @@ def generate_launch_description():
 
     behavior_server = Node(
         package="nav2_behaviors", executable="behavior_server",
-        name="behavior_server", **nav2, output="screen")
+        name="behavior_server", **nav2,
+        remappings=[("/cmd_vel", "/cmd_vel_raw")],
+        output="screen")
 
     bt_navigator = Node(
         package="nav2_bt_navigator", executable="bt_navigator",
         name="bt_navigator", **nav2, output="screen")
 
     # ── 5. Foxglove ────────────────────────────────────────────────────
+    # 安全闸（N-2：Gazebo 形态同样不得绕过）
+    guard = Node(
+        package="ros2_robot_middleware", executable="cmd_vel_guard_node",
+        name="cmd_vel_guard",
+        parameters=[{"guard_stop_dist": 0.30,
+                     "guard_safe_dist": 0.80,
+                     "guard_min_valid_echoes": 50}],
+        output="screen")
+
     foxglove = Node(
         package="foxglove_bridge", executable="foxglove_bridge",
         parameters=[{"port": 8765}], output="screen")
@@ -124,6 +137,7 @@ def generate_launch_description():
             lifecycle_manager_slam,
             lifecycle_manager,
             controller_server, planner_server, behavior_server, bt_navigator,
+            guard,
         ]),
         TimerAction(period=15.0, actions=[foxglove]),
     ])

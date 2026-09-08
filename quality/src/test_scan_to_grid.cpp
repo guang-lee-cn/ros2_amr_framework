@@ -68,3 +68,31 @@ TEST(ScanToGridTest, Given_RobotTheta90_WhenRaytrace_HitNorth) {
                static_cast<float>(M_PI / 2.0));  // 朝北
   EXPECT_EQ(g.cost_at(20, 30), OccupancyGrid::LETHAL);
 }
+
+// ── N-1 裁决（四审 2026-09-07）：sticky 语义 单测 ──────────────────────
+// 语义（注释与 commit 宣称）：LETHAL(254) 永久 sticky；INSCRIBED(253) 是
+// 膨胀区（安全距离非障碍本体），动态障碍移走后必须可被 clearing 衰减。
+// 四审实证：5db0f02 把条件写成 < INSCRIBED——恰好不清 253，动态障碍的
+// 膨胀环被固化为永久疤痕，与 astar is_traversable(<INSCRIBED) 联合后
+// 把可通行区域永久堵死。本测试当时实现必红（红=方向反了，绿=已修）。
+TEST(ScanToGridStickySemantics,
+     GivenInscribedCell_WhenCleared_ThenDecays_ButLethalStays) {
+  using amr::domain::planning::OccupancyGrid;
+  amr::domain::planning::ScanToGrid stg;
+  OccupancyGrid g;
+  g.width = 3; g.height = 1;
+  g.cells.assign(3, OccupancyGrid::FREE);
+
+  // INSCRIBED 膨胀格：clearing 后必须衰减（动态障碍让位）
+  g.cells[0] = OccupancyGrid::INSCRIBED;
+  // LETHAL 障碍本体：clearing 后必须 sticky（静态料架不移走）
+  g.cells[1] = OccupancyGrid::LETHAL;
+
+  stg.set_free_if_not_lethal(g, 0, 0);
+  stg.set_free_if_not_lethal(g, 1, 0);
+
+  EXPECT_LT(g.cells[0], OccupancyGrid::INSCRIBED)
+      << "INSCRIBED 必须可衰减（当前实现若红=5db0f02 方向反了）";
+  EXPECT_EQ(g.cells[1], OccupancyGrid::LETHAL)
+      << "LETHAL 必须 sticky";
+}
