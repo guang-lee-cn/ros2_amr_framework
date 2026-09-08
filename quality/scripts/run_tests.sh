@@ -76,9 +76,22 @@ echo "[run_tests] Running tests..."
 source install/setup.bash 2>/dev/null || true
 # test_motor_ctrl re-enabled (2026-07-31): action execute now runs with
 # SpinHelper multi-threaded executor + PurePursuit final-approach fix.
+# 2026-09-09 可见性修复：tail -3 曾吞掉失败测试名——两次 CI 红都因
+# 此无法定位（只能猜 flake）。失败时转储 ctest 详情 + test-result 摘要。
+set +e
 colcon test \
   --packages-select ros2_robot_middleware \
   --return-code-on-test-failure \
-  2>&1 | tail -3
+  > /tmp/colcon_test_full.log 2>&1
+TEST_RC=$?
+set -e
+tail -3 /tmp/colcon_test_full.log
+if [ "$TEST_RC" -ne 0 ]; then
+  echo "[run_tests] ⛔ 测试失败——ctest 详情（尾部 250 行）"
+  tail -250 /tmp/colcon_test_full.log
+  echo "[run_tests] ⛔ test-result 摘要"
+  colcon test-result --verbose 2>&1 | grep -vE "0 errors, 0 failures" | tail -40
+  exit "$TEST_RC"
+fi
 
 echo "[run_tests] Done."
