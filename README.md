@@ -152,7 +152,7 @@ curl localhost:9091/metrics   # AMR_PERF_PHASE 阶段延迟 (ON 构建)
 | **导航集成**（定位/规划/控制/安全闸） | nav2_localized 全栈 | AMCL RMS 68mm、调参三课 ADR |
 | **安全工程**（fail-safe 矩阵/独立安全层） | CollisionGuard + cmd_vel_guard | 22 域测、L3 带闸验证 |
 | **中间件工程**（DDS 选型/双 RMW/QoS 治理） | benchmarks + amr::qos | 双 RMW CI 矩阵、基准报告 |
-| **治理**（版本纪律/弃用流程/文档同步） | CHANGELOG/ADR 链 | 三轮外部审计整改全闭环 |
+| **治理**（版本纪律/弃用流程/文档同步） | CHANGELOG/ADR 链 | 三轮审计 P0 清零；四审（2026-09-07）三 P1 已修，治理项持续 |
 
 ## Docs
 
