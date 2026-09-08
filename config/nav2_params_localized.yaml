@@ -16,7 +16,9 @@ bt_navigator:
 controller_server:
   ros__parameters:
     use_sim_time: true
-    controller_frequency: 20.0
+    controller_frequency: 10.0   # 三轮观测实证：弱算力(4C 共享)上 20Hz 塌到 7.7Hz
+                                  # 触发停滞链（F1 契约下速度间歇清零→进度判停）；
+                                  # 10Hz 实测 60/60 腿零降频零超时。真机算力优先原则。
     min_x_velocity_threshold: 0.001
     min_theta_velocity_threshold: 0.001
     failure_tolerance: 0.3
