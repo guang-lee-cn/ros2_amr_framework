@@ -243,6 +243,97 @@ jobs:
           grep -q "ThreadSanitizer" /tmp/tsan.log && { echo "::error::TSAN 报告自家数据竞争"; exit 1; } || true
           echo "TSAN 并发核心零报告"
 
+  # ── 门禁心跳（2026-09-09）：只在 schedule 跑的门禁，坏了没人看得见 ──────
+  # 事故：tsan-nightly 自 09-08 创建起没跑过一次测试（装包名笔误在 apt 阶段即
+  # 红），而 push 事件跳过该 job、其余七腿日常全绿掩盖了它——「门禁存在」≠
+  # 「门禁跑过」（见 docs/change_journal.md 2026-09-09 条）。本 job 把两类静默
+  # 失效翻译成 push/PR 时的红灯：
+  #   ① cron 死（GitHub 对 60 天无活动的仓库停用 schedule）→ 无近期 schedule run
+  #   ② job 坏（笔误/真竞态）→ 无近期 success
+  # ② 认任何事件的成功：手动 dispatch 也是「它真的跑过」的合法证据。
+  # 新增 schedule-only 门禁时，把 job 名加进 JOBS。
+  nightly-freshness:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    env:
+      MAX_AGE_H: 36            # 夜跑每日 18:00 UTC；36h = 容忍一次漏跑/失败
+      MAX_SCHEDULE_AGE_H: 36
+      JOBS: tsan-nightly
+    steps:
+      - name: Assert nightly gates ran recently and passed
+        shell: bash
+        run: |
+          set -eo pipefail
+          python3 - <<'PY'
+          import json, os, sys, urllib.error, urllib.request
+          from datetime import datetime, timezone
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          jobs = os.environ["JOBS"].split()
+          max_age_h = float(os.environ["MAX_AGE_H"])
+          max_sched_h = float(os.environ["MAX_SCHEDULE_AGE_H"])
+          now = datetime.now(timezone.utc)
+          fail = False
+
+          def api(path):
+              req = urllib.request.Request(
+                  f"https://api.github.com/repos/{repo}{path}",
+                  headers={"Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}",
+                           "Accept": "application/vnd.github+json"})
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as resp:
+                      return json.load(resp)
+              except (urllib.error.HTTPError, urllib.error.URLError) as e:
+                  print(f"::error::GitHub API 调用失败（{e}）——token 缺 actions: read 或 workflow 路径已改")
+                  sys.exit(1)
+
+          def age_h(stamp):
+              return (now - datetime.fromisoformat(stamp.replace("Z", "+00:00"))).total_seconds() / 3600
+
+          def report(ok, msg):
+              global fail
+              print(("✓ " if ok else "::error::") + msg)
+              fail = fail or not ok
+
+          # ① cron 活着：最近一次 schedule run 在窗口内（结论不论——「跑过」与
+          #    「跑过且绿」是两件事，后者由 ② 负责）
+          sched = api("/actions/workflows/ci.yml/runs?event=schedule&per_page=1")["workflow_runs"]
+          if not sched:
+              report(False, "从未有过 schedule 触发的 run——cron 未生效或已被停用")
+          else:
+              h = age_h(sched[0]["created_at"])
+              report(h <= max_sched_h,
+                     f"schedule 心跳 {h:.1f}h 前（阈值 {max_sched_h}h，{sched[0]['created_at']}）"
+                     if h <= max_sched_h else
+                     f"已 {h:.1f}h 无 schedule run（阈值 {max_sched_h}h）——cron 死了")
+
+          # ② 门禁真的跑过且绿：倒序扫最近 20 次 run，取该 job 的最近一次 success
+          run_ids = [r["id"] for r in
+                     api("/actions/workflows/ci.yml/runs?per_page=20")["workflow_runs"]]
+          for job in jobs:
+              hit = None
+              for rid in run_ids:
+                  for j in api(f"/actions/runs/{rid}/jobs?per_page=100")["jobs"]:
+                      if j["name"] == job and j["conclusion"] == "success":
+                          hit = j["completed_at"]
+                          break
+                  if hit:
+                      break
+              if not hit:
+                  report(False, f"{job} 在最近 {len(run_ids)} 次 run 里没有一次 success——门禁坏了或从未跑过")
+                  continue
+              h = age_h(hit)
+              report(h <= max_age_h,
+                     f"{job} 最近一次 success {h:.1f}h 前（{hit}）" if h <= max_age_h else
+                     f"{job} 已 {h:.1f}h 无 success（阈值 {max_age_h}h，最近 {hit}）——夜跑坏了没人管")
+
+          if fail:
+              print("::error::先确认门禁本身能跑（gh workflow run ci.yml --ref main），再重推")
+          sys.exit(1 if fail else 0)
+          PY
+
   # ── M1（商用差距 20260908）：NAV2 冒烟——绕闸类缺陷的永久 CI 锁 ──────
   # N-2（launch 直出 /cmd_vel 绕闸）只有人工审计能抓；本 job 让它变红灯：
   # 启动 nav2_scene，断言 guard 在 + /cmd_vel_raw 流量 + /cmd_vel 流量 +

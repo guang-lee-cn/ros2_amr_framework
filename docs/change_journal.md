@@ -41,6 +41,51 @@
 
 ---
 
+## [2026-09-09] 门禁心跳（nightly-freshness）：把「夜跑死了没人管」变成 push 红灯
+
+> 续上一条的教训②。修好 `tsan-nightly` 是治症；它**能红三天无人知**才是症结
+> ——schedule-only 门禁在 push 侧完全隐形。本条给它装上心跳。
+
+- **症状【铁证】**: `tsan-nightly` 的 `if` 只认 `schedule`/`workflow_dispatch`，
+  push 事件一律 `skipped`。09-08 那次唯一的 schedule run 里它 failure、其余七腿
+  success → 整条 run 红，但**没有任何 push 会因此变红**，日常全绿把它盖了三天。
+- **假设（两类独立失效）**: ① cron 死（GitHub 对 60 天无活动的仓库停用
+  schedule）② job 坏（笔误/真竞态）。两者证据不同：① 看 schedule run 的时间戳，
+  ② 看该 job 的 conclusion。合并成一条"整条 run 绿"会漏掉 ①。
+- **证据【铁证】**: 历史 12 次 run 的 `tsan-nightly` conclusion——
+
+  | 时间 | 事件 | conclusion |
+  |---|---|---|
+  | 09-09T04:27 | workflow_dispatch | success（至今唯一一次成功） |
+  | 09-09T04:12 / 04:27 | push | skipped |
+  | 09-08T20:40 | schedule | **failure**（apt 笔误） |
+  | 09-08T03:46 ~ 16:07（7 次） | push | skipped |
+
+  即：09-08 全天到 09-09T04:27 之间的**每一次 push，guard 都该是红的**。
+- **改动**: ci.yml 新增 `nightly-freshness`（`if: push || pull_request`，
+  `permissions: actions: read`，不 checkout）：
+  - ① 最近一次 schedule run 在 36h 内（结论不论——「跑过」与「跑过且绿」分开断言）
+  - ② `JOBS` 里每个 job 在最近 20 次 run 内有 success 且不超过 36h
+    （**认任何事件的成功**：手动 dispatch 也是「它真的跑过」的合法证据）
+  - 用 `python3` + `urllib`（CI 已有硬依赖），不引 jq——少一个"假定存在"的依赖
+  - 门禁自身跑在 push 上：装错/写错会当场红，自证
+- **验证【铁证】**: 正向 + 四个反例（真实 API，每条分支都非空转）——
+
+  | 场景 | 期望 | 实测 |
+  |---|---|---|
+  | 真实数据 | 绿 | `exit=0`，两条 ✓ |
+  | `MAX_AGE_H=0` | 红（②过期） | `::error::…已 0.4h 无 success` `exit=1` |
+  | `JOBS=bogus-job` | 红（②从未成功） | `::error::…没有一次 success` `exit=1` |
+  | `MAX_SCHEDULE_AGE_H=0` | 红（①cron） | `::error::…无 schedule run——cron 死了` |
+  | 仓库不存在 | 红且可读 | `::error::GitHub API 调用失败（HTTP 404）` |
+
+  脚本从 ci.yml **抽出原文**执行（不是另写一份），保证测的就是上线的。
+- **阈值取舍**: 36h = 夜跑每日一次，容忍一次漏跑/失败；连续两次坏才拦 push——
+  避免 DDS 发现类瞬时抖动立刻堵住所有推送。
+- **回滚**: 删 job 即回退，与其余七腿零耦合。
+
+---
+
 ## [2026-09-09] CI 三腿假红（容器 PID 1 不 reap 的僵尸）+ TSAN 死门（job 从未跑过一次）
 
 > 续 F2 落地：push 后 CI 红。一条红是测试自身对环境的假设，另一条是顺手核

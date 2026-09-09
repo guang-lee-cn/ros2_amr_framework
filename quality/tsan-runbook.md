@@ -51,3 +51,4 @@ cd /tmp/tsan_build/ros2_robot_middleware
 | 2026-09-08 起 CI nightly | ci.yml tsan-nightly job（cron 02:00 北京，并发核心） | 自动化防线（三审⑤关闭） |
 | 2026-09-08 首跑战果补记 | test_grid_race ×3 | **揪出 P0-B 回归锁测试自身无锁**（写者裸写/读者裸拷贝，名不副实且从未被 TSAN 跑过）——测试加锁自纠后 ×3 零报告；N-R1 变体（注入×快照）同绿 |
 | 2026-09-09 CI 首次真跑 | ci.yml tsan-nightly | job 自 09-08 创建起就没跑过一次：装包名笔误（`colcon-common-versions`）在 apt 阶段即红，而 push 事件跳过该 job、日常全绿掩盖三天。修笔误 + 补 `hardware_interface` 等依赖后 dispatch 34311055445 绿：8 tests + **零报告**。本地同参数复跑同结果 |
+| 2026-09-09 心跳补记 | ci.yml `nightly-freshness` | 「只在 schedule 跑 ⇒ push 侧隐形」这个缺口由新 job 封堵：push/PR 时断言 ① 最近一次 schedule run ≤36h ② 本 job 最近一次 success ≤36h，否则红灯（历史回放：09-08 全天每次 push 都该红）。本地正向 + 4 反例实跑验证 |
