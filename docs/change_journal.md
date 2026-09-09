@@ -41,6 +41,47 @@
 
 ---
 
+## [2026-09-09] CI 三腿假红（容器 PID 1 不 reap 的僵尸）+ TSAN 死门（job 从未跑过一次）
+
+> 续 F2 落地：push 后 CI 红。一条红是测试自身对环境的假设，另一条是顺手核
+> 上一次 run 时发现的"门禁从诞生起就没跑过"。
+
+- **症状【铁证】**: 3 条腿红（`asan-gate` + `build-test-coverage` ×2），同挂
+  `SupervisorNodeTest.Given_SpawnedChild_Then_OwnProcessGroupAndNoGrandchildLeak`
+  —— `wait_gone(gc_pid, 3s)` false，断言消息写着"组杀失效 → 泄漏"。
+- **原假设（被推翻）**: 组杀失效、孙进程真的还在跑。
+- **证据【铁证】**: 判别性实验——同一段代码，只换 PID 1：
+  | 环境 | PID 1 | 组杀后 1s/3s |
+  |---|---|---|
+  | WSL 本机 | init（会 reap） | `GONE` / `GONE` |
+  | 容器 `--entrypoint tail -f /dev/null`（照抄 CI runner 的 `docker create` 命令） | 不 wait | **`Z` / `Z`** |
+  | 同容器，PID 1 换成 bash | 会 reap | 用例即绿 |
+  `ps` 亲验：`STAT=Z PPID=1`——**组杀是生效的**（没杀中应为 `S`），红在
+  "僵尸没人收"对上"断言只认 `ESRCH`"。容器 job 红、裸机 job 绿（nav2-smoke /
+  nav2-supervised-smoke）正好是这个差异的两侧。
+- **第二处（顺手核出）**: `tsan-nightly` 唯一一次 schedule 触发在 apt 阶段就死
+  ——`E: Unable to locate package python3-colcon-common-versions`（不存在的
+  包名，引入自创建该 job 的同一个 commit）。修笔误还不算完：`ros-jazzy-ros-base`
+  的递归闭包（494 包）里没有 `hardware_interface`，而 CMakeLists:29 是
+  `find_package(hardware_interface REQUIRED)` → 照样编不过。
+- **改动**:
+  - `wait_gone` → `not_running`（`ESRCH` 或 `/proc` 状态 `Z` 均算"不再运行"）+
+    新增契约 1b（孙进程必须在子进程组内，与 PID 1 行为无关的机理断言）
+  - tsan-nightly 装包清单改为与 build-test-coverage 同源（那条腿已被 CI 证明
+    能编过本包）；runbook 补 `--install-base`（只隔离 build-base 会把常规
+    `install/` 覆盖成插桩版）与"TSAN 不进 CI"的过时表述
+- **验证【铁证】**: 本地 WSL 6/6、同形态容器 6/6、反向对照（活着 → False /
+  组杀后 → True）；本地 TSAN 编译 2min36s + `test_decision` 8/8 零报告；
+  CI dispatch 34311055445 **8/8 全绿**（`tsan-nightly` 首次真正执行：8 tests
+  + 零报告）。
+- **教训**: ① 断言"进程消失"不能只认 `ESRCH`——僵尸对 `kill(pid,0)` 同样成功，
+  它是否消失取决于 PID 1 是否 reap，这是**环境属性不是代码属性**；② 门禁要验证
+  "跑过"而不是"存在"——笔误让它红了三天，而 push 事件跳过该 job，日常全绿把它
+  盖住了；查 CI 只该看 job 的 conclusion，不该看整条 run 的绿色。
+- **回滚**: 两处独立可回退（测试断言 / CI 装包清单），互不依赖。
+
+---
+
 ## [2026-09-09] F2「节点挂死不可见」：v2 心跳门 + NAV2 整栈监管（判别性实验推翻原方案）
 
 > 商用差距迭代地图 F2（试点前置 6 项中最后一个代码项）。故障故事：NAV2 某
