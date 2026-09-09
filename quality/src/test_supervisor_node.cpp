@@ -50,13 +50,38 @@ pid_t read_pid(const std::string &path) {
   return static_cast<pid_t>(v);
 }
 
-bool wait_gone(pid_t pid, std::chrono::milliseconds timeout) {
+/// 进程是否已不再运行：ESRCH（已被回收）或 /proc 状态 Z（已死、但无人 reap）。
+///
+/// 不能只认 ESRCH：僵尸对 kill(pid,0) 同样返回成功，而孤儿僵尸是否被回收取决于
+/// PID 1 是否 wait()。CI 的 container job 用 `--entrypoint tail -f /dev/null` 起
+/// 容器（runner 行为，2026-09-09 CI 日志亲验），PID 1 = tail 从不 wait → 组杀后
+/// 孙进程永远是 Z。同形态容器里复现：同一段代码 WSL 1s 后 GONE、容器里 1s/3s
+/// 后仍 Z（`ps` 亲验 PPID=1 STAT=Z）——CI 红是这条环境差异，不是组杀失效。
+///
+/// Z 恰是「组杀生效」的证据：没被杀中的话状态是 S。断言本体是「不再运行」，
+/// 不是「已被回收」——回收者是谁不归 supervisor 管。
+bool not_running(pid_t pid) {
+  if (::kill(pid, 0) == -1 && errno == ESRCH) {
+    return true;
+  }
+  std::ifstream f("/proc/" + std::to_string(pid) + "/stat");
+  std::string line;
+  if (!std::getline(f, line)) {
+    return true;  // /proc 项已消失
+  }
+  // comm 字段可含空格：从最后一个 ')' 之后取状态字符
+  std::size_t rparen = line.rfind(')');
+  return rparen != std::string::npos && rparen + 2 < line.size() &&
+         line[rparen + 2] == 'Z';
+}
+
+bool wait_not_running(pid_t pid, std::chrono::milliseconds timeout) {
   const auto deadline = SteadyClock::now() + timeout;
   while (SteadyClock::now() < deadline) {
-    if (::kill(pid, 0) == -1 && errno == ESRCH) return true;
+    if (not_running(pid)) return true;
     std::this_thread::sleep_for(50ms);
   }
-  return ::kill(pid, 0) == -1 && errno == ESRCH;
+  return not_running(pid);
 }
 
 class SupervisorNodeTest : public ::testing::Test {
@@ -233,11 +258,13 @@ TEST_F(SupervisorNodeTest, Given_SpawnedChild_Then_OwnProcessGroupAndNoGrandchil
   // 契约 1：子进程自成进程组（kill(-pid) 才有作用域）
   EXPECT_EQ(getpgid(sh_pid), sh_pid)
       << "posix_spawn 未建独立进程组——kill(-pid) 组杀会 ESRCH，孙进程泄漏";
+  // 契约 1b：孙进程落在同一个组里——组杀覆盖它的前提（与 PID 1 行为无关）
+  EXPECT_EQ(getpgid(gc_pid), sh_pid) << "孙进程不在子进程组内，组杀覆盖不到它";
 
   // 契约 2：清场后孙进程必须一起走（组杀生效的直接证据）
   sup_->deactivate();
-  EXPECT_TRUE(wait_gone(gc_pid, 3s))
-      << "孙进程 " << gc_pid << " 未被清场（组杀失效 → 泄漏）";
+  EXPECT_TRUE(wait_not_running(gc_pid, 3s))
+      << "孙进程 " << gc_pid << " 仍在运行（组杀未覆盖 → 真泄漏）";
   std::remove(gc_file.c_str());
   std::remove(sh_file.c_str());
 }
