@@ -42,7 +42,7 @@
 + scene_simulator 率先实现staleness 归零，让仿真语义=真机契约）；guard 死亡时
 latch 一条零速（transient_local）使 respawn 窗口内下游收到的是"停"而非"无消息"。
 
-### F2 节点挂死不可见（结构性，两形态都缺）
+### F2 节点挂死不可见（结构性，两形态都缺）✅ 已落地（2026-09-09）
 故障故事：NAV2 某 server 死锁（进程活着、不工作）——无人发现。事实：① supervisor
 的 STARTING→RUNNING 确认仍是"存活即确认"（[supervisor_node.cpp:256](src/infrastructure/supervisor_node.cpp#L256) 自注 "v1 健康门：存活即确认；v2 换心跳确认"——v2 从未做）；② health_monitor
 的 /health/report 单机形态零消费者（首轮审计 F-1 结论至今成立）；③ **NAV2 生产
@@ -50,6 +50,14 @@ launch 全谱系零 supervisor/health 接入**（grep 亲验：nav2_*.launch 无
 controller/planner/bt_navigator 崩溃只靠 BT 恢复行为，进程级无人管。
 迭代点：v2 心跳门（supervisor 订阅 /health/report，五审前 F-1 的改法 b 终于
 有了正当性）；NAV2 形态接入 supervisor（children 参数化即可，机制已备）。
+
+**落地（2026-09-09）**：判别性实验推翻了「逐 server spawn」方案——bond 4s 能
+检出挂死但**恢复不了**（进程没死，launch respawn 与 waitpid 都看不见），且
+`attempt_respawn_reconnection` 的判活不看 bond/ACTIVE（逐 server 是假粒度）。
+改为**整栈单子进程**（`supervisor.children = {health_monitor, nav2}`），恢复走
+进程组 `kill(-pgid)` + 退避重生。health_monitor 只报告不处置（避免与
+lifecycle_manager 状态跟踪脱节）。验证门进 CI：`nav2-supervised-smoke`
+（SIGSTOP → 检出 → 组杀重拉 → 可驱车，78s）。ADR §v2 落地。
 
 ### F3 定位丢失/跳变无看门狗
 故障故事：AMCL 绑架机器人场景下发散，机器人按错误世界模型全速规划——guard
@@ -140,7 +148,7 @@ controller/planner/bt_navigator 崩溃只靠 BT 恢复行为，进程级无人�
 | O3 | 日志不可检索 | journald 本地、无结构化、无集中；车队形态下"昨晚 3 号机为什么停了"无法回答 | 结构化 JSON 日志（按事件非按行）+ 车队集中方案（哪怕先 rsync + loki 单机版） |
 | O4 | 追踪占位 | LTTng 依赖在、tracepoint 零调用、无会话证据 | 二选一：实现 5 个关键 span（perception/plan/guard/cmd publish）并在真机 bring-up 时实际用一次；或删依赖。当前状态是死重 |
 | O5 | **SLO/错误预算未定义** | 无 mission success rate、cmd_vel 可用率、MTTR 的定义与目标——soak 报告的"100% 可用率"是单指标叙事 | 定义 3 个 SLI + 错误预算策略；**soak 报告改为从入库数据生成**（report-from-data 管道）——这一个改动让"叙事 vs 工件"问题在制度上不可能复发 |
-| O6 | 健康模型不分形态 | health_monitor 监视的是旧管线节点清单；NAV2 形态无健康发布 | 健康清单参数化按 launch 形态生成（与 F2 的 supervisor 接入同批做） |
+| O6 | 健康模型不分形态 | health_monitor 监视的是旧管线节点清单；NAV2 形态无健康发布 | ✅ 已随 F2 落地（2026-09-09）：清单参数化 `health_monitor.nodes` + `probe=lifecycle` 探针，NAV2 形态按 launch 形态生成 |
 | O7 | 指标集封闭 | MetricsRegistry 字段封闭（CLAUDE.md 已警告"别等基类给你指标"） | 真机批次重评：电量/温度/IO 错误率等商用必填字段需要扩维度，提前设计 label 方案避免重写 |
 
 ---
@@ -151,7 +159,7 @@ controller/planner/bt_navigator 崩溃只靠 BT 恢复行为，进程级无人�
 1. F1 指令超时契约（scene 先实现 + SAFETY.md 初版）
 2. M1 NAV2 CI 冒烟（锁接线类回归）
 3. P2 soak 轮 3 切 NAV2 形态（生产形态首份长时画像）
-4. F2 supervisor/health 接入 NAV2 形态 + v2 心跳门
+4. ✅ F2 supervisor/health 接入 NAV2 形态 + v2 心跳门（2026-09-09 落地，见 §2 F2）
 5. O1/O2 告警接线 + deadman
 6. M6 OPERATIONS.md/SAFETY.md 初版
 

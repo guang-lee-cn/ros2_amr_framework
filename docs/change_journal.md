@@ -41,6 +41,76 @@
 
 ---
 
+## [2026-09-09] F2「节点挂死不可见」：v2 心跳门 + NAV2 整栈监管（判别性实验推翻原方案）
+
+> 商用差距迭代地图 F2（试点前置 6 项中最后一个代码项）。故障故事：NAV2 某
+> server 死锁（**进程活着、不工作**）——无人发现。
+
+- **症状【铁证】**: 三个既证事实——① supervisor 的 STARTING→RUNNING 是「存活
+  即确认」（[supervisor_node.cpp:256](src/infrastructure/supervisor_node.cpp#L256)
+  自注「v1 健康门：存活即确认；v2 换心跳确认」，v2 从未做）；② `/health/report`
+  单机形态零消费者；③ NAV2 生产 launch 全谱系零 supervisor/health 接入
+  （`grep -l` 空）。
+- **原假设（已推翻）**: 逐 server 作为 supervisor 的 children → 细粒度恢复。
+- **证据【铁证】**: 写 launch 前先做判别性实验（`nav2_localized.launch.py` +
+  `kill -STOP controller_server` 30s，日志 `/tmp/nav2_bond_exp.log`），四条实测/
+  源码核验：
+  1. bond **4.0s** 检出挂死 → `CRITICAL FAILURE … Shutting down related nodes` →
+     全栈 deactivate，**但恢复不了**（冻结进程仍 `Tl`）→ F2 的缺口是**恢复**
+     不是检测；
+  2. jazzy `lifecycle_manager.cpp` 源码：`attempt_respawn_reconnection`（默认
+     true，窗 10s）的判活是 `get_state()` 能应答，**不看 bond/ACTIVE** →
+     逐 server 的「细粒度」在恢复阶段是假粒度；
+  3. 原 children 清单**漏了 lifecycle_manager**——逐 server spawn 无人
+     configure/activate，栈根本起不来（计划硬伤）；
+  4. `ros2 launch` 不调 `setsid`（site-packages 全量 grep 零命中）→ 孙进程与
+     launch 同组，W4 的 `kill(-pgid)` 能覆盖整栈。
+- **裁决（用户 2026-09-09 选定）**: **整栈单子进程**。`supervisor.children =
+  {health_monitor, nav2}`，`nav2` = 一个 `ros2 launch … nav2_localized.launch.py`
+  进程组。理由：manager 的 `startup()` 本就会重新 configure+activate 全部节点，
+  逐 server 的粒度在恢复阶段与整栈重启**可观测等价**，却要多背一层对 NAV2 内部
+  10s 窗的依赖，还要新增参数解开启动死锁。
+- **改动**:
+  - 域层 [supervisor_policy.hpp](include/ros2_robot_middleware/domain/monitoring/supervisor_policy.hpp)：
+    `Event` 增 `HEALTH_LOST`/`HEALTH_OK`；RUNNING 相位复用既有 `enter_backoff()`
+    （退避/预算/FATAL 语义零新逻辑），STARTING 相位靠 `startup_timeout` 宽限；
+  - health_monitor 清单参数化（`health_monitor.nodes` + `<n>.probe=topic|lifecycle`
+    + `<n>.timeout_s`）+ lifecycle `get_state` 探针（1Hz，ACTIVE 才更新
+    `last_seen_s`，`HeartbeatAnalyzer` 零改动）；`restart_enabled=false` =
+    **只报告不处置**（lifecycle 四步链会与 lifecycle_manager 状态跟踪脱节）；
+  - supervisor 订阅 `/health/report`（`amr::qos::reliable_stream()`）+
+    `supervisor.<name>.health_nodes` 映射（子进程名 ↔ health 节点名的既有缺口）；
+  - 新增 [health_feed.hpp](include/ros2_robot_middleware/infrastructure/health_feed.hpp)
+    聚合语义：child 存活 = 映射的**全部**节点 OK；ERROR/FATAL 立即判挂；
+    WARN/STALE **不改变节点视图**（只阻止转 OK）。不聚合则 map_server 先 ACTIVE
+    就把整栈判成就位，之后没起来的节点报 STALE 被忽略 → 半死栈无人发现；
+  - 新增 `launch/supervised_nav2.launch.py` + `quality/scripts/nav2_supervised_smoke.sh`
+    + CI job `nav2-supervised-smoke`（矩阵第 7 个 job）；
+  - **前置清理**：删除未提交的平行实现 `ProcessSupervisor`（285 行 + 148 行测试，
+    零引用零 ADR，`supervisor_policy` 的功能真子集）。
+- **验证【铁证】**: 单测 `test_supervisor_policy` 29 例 / `test_health_feed` 4 例 /
+  `test_supervisor_node` 6 例（含进程组清场契约）/ `test_lifecycle_probe` 4 例 /
+  `test_health_restart` 2 例不回归；端到端 `nav2_supervised_smoke.sh` 本机
+  **78s**：bringup → 聚合门放行 → 空闲 30s 不误杀 → SIGSTOP → ERROR（46s）→
+  组杀+重拉 → 整栈复活（58s）→ 无孤儿 → goal accepted + `/cmd_vel`=49。
+- **踩坑归档（三条，全是验证工具而非产品）**:
+  1. **夹具排空能力**：`test_supervisor_node` 多节点用例「hb_b 永远收不到」假红
+     ——`spin_some()` 每轮只执行一个回调（实测），一轮发 2 条只取 1 条 →
+     KEEP_LAST(10) 队列饱和后新样本挤掉未取的旧样本。同一窗口独立 rclpy 订阅者
+     50/50 收全（287/287），产品代码无辜。夹具改 `spin_all(20ms)` 后 6/6 绿。
+     教训：「只收到一半消息」先怀疑夹具排空能力，**别急着放宽产品断言**；
+  2. **`pgrep -f` 匹配到探针自身**：`[c]ontroller_server` 命中了 health_monitor
+     （其 argv 含 `health_monitor.controller_server.probe:=lifecycle`），STOP 错
+     进程 → 全部路径锚定 `[/]controller_server`；
+  3. **`wait_for` 在重拉断言上假绿**：首次出现的 `Managed nodes are active` 还在
+     日志里，等待「第 2 次」必须计数（`wait_for_count`），否则空转即过。
+- **回滚**: 每批独立可回退；域层为纯增量（新增 Event 分支，既有 8 事件语义不变）；
+  `nav2_localized.launch.py` 未动，开发形态零影响。
+- **记账（不修）**: `SupervisorNode` 成员变量 6 个 > 红线 5——既有超线，非本批
+  引入，留待下次触碰该类时抽取。
+
+---
+
 ## [2026-09-01] 27 处裸 QoS 清零 + systemd unit + 环境分化
 
 - **裸 QoS 清零**：27 处 `rclcpp::QoS(10)` 全部改走 `amr::qos::` 词汇表

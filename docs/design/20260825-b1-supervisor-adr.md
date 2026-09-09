@@ -3,7 +3,8 @@
 > 对应迭代2 B1（docs/design/20260824-iteration2-audit-goals.md）：
 > 「supervisor 实体化：崩溃监管/依赖序重启/健康门；声明式配置驱动；
 > kill -9 任一节点按策略恢复（health_monitor/OtaCoordinator 零件复用）」
-> 状态：已实施（2026-08-25）
+> 状态：v1 已实施（2026-08-25）；**v2 心跳门 + NAV2 整栈监管已实施（2026-09-09，
+> 见文末「v2 落地」）**
 
 ## 背景与缺口
 
@@ -83,8 +84,10 @@ supervisor.<name>.max_restarts / window_s / backoff_base_ms /
 
 - **v1（本次）**：进程存活 + startup 超时（STARTING 超窗 = crash 路径）。
   这已覆盖「kill -9 任一节点按策略恢复」验收。
-- **v2（后续）**：heartbeat 话题级健康门（STARTING→RUNNING 需心跳确认），
-  对接 health_monitor 的心跳格式——AmrNode 心跳已在所有新节点里。
+- **v2（2026-09-09 已实施，见文末「v2 落地」）**：heartbeat 话题级健康门
+  （STARTING→RUNNING 需心跳/健康确认），对接 health_monitor 的
+  `/health/report`——stock NAV2 节点不发 AmrNode 心跳，改用 lifecycle
+  `get_state` 探针（空闲不发业务话题，流量判定会误杀）。
 
 ## 后果与边界
 
@@ -107,3 +110,63 @@ supervisor.<name>.max_restarts / window_s / backoff_base_ms /
   - rollout 轮暴露并修复：oneshot 完成标记缺失、级联清序、
     run_sim 清场孤儿（foxglove 占 8765）+ SHM 锁无效 glob——详见
     change journal 2026-08-25 晚条目
+
+---
+
+## v2 落地：心跳门 + NAV2 整栈监管（2026-09-09，F2）
+
+> 触发：商用差距迭代地图 **F2「节点挂死不可见」**。故障故事：NAV2 某 server
+> 死锁（进程活着、不工作）——无人发现。三个既证事实：v1 的 STARTING→RUNNING
+> 是「存活即确认」（本 ADR D5 承诺的 v2 从未做）；`/health/report` 单机形态
+> 零消费者；NAV2 生产 launch 全谱系零 supervisor/health 接入。
+
+### 判别性实验先于设计
+
+按原方案（逐 server spawn）落地前先做实验：`nav2_localized.launch.py` +
+`kill -STOP controller_server` 30s（日志 `/tmp/nav2_bond_exp.log`）。四条实测/
+源码核验推翻了两处假设：
+
+| 事实 | 证据 | 对方案的影响 |
+|---|---|---|
+| bond **4.0s** 检出挂死 → deactivate 全栈，但**恢复不了** | 日志 `CRITICAL FAILURE … Shutting down related nodes` → `Resetting managed nodes…`；冻结进程仍 `Tl` | F2 的缺口是**恢复**不是检测 |
+| `attempt_respawn_reconnection` 的判活是 `get_state()` 能应答，**不看 bond/ACTIVE** | jazzy `lifecycle_manager.cpp` 源码核验（默认 true，窗口 10s） | 逐 server 的「细粒度恢复」在恢复阶段是假粒度 |
+| 原 children 清单**漏了 lifecycle_manager** | 逐 server spawn 无人 configure/activate | 计划硬伤 |
+| `ros2 launch` 不调 `setsid` | site-packages 全量 grep 零命中 | 孙进程同组，`kill(-pgid)` 覆盖整栈 |
+
+### 决策：整栈单子进程
+
+`supervisor.children = {health_monitor, nav2}`，`nav2` = 一个
+`ros2 launch … nav2_localized.launch.py` 进程组（`launch/supervised_nav2.launch.py`）。
+理由：manager 的 `startup()` 本来就会重新 configure+activate 全部节点——逐 server
+的粒度在恢复阶段与整栈重启**可观测等价**，却要多背一层对 NAV2 内部 10s 窗的
+依赖，还要新增参数解开「server 等 manager 激活 / manager 等 server 就位」的
+启动死锁。
+
+### 三条新增约束
+
+1. **聚合健康门**（`infrastructure/health_feed.hpp`）：子进程存活 = 映射的
+   **全部** health 节点 OK；任一 ERROR/FATAL 立即判挂；WARN/STALE **不改变
+   节点视图**（只阻止转 OK）。不聚合则 map_server 先 ACTIVE 就把整栈判成就位，
+   之后没起来的节点报 STALE 被忽略 → **半死栈无人发现**。
+2. **只报告不处置**：NAV2 形态下 `health_monitor.restart_enabled=false`。它的
+   lifecycle 四步链会与 lifecycle_manager 的状态跟踪脱节（manager 以为 server
+   是 active，实际被单独重启过）。处置权唯一归 supervisor 的进程级 kill+respawn。
+3. **进程组是恢复的边界**：`posix_spawn` 必须带 `POSIX_SPAWN_SETPGROUP`——只调
+   `setpgroup` 不设标志时该属性被忽略（2026-09-09 实测：`sleep 60` 的 PGID 是
+   测试进程组而非自身 pid，`kill(-pid)` ESRCH、孙进程全泄漏）。
+
+### 验证记录（2026-09-09）
+
+- **单测**：`test_supervisor_policy` 29 例（新增 HEALTH_LOST/HEALTH_OK 分支）、
+  `test_health_feed` 4 例（聚合语义直锁）、`test_supervisor_node` 6 例
+  （v2 心跳门 / 进程组清场 / 多节点聚合三组契约）、`test_lifecycle_probe` 4 例、
+  `test_health_restart` 2 例不回归
+- **端到端**：`quality/scripts/nav2_supervised_smoke.sh`（CI job
+  `nav2-supervised-smoke`，本机实测 **78s**）——bringup → 聚合门放行 →
+  空闲 30s 不误杀 → `kill -STOP controller_server` → health_monitor 报 ERROR
+  （46s）→ supervisor 组杀+重拉 → 整栈复活（58s）→ 无孤儿 → goal accepted +
+  `/cmd_vel` 有流量
+- **踩坑归档**：测试夹具用 `spin_some()` 每轮只执行一个回调，订阅队列饱和后
+  新样本挤掉未取的旧样本，表现为「hb_b 永远收不到」的假红；同一窗口独立
+  rclpy 订阅者 50/50 收全，产品代码无辜。夹具改 `spin_all` 排空。教训：
+  「只收到一半消息」先怀疑夹具的排空能力，别急着改产品断言。

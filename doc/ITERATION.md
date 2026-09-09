@@ -1,5 +1,12 @@
 # 迭代计划
 
+> 更新：2026-09-09 — **F2 落地：节点挂死可检出 + 进程级可恢复**。v2 心跳门
+> （supervisor 订阅 `/health/report`）+ NAV2 生产形态接入（`supervised_nav2.launch.py`，
+> 整栈单子进程）；health_monitor 清单参数化 + lifecycle `get_state` 探针（只报告
+> 不处置）；HealthFeed 聚合语义（全部映射节点 OK 才算活）。验证门：
+> `quality/scripts/nav2_supervised_smoke.sh` 进 CI（`nav2-supervised-smoke`，
+> SIGSTOP 挂死 → 检出 → 组杀重拉 → 可驱车，本机 78s）。ADR：
+> docs/design/20260825-b1-supervisor-adr.md §v2 落地
 > 更新：2026-09-04 — **导航栈收敛**（v2.4.0）：规划/控制/定位移交 NAV2，自研
 > 安全域以 cmd_vel_guard 独立接入；自研计算管线退居 A/B 基线（实证 4/4 vs 0/4）。
 > 仿真底座切换至 SimulatedScene（纯 CPU，随机/移动障碍）。ADR：
