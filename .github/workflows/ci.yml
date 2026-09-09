@@ -207,8 +207,27 @@ jobs:
             -o /usr/share/keyrings/ros-archive-keyring.gpg
           echo "deb [signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu noble main" \
             | sudo tee /etc/apt/sources.list.d/ros2.list
-          sudo apt-get update -qq && sudo apt-get install -y -qq ros-jazzy-ros-base \
-            python3-colcon-common-versions python3-colcon-common-extensions
+          # 依赖清单与 build-test-coverage 同源（那条腿已被 CI 证明能编过本包）：
+          # ros-jazzy-ros-base 的递归闭包里没有 hardware_interface，而 CMakeLists:29
+          # 是 find_package(hardware_interface REQUIRED)——只补包名笔误照样编不过
+          sudo apt-get update -qq && sudo apt-get install -y -qq \
+            ros-jazzy-ros-base \
+            build-essential \
+            ros-jazzy-rclcpp \
+            ros-jazzy-rclcpp-action \
+            ros-jazzy-rclcpp-lifecycle \
+            ros-jazzy-rclcpp-components \
+            ros-jazzy-lifecycle-msgs \
+            ros-jazzy-sensor-msgs \
+            ros-jazzy-geometry-msgs \
+            ros-jazzy-std-msgs \
+            ros-jazzy-action-msgs \
+            ros-jazzy-ament-cmake-gtest \
+            ros-jazzy-rosidl-default-generators \
+            ros-jazzy-diagnostic-msgs \
+            ros-jazzy-hardware-interface \
+            ros-jazzy-pluginlib \
+            python3-colcon-common-extensions
       - name: Build + run concurrency-core tests (TSan)
         shell: bash
         run: |
