@@ -290,3 +290,91 @@ TEST(SupervisorHygieneTest, Given_DepRestartingInBackoff_Then_StopWaiting) {
   EXPECT_EQ(st.phase, Phase::STOPPED);  // 退避作废，让位等待
   EXPECT_EQ(a.kind, Action::Kind::NONE);  // 已死，无需 KILL
 }
+
+// ── v2 心跳门（F2：进程活、节点挂）────────────────────────────────────
+
+TEST(SupervisorHealthTest, Given_StartingAndHealthOk_Then_Running) {
+  auto s = spec("svc");
+  ChildState st;
+  step(s, st, Event::SPAWNED, NOW);
+  auto a = step(s, st, Event::HEALTH_OK, NOW + S);  // 心跳确认才算就位
+  EXPECT_EQ(st.phase, Phase::RUNNING);
+  EXPECT_EQ(a.kind, Action::Kind::NONE);
+}
+
+TEST(SupervisorHealthTest, Given_RunningAndHealthLost_Then_BackoffWithKill) {
+  auto s = spec("svc");
+  ChildState st;
+  to_running(s, st, NOW);
+  auto a = step(s, st, Event::HEALTH_LOST, NOW + 5 * S);
+  EXPECT_EQ(st.phase, Phase::BACKOFF);  // 进程还活着：先杀再退避重启
+  EXPECT_EQ(a.kind, Action::Kind::KILL);
+  EXPECT_EQ(st.restarts_in_window, 1);
+}
+
+TEST(SupervisorHealthTest, Given_StartingAndHealthLost_Then_IgnoredUntilTimeout) {
+  auto s = spec("svc");
+  ChildState st;
+  step(s, st, Event::SPAWNED, NOW);
+  auto a = step(s, st, Event::HEALTH_LOST, NOW + S);  // 首心跳未到属正常，不处置
+  EXPECT_EQ(st.phase, Phase::STARTING);
+  EXPECT_EQ(a.kind, Action::Kind::NONE);
+  // 宽限窗走既有 START_TIMEOUT 路径（infra 判超时后喂）
+  auto a2 = step(s, st, Event::START_TIMEOUT, NOW + 21 * S);
+  EXPECT_EQ(st.phase, Phase::BACKOFF);
+  EXPECT_EQ(a2.kind, Action::Kind::SPAWN);
+}
+
+TEST(SupervisorHealthTest, Given_HealthLostRepeatedInBackoff_Then_SingleCount) {
+  auto s = spec("svc");
+  ChildState st;
+  to_running(s, st, NOW);
+  step(s, st, Event::HEALTH_LOST, NOW + S);  // → BACKOFF
+  auto a = step(s, st, Event::HEALTH_LOST, NOW + 2 * S);  // 报告每秒重发
+  EXPECT_EQ(a.kind, Action::Kind::NONE);
+  EXPECT_EQ(st.restarts_in_window, 1);  // 不重复累加预算
+}
+
+TEST(SupervisorHealthTest, Given_HealthLostExceedsBudget_Then_Fatal) {
+  RestartPolicy p;
+  p.max_restarts = 1;
+  p.backoff_base_ns = 0;
+  auto s = spec("svc", p);
+  ChildState st;
+  to_running(s, st, NOW);
+  auto a = step(s, st, Event::HEALTH_LOST, NOW + S);  // 预算 1/1 → BACKOFF
+  EXPECT_EQ(a.kind, Action::Kind::KILL);
+  step(s, st, Event::TICK, NOW + 2 * S);              // 退避到期 → STARTING
+  step(s, st, Event::HEALTH_OK, NOW + 2 * S);         // 就位
+  auto a2 = step(s, st, Event::HEALTH_LOST, NOW + 3 * S);
+  EXPECT_EQ(st.phase, Phase::FATAL);
+  EXPECT_EQ(a2.kind, Action::Kind::MARK_FATAL);  // infra 对活进程先 kill 再标记
+}
+
+TEST(SupervisorHealthTest, Given_HealthOkInRunning_Then_BudgetNotReset) {
+  // 防误改：HEALTH_OK 是当前健康快照，不得清预算——否则「反复挂死但报告恰好
+  // OK」的进程永不熔断。清零只由 RUNNING_STABLE（稳定窗）负责。
+  auto s = spec("svc");
+  ChildState st;
+  to_running(s, st, NOW);
+  step(s, st, Event::HEALTH_LOST, NOW + S);  // 预算 1
+  step(s, st, Event::TICK, NOW + 2 * S);     // → STARTING
+  step(s, st, Event::HEALTH_OK, NOW + 2 * S);  // → RUNNING
+  auto a = step(s, st, Event::HEALTH_OK, NOW + 3 * S);
+  EXPECT_EQ(a.kind, Action::Kind::NONE);
+  EXPECT_EQ(st.restarts_in_window, 1);  // 预算保留
+}
+
+TEST(SupervisorHealthTest, Given_FatalAndHealthLost_Then_Absorbed) {
+  RestartPolicy p;
+  p.max_restarts = 0;  // 首次失败即熔断
+  auto s = spec("svc", p);
+  ChildState st;
+  to_running(s, st, NOW);
+  auto a = step(s, st, Event::HEALTH_LOST, NOW + S);
+  EXPECT_EQ(st.phase, Phase::FATAL);
+  EXPECT_EQ(a.kind, Action::Kind::MARK_FATAL);
+  auto a2 = step(s, st, Event::HEALTH_LOST, NOW + 2 * S);
+  EXPECT_EQ(a2.kind, Action::Kind::NONE);  // 终态吸收
+  EXPECT_EQ(st.phase, Phase::FATAL);
+}

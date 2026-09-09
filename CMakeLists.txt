@@ -70,6 +70,7 @@ add_library(robot_middleware_lib STATIC
   src/hal/temperature_sensor.cpp  # D1-RUN2: 模拟温度（宏注册 TU）
   src/infrastructure/temperature_node.cpp  # D1-RUN2
   src/infrastructure/temperature_monitor_node.cpp  # D1-RUN2: 温度消费节点
+  src/infrastructure/supervisor_node.cpp  # B1 进程监管（F2：入 lib 供 infra 层回归测试）
   src/observability/metrics_registry.cpp
 )
 
@@ -132,9 +133,7 @@ foreach(node ${INDEPENDENT_NODES})
 endforeach()
 
 # B1 supervisor — 进程级监管（posix_spawn/进程组），见 docs/design/20260825-b1-supervisor-adr.md
-add_executable(amr_supervisor
-  src/infrastructure/supervisor_main.cpp
-  src/infrastructure/supervisor_node.cpp)
+add_executable(amr_supervisor src/infrastructure/supervisor_main.cpp)
 target_link_libraries(amr_supervisor robot_middleware_lib)
 install(TARGETS amr_supervisor DESTINATION lib/${PROJECT_NAME})
 
@@ -292,6 +291,9 @@ if(BUILD_TESTING)
   add_amr_test(test_package_signer quality/src/test_package_signer.cpp)
   # P0-C 验收：重启序列异步化后的行为证明（单线程 executor，生产同形态）
   add_amr_test(test_health_restart quality/src/test_health_restart.cpp)
+  add_amr_test(test_lifecycle_probe quality/src/test_lifecycle_probe.cpp)
+  add_amr_test(test_supervisor_node quality/src/test_supervisor_node.cpp)
+  add_amr_test(test_health_feed   quality/src/test_health_feed.cpp)
   # P0-B 竞态回归锁（R3.2）：TSAN 下修复前必红修复后必绿
   add_amr_test(test_grid_race quality/src/test_grid_race.cpp)
   set_tests_properties(test_grid_race PROPERTIES TIMEOUT 30)

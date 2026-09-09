@@ -77,6 +77,9 @@ bool SupervisorNode::load_children_from_params() {
     c.spec.depends_on = declare_parameter<std::vector<std::string>>(
         "supervisor." + n + ".depends_on", std::vector<std::string>{});
     c.spec.oneshot = declare_parameter<bool>("supervisor." + n + ".oneshot", false);
+    c.health_nodes = declare_parameter<std::vector<std::string>>(
+        "supervisor." + n + ".health_nodes", std::vector<std::string>{});
+    c.health_gated = !c.health_nodes.empty();  // v2：空 = 走 v1 存活即确认
     auto &p = c.spec.policy;
     p.max_restarts = declare_parameter<int>("supervisor." + n + ".max_restarts", 5);
     p.window_ns = static_cast<int64_t>(
@@ -135,7 +138,11 @@ bool SupervisorNode::spawn_child(ProcChild &c) {
 
   posix_spawnattr_t attr;
   posix_spawnattr_init(&attr);
-  // 独立进程组：kill(-pid) 组式清场，孙进程（ros2 launch 的子进程们）不泄漏
+  // 独立进程组：kill(-pid) 组式清场，孙进程（ros2 launch 的子进程们）不泄漏。
+  // SETPGROUP 标志必须先设——只调 setpgroup 不设标志时该属性被内核/glibc 忽略，
+  // 子进程留在 supervisor 自己的组里，kill(-pid) ESRCH、孙进程全泄漏
+  // （2026-09-09 实测：sleep 60 的 PGID 是测试进程组而非自身 pid）。
+  posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETPGROUP);
   posix_spawnattr_setpgroup(&attr, 0);
 
   pid_t pid = -1;
@@ -176,7 +183,7 @@ void SupervisorNode::cascade_yield(const std::string &name) {
   const auto deps = transitive_dependents(name);
   for (auto it = deps.rbegin(); it != deps.rend(); ++it) {  // 逆拓扑：最下游先让位
     auto &c = children_.at(*it);
-    completed_.erase(*it);  // oneshot 必须重跑——先清标记，STOPPED 也不例外
+    c.completed = false;  // oneshot 必须重跑——先清标记，STOPPED 也不例外
     if (c.state.phase == Phase::STOPPED || c.state.phase == Phase::FATAL) continue;
     feed(c, Event::DEP_RESTARTING);  // feed 内执行 KILL 动作
   }
@@ -194,7 +201,7 @@ void SupervisorNode::feed(ProcChild &c, Event ev) {
 
   // oneshot 成功收工：标记完成，try_bring_up 不再重生（依赖重启时级联清除）
   if (c.spec.oneshot && ev == Event::EXITED_OK && c.state.phase == Phase::STOPPED) {
-    completed_[c.spec.name] = true;
+    c.completed = true;
     RCLCPP_INFO(get_logger(), "%s (oneshot) 完成 ✓", c.spec.name.c_str());
   }
 
@@ -230,7 +237,7 @@ void SupervisorNode::feed(ProcChild &c, Event ev) {
 void SupervisorNode::try_bring_up() {
   for (const auto &n : topo_) {
     auto &c = children_.at(n);
-    if (c.state.phase != Phase::STOPPED || completed_[n]) continue;
+    if (c.state.phase != Phase::STOPPED || c.completed) continue;
     if (!deps_all_running(c)) continue;
     feed(c, Event::SPAWNED);
     if (!spawn_child(c)) feed(c, Event::EXITED_CRASH);
@@ -253,7 +260,9 @@ void SupervisorNode::tick() {
       }
       if (r == 0) {  // 还活着
         if (c.state.phase == Phase::STARTING) {
-          feed(c, Event::RUNNING);  // v1 健康门：存活即确认；v2 换心跳确认
+          // v1 健康门：存活即确认。v2（health_gated）：只认 /health/report 的
+          // HEALTH_OK——进程活着但节点挂死由健康门拦下，超时走 START_TIMEOUT
+          if (!c.health_gated) feed(c, Event::RUNNING);
         } else if (c.state.phase == Phase::RUNNING &&
                    now - c.state.phase_since_ns >= c.spec.policy.window_ns) {
           feed(c, Event::RUNNING_STABLE);
@@ -300,6 +309,16 @@ SupervisorNode::CallbackReturn SupervisorNode::on_configure(const rclcpp_lifecyc
   }
   status_pub_ = create_pub<ros2_robot_middleware::msg::HealthReport>(
       "/supervisor/report", amr::qos::latched_state());
+  std::map<std::string, std::vector<std::string>> health_map;
+  for (const auto &[n, c] : children_) {
+    if (!c.health_nodes.empty()) health_map[n] = c.health_nodes;
+  }
+  health_feed_ = std::make_unique<HealthFeed>(
+      *this, health_map, [this](const std::string &child, bool alive) {
+        const auto it = children_.find(child);
+        if (it == children_.end()) return;
+        feed(it->second, alive ? Event::HEALTH_OK : Event::HEALTH_LOST);
+      });
   RCLCPP_INFO(get_logger(), "配置就绪: %zu 个子进程, 拓扑序 [%s]", children_.size(),
               [&] { std::string s; for (auto &n : topo_) s += n + "→"; return s; }().c_str());
   return CallbackReturn::SUCCESS;
@@ -328,13 +347,14 @@ SupervisorNode::CallbackReturn SupervisorNode::on_cleanup(const rclcpp_lifecycle
   teardown_children();
   children_.clear();
   topo_.clear();
-  completed_.clear();
+  health_feed_.reset();
   status_pub_.reset();
   return CallbackReturn::SUCCESS;
 }
 
 SupervisorNode::CallbackReturn SupervisorNode::on_shutdown(const rclcpp_lifecycle::State &) {
   teardown_children();
+  health_feed_.reset();
   return CallbackReturn::SUCCESS;
 }
 

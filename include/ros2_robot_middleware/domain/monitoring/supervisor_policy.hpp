@@ -64,13 +64,15 @@ struct ChildState {
 /// Infrastructure 喂给状态机的事件。
 enum class Event : uint8_t {
   SPAWNED,         // posix_spawn 成功（infra 负责）
-  RUNNING,         // 存活确认（v1: 首个 tick waitpid 仍活；v2: 心跳到达）
+  RUNNING,         // 存活确认（v1: 首个 tick waitpid 仍活；未启用心跳门的子进程用）
   EXITED_OK,       // waitpid: exit 0
   EXITED_CRASH,    // waitpid: exit≠0 / 信号死（含 kill -9）
   START_TIMEOUT,   // STARTING 超过 startup_timeout_ns
   DEP_RESTARTING,  // 某依赖进入 BACKOFF/FATAL/重启流程 → 本子进程应让位
   RUNNING_STABLE,  // RUNNING 持续 ≥ window（infra 判定后喂）
   TICK,            // 退避到期轮询
+  HEALTH_OK,       // v2 心跳门：健康报告 OK（STARTING 相位的存活确认）
+  HEALTH_LOST,     // v2 心跳门：健康报告 ERROR（进程活、节点挂 → 进程级重启）
 };
 
 /// 状态机输出的动作（infra 执行）。
@@ -123,6 +125,7 @@ inline Action transition(const ChildSpec &spec, ChildState &st, Event ev, int64_
         case Event::SPAWNED:
           return {};  // 重复 SPAWNED 不可能，防御
         case Event::RUNNING:
+        case Event::HEALTH_OK:  // v2 心跳门：心跳确认才算就位（未启用门者仍喂 RUNNING）
           st.phase = Phase::RUNNING;
           st.phase_since_ns = now_ns;
           return {};
@@ -159,6 +162,9 @@ inline Action transition(const ChildSpec &spec, ChildState &st, Event ev, int64_
           return enter_backoff();
         case Event::EXITED_CRASH:
           return enter_backoff();
+        case Event::HEALTH_LOST:
+          // v2 心跳门：进程活着但节点挂死——先杀（KILL 即时）再退避重启
+          return enter_backoff(Action::Kind::KILL);
         case Event::DEP_RESTARTING:
           st.phase = Phase::STOPPED;
           st.phase_since_ns = now_ns;

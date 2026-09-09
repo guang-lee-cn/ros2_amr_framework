@@ -255,3 +255,36 @@ jobs:
           . /opt/ros/jazzy/setup.sh
           cd ws && source install/setup.bash
           timeout 240 bash src/ros2_robot_middleware/quality/scripts/nav2_smoke.sh
+
+  # ── F2 验证门：受监管 NAV2 形态——「节点挂死不可见」的永久 CI 锁 ──────
+  # 故障形状：kill -STOP（进程活着、不工作）。NAV2 的 bond 4s 能检出但恢复
+  # 不了（进程没死，launch respawn 与 waitpid 都看不见）——本 job 断言
+  # health_monitor 报 ERROR → supervisor 进程组 kill+重拉 → 整栈复活 → 可驱车。
+  # 实测 78s（含空闲 30s 误杀观察窗）；CI 慢机留 300s 上限。
+  nav2-supervised-smoke:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ROS Jazzy + NAV2 stack
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq curl gnupg
+          sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+            -o /usr/share/keyrings/ros-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu noble main" \
+            | sudo tee /etc/apt/sources.list.d/ros2.list
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ros-jazzy-ros-base \
+            ros-jazzy-nav2-bringup ros-jazzy-slam-toolbox \
+            ros-jazzy-foxglove-bridge ros-jazzy-robot-state-publisher \
+            python3-colcon-common-extensions
+      - name: Build package
+        run: |
+          . /opt/ros/jazzy/setup.sh
+          mkdir -p ws/src && ln -s "$GITHUB_WORKSPACE" ws/src/ros2_robot_middleware
+          cd ws && colcon build --packages-select ros2_robot_middleware
+      - name: Supervised NAV2 smoke (hang detected + process-level recovery)
+        shell: bash
+        run: |
+          . /opt/ros/jazzy/setup.sh
+          cd ws && source install/setup.bash
+          timeout 300 bash src/ros2_robot_middleware/quality/scripts/nav2_supervised_smoke.sh

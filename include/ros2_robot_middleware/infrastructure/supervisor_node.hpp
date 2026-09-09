@@ -8,15 +8,19 @@
 ///   1. 装载声明式配置（supervisor.<name>.* 参数）+ 拓扑校验（环/未知依赖拒绝启动）
 ///   2. posix_spawn 拉起子进程（独立进程组，组式清场防孙进程泄漏）
 ///   3. 250ms tick：waitpid(WNOHANG) → 喂状态机 → 执行动作（含级联让位）
+///   4. v2 心跳门：订阅 /health/report（HealthFeed）——配了 health_nodes 的子进程
+///      不再「存活即确认」，须等健康报告 OK 才进 RUNNING；报挂则进程级重启。
 ///
 /// 状态出口复用 HealthReport（latched_state），Phase→OK/WARN/STALE/ERROR。
 /// 见 docs/design/20260825-b1-supervisor-adr.md。
 
 #include "ros2_robot_middleware/domain/monitoring/supervisor_policy.hpp"
 #include "ros2_robot_middleware/infrastructure/amr_node.hpp"
+#include "ros2_robot_middleware/infrastructure/health_feed.hpp"
 #include "ros2_robot_middleware/msg/health_report.hpp"
 
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -46,6 +50,9 @@ private:
     domain::monitoring::ChildState state;
     pid_t pid = -1;
     std::vector<std::string> cmd;
+    std::vector<std::string> health_nodes;  // 该子进程对应的 /health/report 节点名
+    bool health_gated = false;              // true: 等 HEALTH_OK 才算 RUNNING（v2）
+    bool completed = false;                 // oneshot 完成标记（依赖重启时清除）
   };
 
   // 配置装载与校验
@@ -66,11 +73,11 @@ private:
 
   std::map<std::string, ProcChild> children_;          // name → child
   std::vector<std::string> topo_;                      // 拉起序（校验通过的证明）
-  std::map<std::string, bool> completed_;              // oneshot 完成标记（依赖重启时清除）
 
   rclcpp::TimerBase::SharedPtr tick_timer_;
   rclcpp::TimerBase::SharedPtr status_timer_;
   rclcpp_lifecycle::LifecyclePublisher<ros2_robot_middleware::msg::HealthReport>::SharedPtr status_pub_;
+  std::unique_ptr<HealthFeed> health_feed_;            // v2 心跳门入口（未配置则不建）
 };
 
 }  // namespace infrastructure

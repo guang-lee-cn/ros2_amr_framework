@@ -23,23 +23,23 @@ HealthMonitorNode::on_configure(const rclcpp_lifecycle::State &)
   create_restart_clients();
 
   // Register monitored nodes with domain service
-  for (const auto &cfg : kNdes) {
-    monitor_.register_node(cfg.node, timeouts_[cfg.node]);
+  for (const auto &cfg : probes_) {
+    monitor_.register_node(cfg.node, cfg.timeout_s);
   }
 
   // Create DiagnosticsPublisher (extracted from HealthMonitorNode — SRP)
   diagnostics_ = std::make_unique<DiagnosticsPublisher>(this,
     [this]() -> std::vector<std::pair<std::string, amr::domain::monitoring::NodeStatus>> {
       std::vector<std::pair<std::string, amr::domain::monitoring::NodeStatus>> result;
-      for (const auto &cfg : kNdes) {
-        result.emplace_back(std::string(cfg.node), monitor_.escalated_status(cfg.node));
+      for (const auto &cfg : probes_) {
+        result.emplace_back(cfg.node, monitor_.escalated_status(cfg.node));
       }
       return result;
     });
 
   RCLCPP_INFO(this->get_logger(),
-              "HealthMonitor configured: %d nodes, %.1fs interval",
-              kNumNodes, check_interval_s_);
+              "HealthMonitor configured: %zu nodes, %.1fs interval, restart=%s",
+              probes_.size(), check_interval_s_, restart_enabled_ ? "on" : "off");
 
   return CallbackReturn::SUCCESS;
 }
@@ -80,14 +80,11 @@ HealthMonitorNode::on_deactivate(const rclcpp_lifecycle::State &)
 HealthMonitorNode::CallbackReturn
 HealthMonitorNode::on_cleanup(const rclcpp_lifecycle::State &)
 {
-  for (int i = 0; i < kNumNodes; ++i) {
-    subs_[i].reset();
-  }
+  subs_.clear();
+  lifecycle_probe_.reset();
   pub_.reset();
   health_srv_.reset();
   diagnostics_.reset();
-
-  timeouts_.clear();
 
   return CallbackReturn::SUCCESS;
 }
@@ -99,9 +96,8 @@ HealthMonitorNode::on_shutdown(const rclcpp_lifecycle::State &)
 
   prometheus_.reset();
 
-  for (int i = 0; i < kNumNodes; ++i) {
-    subs_[i].reset();
-  }
+  subs_.clear();
+  lifecycle_probe_.reset();
   pub_.reset();
   health_srv_.reset();
   diagnostics_.reset();
@@ -112,29 +108,68 @@ HealthMonitorNode::on_shutdown(const rclcpp_lifecycle::State &)
 void HealthMonitorNode::declare_parameters()
 {
   this->declare_parameter<double>("check_interval_s", 1.0);
-  for (const auto &cfg : kNdes) {
-    std::string key = std::string(cfg.node) + "_timeout_s";
-    this->declare_parameter<double>(key, cfg.default_timeout_s);
+  this->declare_parameter<bool>("health_monitor.restart_enabled", true);
+
+  // 监视清单：不传 = 自研栈 6 节点（既有行为零改动）
+  std::vector<std::string> defaults;
+  for (const auto &cfg : kDefaultNodes) {
+    defaults.emplace_back(cfg.node);
+  }
+  const auto nodes = this->declare_parameter<std::vector<std::string>>(
+    "health_monitor.nodes", defaults);
+
+  for (const auto &n : nodes) {
+    const NodeConfig *def = nullptr;
+    for (const auto &cfg : kDefaultNodes) {
+      if (n == cfg.node) { def = &cfg; break; }
+    }
+    this->declare_parameter<std::string>("health_monitor." + n + ".probe", "topic");
+    this->declare_parameter<std::string>(
+      "health_monitor." + n + ".topic", def != nullptr ? def->topic : "");
+    this->declare_parameter<double>(
+      "health_monitor." + n + ".timeout_s", def != nullptr ? def->default_timeout_s : 2.0);
   }
 }
 
 void HealthMonitorNode::load_parameters()
 {
   check_interval_s_ = this->get_parameter("check_interval_s").as_double();
-  for (const auto &cfg : kNdes) {
-    std::string key = std::string(cfg.node) + "_timeout_s";
-    timeouts_[cfg.node] = this->get_parameter(key).as_double();
+  restart_enabled_ = this->get_parameter("health_monitor.restart_enabled").as_bool();
+
+  // 注意：as_string_array() 返回的是临时 Parameter 内部的引用，必须先落局部
+  const std::vector<std::string> nodes =
+    this->get_parameter("health_monitor.nodes").as_string_array();
+  probes_.clear();
+  for (const auto &n : nodes) {
+    ProbeConfig p;
+    p.node      = n;
+    p.topic     = this->get_parameter("health_monitor." + n + ".topic").as_string();
+    p.timeout_s = this->get_parameter("health_monitor." + n + ".timeout_s").as_double();
+    p.lifecycle = this->get_parameter("health_monitor." + n + ".probe").as_string()
+                  == "lifecycle";
+    probes_.push_back(p);
   }
 }
 
 void HealthMonitorNode::create_subscriptions()
 {
-  for (int i = 0; i < kNumNodes; ++i) {
-    subs_[i] = this->create_subscription<std_msgs::msg::String>(
-      kNdes[i].topic, amr::qos::reliable_stream(),
-      [this, node = std::string(kNdes[i].node)](std_msgs::msg::String::SharedPtr /*msg*/) {
+  std::vector<std::string> lifecycle_targets;
+  for (const auto &cfg : probes_) {
+    if (cfg.lifecycle) {
+      lifecycle_targets.push_back(cfg.node);  // 无自研心跳，走 get_state 探针
+      continue;
+    }
+    subs_.push_back(this->create_subscription<std_msgs::msg::String>(
+      cfg.topic, amr::qos::reliable_stream(),
+      [this, node = cfg.node](std_msgs::msg::String::SharedPtr /*msg*/) {
         monitor_.heartbeat_received(node);
-      });
+      }));
+  }
+  if (!lifecycle_targets.empty()) {
+    lifecycle_probe_ = std::make_unique<amr::infrastructure::LifecycleProbe>(
+      this->get_node_base_interface(), this->get_node_graph_interface(),
+      this->get_node_services_interface(), lifecycle_targets,
+      [this](const std::string & n) { monitor_.heartbeat_received(n); });
   }
 }
 
@@ -155,16 +190,21 @@ void HealthMonitorNode::check_health()
   }
   last_tick_ = now;
 
+  // lifecycle 探针：1Hz 查询（服务未就绪则跳过——不上报即自然超时）
+  if (lifecycle_probe_) {
+    lifecycle_probe_->poll();
+  }
+
   auto report = ros2_robot_middleware::msg::HealthReport{};
   report.header.stamp = now;
   report.header.frame_id = "health_monitor";
 
-  for (const auto &cfg : kNdes) {
+  for (const auto &cfg : probes_) {
     auto node_status = monitor_.escalated_status(cfg.node);
 
     auto status = ros2_robot_middleware::msg::HealthStatus{};
     status.node_name = cfg.node;
-    status.timeout_s = timeouts_[cfg.node];
+    status.timeout_s = cfg.timeout_s;
     status.status = amr::domain::monitoring::to_string(node_status);
 
     for (const auto &[name, hb] : monitor_.heartbeats()) {
@@ -173,20 +213,26 @@ void HealthMonitorNode::check_health()
 
     // Watchdog recovery via ROS2 lifecycle service
     if (node_status == amr::domain::monitoring::NodeStatus::ERROR) {
-      if (monitor_.should_recover(cfg.node)) {
+      if (!restart_enabled_) {
+        // NAV2 形态：只报告不处置——处置权归 supervisor 的进程级恢复
+        // （lifecycle 四步链会与 lifecycle_manager 的状态跟踪脱节）
         RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-                              "[%s] ERROR: triggering restart", cfg.node);
+                              "[%s] ERROR（restart_enabled=false，仅上报）",
+                              cfg.node.c_str());
+      } else if (monitor_.should_recover(cfg.node)) {
+        RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                              "[%s] ERROR: triggering restart", cfg.node.c_str());
         begin_restart(cfg.node);  // 异步发起，回调内零阻塞（P0-C）
       } else {
         RCLCPP_ERROR(this->get_logger(), "[%s] FATAL: restart limit exceeded",
-                     cfg.node);
+                     cfg.node.c_str());
         status.status = "FATAL";
       }
     } else if (node_status == amr::domain::monitoring::NodeStatus::OK) {
       monitor_.on_recovered(cfg.node);
     } else if (node_status == amr::domain::monitoring::NodeStatus::STALE) {
       RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-                           "[%s] STALE: no data received", cfg.node);
+                           "[%s] STALE: no data received", cfg.node.c_str());
     }
 
     report.nodes.push_back(status);
@@ -205,15 +251,19 @@ void HealthMonitorNode::create_service_server()
     [this](const std::shared_ptr<ros2_robot_middleware::srv::SetParam::Request> req,
            std::shared_ptr<ros2_robot_middleware::srv::SetParam::Response> resp) {
       double elapsed = -1.0;
+      double timeout = 0.0;
       for (const auto &[name, hb] : monitor_.heartbeats()) {
-        if (name == req->param_name) { elapsed = hb.last_seen_s; break; }
+        if (name == req->param_name) {
+          elapsed = hb.last_seen_s;
+          timeout = hb.timeout_s;
+          break;
+        }
       }
       if (elapsed < 0) {
         resp->success = false;
         resp->message = "Unknown node: " + req->param_name;
         return;
       }
-      double timeout = timeouts_[req->param_name];
       if (elapsed > timeout) {
         resp->success = false;
         resp->message = "ERROR: " + std::to_string(elapsed) + "s";
@@ -237,10 +287,11 @@ void HealthMonitorNode::create_restart_clients()
 {
   restart_group_ = this->create_callback_group(
       rclcpp::CallbackGroupType::MutuallyExclusive);
-  for (const auto &cfg : kNdes) {
+  for (const auto &cfg : probes_) {
+    if (cfg.lifecycle) continue;  // stock NAV2 节点不参与 lifecycle 重启（只报告）
     restart_clients_[cfg.node] =
       this->create_client<lifecycle_msgs::srv::ChangeState>(
-        std::string(cfg.node) + "/change_state",
+        cfg.node + "/change_state",
         rclcpp::ServicesQoS(), restart_group_);
   }
 }
@@ -338,7 +389,7 @@ std::string HealthMonitorNode::prometheus_metrics() const
   // Node health gauges
   out << "# HELP ros2_node_health_seconds Seconds since last data from node\n";
   out << "# TYPE ros2_node_health_seconds gauge\n";
-  for (const auto &cfg : kNdes) {
+  for (const auto &cfg : probes_) {
     double val = -1.0;
     for (const auto &[name, hb] : monitor_.heartbeats()) {
       if (name == cfg.node) { val = hb.last_seen_s; break; }
@@ -347,9 +398,9 @@ std::string HealthMonitorNode::prometheus_metrics() const
   }
   out << "# HELP ros2_node_timeout_seconds Configured timeout\n";
   out << "# TYPE ros2_node_timeout_seconds gauge\n";
-  for (const auto &cfg : kNdes) {
+  for (const auto &cfg : probes_) {
     out << "ros2_node_timeout_seconds{node=\"" << cfg.node << "\"} "
-        << timeouts_.at(cfg.node) << "\n";
+        << cfg.timeout_s << "\n";
   }
 
   // Sensor rates
